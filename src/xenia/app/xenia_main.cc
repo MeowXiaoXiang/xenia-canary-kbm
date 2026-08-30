@@ -61,6 +61,7 @@
 #include "xenia/hid/sdl/sdl_hid.h"
 #endif  // !XE_PLATFORM_ANDROID
 #if XE_PLATFORM_WIN32
+#include "xenia/hid/winkey/winkey_config.h"
 #include "xenia/hid/winkey/winkey_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
@@ -495,6 +496,9 @@ bool EmulatorApp::OnInitialize() {
   XELOGI("Storage root: {}", storage_root);
 
   config::SetupConfig(storage_root);
+#if XE_PLATFORM_WIN32
+  xe::hid::winkey::SetupConfig(storage_root);
+#endif  // XE_PLATFORM_WIN32
 
 #if XE_ARCH_AMD64 == 1
   amd64::InitFeatureFlags();

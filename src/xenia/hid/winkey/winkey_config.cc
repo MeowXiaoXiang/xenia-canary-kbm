@@ -1,0 +1,420 @@
+/**
+ ******************************************************************************
+ * Xenia : Xbox 360 Emulator Research Project                                 *
+ ******************************************************************************
+ * Copyright 2026 Ben Vanik. All rights reserved.                             *
+ * Released under the BSD license - see LICENSE in the root for more details. *
+ ******************************************************************************
+ */
+
+#include "xenia/hid/winkey/winkey_config.h"
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <charconv>
+#include <cstdio>
+#include <vector>
+
+#include "third_party/fmt/include/fmt/format.h"
+#include "third_party/tomlplusplus/toml.hpp"
+#include "xenia/base/filesystem.h"
+#include "xenia/base/logging.h"
+#include "xenia/base/platform_win.h"
+#include "xenia/base/string.h"
+
+DECLARE_string(hid);
+DECLARE_int32(keyboard_mode);
+DECLARE_int32(keyboard_user_index);
+
+#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+                              cvar_default_value)             \
+  DECLARE_string(cvar_name);
+#include "xenia/hid/winkey/winkey_binding_table.inc"
+#undef XE_HID_WINKEY_BINDING
+
+DECLARE_bool(raw_mouse);
+DECLARE_double(raw_mouse_sensitivity);
+DECLARE_double(raw_mouse_full_scale_velocity);
+DECLARE_double(raw_mouse_response_curve);
+DECLARE_bool(raw_mouse_deadzone_compensation);
+DECLARE_double(raw_mouse_minimum_response);
+DECLARE_bool(raw_mouse_invert_y);
+DECLARE_string(raw_mouse_capture_toggle_key);
+DECLARE_bool(raw_mouse_capture_on_start);
+
+namespace xe::hid::winkey {
+namespace {
+
+struct NamedVirtualKey {
+  std::string_view canonical_name;
+  std::string_view display_name;
+  uint16_t virtual_key;
+};
+
+constexpr NamedVirtualKey kNamedVirtualKeys[] = {
+    {"MouseLeft", "Mouse Left", VK_LBUTTON},
+    {"MouseRight", "Mouse Right", VK_RBUTTON},
+    {"MouseMiddle", "Mouse Middle", VK_MBUTTON},
+    {"MouseX1", "Mouse X1", VK_XBUTTON1},
+    {"MouseX2", "Mouse X2", VK_XBUTTON2},
+    {"Backspace", "Backspace", VK_BACK},
+    {"Tab", "Tab", VK_TAB},
+    {"Enter", "Enter", VK_RETURN},
+    {"Shift", "Shift", VK_SHIFT},
+    {"Ctrl", "Ctrl", VK_CONTROL},
+    {"Alt", "Alt", VK_MENU},
+    {"Pause", "Pause", VK_PAUSE},
+    {"CapsLock", "Caps Lock", VK_CAPITAL},
+    {"Esc", "Esc", VK_ESCAPE},
+    {"Space", "Space", VK_SPACE},
+    {"PageUp", "Page Up", VK_PRIOR},
+    {"PageDown", "Page Down", VK_NEXT},
+    {"End", "End", VK_END},
+    {"Home", "Home", VK_HOME},
+    {"Left", "Left", VK_LEFT},
+    {"Up", "Up", VK_UP},
+    {"Right", "Right", VK_RIGHT},
+    {"Down", "Down", VK_DOWN},
+    {"Insert", "Insert", VK_INSERT},
+    {"Delete", "Delete", VK_DELETE},
+    {"Win", "Win", VK_LWIN},
+    {"Apps", "Menu", VK_APPS},
+    {"NumLock", "Num Lock", VK_NUMLOCK},
+    {"NumpadMultiply", "Numpad *", VK_MULTIPLY},
+    {"NumpadAdd", "Numpad +", VK_ADD},
+    {"NumpadSubtract", "Numpad -", VK_SUBTRACT},
+    {"NumpadDecimal", "Numpad .", VK_DECIMAL},
+    {"NumpadDivide", "Numpad /", VK_DIVIDE},
+};
+
+std::string NormalizeKeyName(std::string_view text) {
+  std::string normalized;
+  normalized.reserve(text.size());
+  for (char character : text) {
+    if (character == ' ' || character == '-' || character == '_') {
+      continue;
+    }
+    normalized.push_back(
+        static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+  }
+  return normalized;
+}
+
+bool ParseUnsigned(std::string_view text, int base, uint16_t& value) {
+  unsigned int parsed = 0;
+  const auto result =
+      std::from_chars(text.data(), text.data() + text.size(), parsed, base);
+  if (result.ec != std::errc() || result.ptr != text.data() + text.size() ||
+      parsed > UINT16_MAX) {
+    return false;
+  }
+  value = static_cast<uint16_t>(parsed);
+  return true;
+}
+
+bool ParseVirtualKeyName(std::string_view text, uint16_t& virtual_key) {
+  if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+    return ParseUnsigned(text.substr(2), 16, virtual_key);
+  }
+
+  if (text.size() == 1 && std::isalnum(static_cast<unsigned char>(text[0]))) {
+    virtual_key = static_cast<uint16_t>(
+        std::toupper(static_cast<unsigned char>(text[0])));
+    return true;
+  }
+
+  const std::string normalized = NormalizeKeyName(text);
+  for (const NamedVirtualKey& key : kNamedVirtualKeys) {
+    if (normalized == NormalizeKeyName(key.canonical_name) ||
+        normalized == NormalizeKeyName(key.display_name)) {
+      virtual_key = key.virtual_key;
+      return true;
+    }
+  }
+
+  if (normalized == "control") {
+    virtual_key = VK_CONTROL;
+    return true;
+  }
+  if (normalized == "escape") {
+    virtual_key = VK_ESCAPE;
+    return true;
+  }
+  if (normalized == "windows" || normalized == "super") {
+    virtual_key = VK_LWIN;
+    return true;
+  }
+
+  if (normalized.size() >= 2 && normalized[0] == 'f') {
+    uint16_t function_number = 0;
+    if (ParseUnsigned(std::string_view(normalized).substr(1), 10,
+                      function_number) &&
+        function_number >= 1 && function_number <= 24) {
+      virtual_key = static_cast<uint16_t>(VK_F1 + function_number - 1);
+      return true;
+    }
+  }
+  constexpr std::string_view kNumpadPrefix = "numpad";
+  if (normalized.size() == kNumpadPrefix.size() + 1 &&
+      normalized.starts_with(kNumpadPrefix) &&
+      std::isdigit(static_cast<unsigned char>(normalized.back()))) {
+    virtual_key = static_cast<uint16_t>(VK_NUMPAD0 + normalized.back() - '0');
+    return true;
+  }
+  return false;
+}
+
+std::string VirtualKeyName(uint16_t virtual_key, bool display) {
+  if ((virtual_key >= 'A' && virtual_key <= 'Z') ||
+      (virtual_key >= '0' && virtual_key <= '9')) {
+    return std::string(1, static_cast<char>(virtual_key));
+  }
+  if (virtual_key >= VK_F1 && virtual_key <= VK_F24) {
+    return fmt::format("F{}", virtual_key - VK_F1 + 1);
+  }
+  if (virtual_key >= VK_NUMPAD0 && virtual_key <= VK_NUMPAD9) {
+    return fmt::format("Numpad{}", virtual_key - VK_NUMPAD0);
+  }
+  for (const NamedVirtualKey& key : kNamedVirtualKeys) {
+    if (key.virtual_key == virtual_key) {
+      return std::string(display ? key.display_name : key.canonical_name);
+    }
+  }
+  return fmt::format("0x{:02X}", virtual_key);
+}
+
+bool IsModifierName(std::string_view text, WinKeyChord& chord) {
+  const std::string normalized = NormalizeKeyName(text);
+  if (normalized == "shift") {
+    chord.shift = true;
+  } else if (normalized == "ctrl" || normalized == "control") {
+    chord.ctrl = true;
+  } else if (normalized == "alt") {
+    chord.alt = true;
+  } else if (normalized == "win" || normalized == "windows" ||
+             normalized == "super") {
+    chord.super = true;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+std::string FormatChord(const WinKeyChord& chord, bool display) {
+  std::string result;
+  if (chord.ctrl) {
+    result += "Ctrl+";
+  }
+  if (chord.alt) {
+    result += "Alt+";
+  }
+  if (chord.shift) {
+    result += "Shift+";
+  }
+  if (chord.super) {
+    result += "Win+";
+  }
+  result += VirtualKeyName(chord.virtual_key, display);
+  return result;
+}
+
+std::filesystem::path config_path;
+
+bool IsWinKeyConfigVar(const cvar::IConfigVar& config_var) {
+  if (config_var.category() == "HID.WinKey") {
+    return true;
+  }
+  return config_var.category() == "HID" &&
+         (config_var.name() == "keyboard_mode" ||
+          config_var.name() == "keyboard_user_index");
+}
+
+void LoadConfig() {
+  toml::parse_result parsed;
+  try {
+    parsed = toml::parse_file(xe::path_to_utf8(config_path));
+  } catch (const toml::parse_error& e) {
+    XELOGE("winkey: failed to parse '{}': {}", config_path, e.what());
+    return;
+  }
+
+  if (!cvar::ConfigVars) {
+    return;
+  }
+  for (const auto& [name, config_var] : *cvar::ConfigVars) {
+    if (!IsWinKeyConfigVar(*config_var)) {
+      continue;
+    }
+    const auto node = parsed.at_path(
+        toml::path(config_var->category() + "." + config_var->name()));
+    if (node) {
+      config_var->LoadConfigValue(node.node());
+    }
+  }
+  XELOGI("winkey: loaded config '{}'.", config_path);
+}
+
+}  // namespace
+
+bool ParseWinKeyChord(std::string_view text, WinKeyChord& chord) {
+  chord = {};
+  if (text.empty()) {
+    return false;
+  }
+
+  size_t part_begin = 0;
+  while (true) {
+    const size_t plus = text.find('+', part_begin);
+    const bool is_last = plus == std::string_view::npos;
+    const std::string_view part = text.substr(
+        part_begin, is_last ? text.size() - part_begin : plus - part_begin);
+    if (part.empty()) {
+      return false;
+    }
+    if (is_last) {
+      return ParseVirtualKeyName(part, chord.virtual_key);
+    }
+    if (!IsModifierName(part, chord)) {
+      return false;
+    }
+    part_begin = plus + 1;
+  }
+}
+
+std::string FormatWinKeyChord(const WinKeyChord& chord) {
+  return chord.virtual_key ? FormatChord(chord, false) : std::string();
+}
+
+std::string FormatWinKeyBinding(std::string_view binding) {
+  std::string result;
+  for (std::string_view token : utf8::split(binding, " ", true)) {
+    if (!token.empty() && (token.front() == '_' || token.front() == '^')) {
+      token.remove_prefix(1);
+    }
+    WinKeyChord chord;
+    const std::string display = ParseWinKeyChord(token, chord)
+                                    ? FormatChord(chord, true)
+                                    : std::string(token);
+    if (!result.empty()) {
+      result += " / ";
+    }
+    result += display;
+  }
+  return result.empty() ? "Unbound" : result;
+}
+
+void SetupConfig(const std::filesystem::path& storage_root) {
+  config_path = storage_root / "winkey.toml";
+  if (std::filesystem::exists(config_path)) {
+    LoadConfig();
+  } else if (cvars::hid == "winkey") {
+    // This also preserves values imported from the old main config before the
+    // HID.WinKey cvars became transient.
+    SaveConfig();
+  }
+}
+
+bool ConfigExists() {
+  return !config_path.empty() && std::filesystem::exists(config_path);
+}
+
+const std::filesystem::path& ConfigPath() { return config_path; }
+
+bool SaveConfig() {
+  if (config_path.empty() || !cvar::ConfigVars) {
+    return false;
+  }
+
+  std::vector<cvar::IConfigVar*> vars;
+  for (const auto& [name, config_var] : *cvar::ConfigVars) {
+    if (IsWinKeyConfigVar(*config_var)) {
+      vars.push_back(config_var);
+    }
+  }
+  std::sort(vars.begin(), vars.end(), [](const auto* a, const auto* b) {
+    return a->category() == b->category() ? a->name() < b->name()
+                                          : a->category() < b->category();
+  });
+
+  xe::filesystem::CreateParentFolder(config_path);
+  FILE* file = xe::filesystem::OpenFile(config_path, "wb");
+  if (!file) {
+    XELOGE("winkey: failed to open '{}' for writing.", config_path);
+    return false;
+  }
+
+  std::string output =
+      "# WinKey keyboard and Raw Input mouse settings.\n"
+      "# This file is intentionally separate from xenia-canary.config.toml.\n";
+  std::string category;
+  for (const auto* config_var : vars) {
+    if (category != config_var->category()) {
+      category = config_var->category();
+      output += "\n[" + category + "]\n";
+    }
+    output += config_var->name() + " = " + config_var->config_value();
+    if (!config_var->description().empty()) {
+      output += " # " + config_var->description();
+    }
+    output += '\n';
+  }
+
+  const bool written =
+      fwrite(output.data(), 1, output.size(), file) == output.size();
+  fclose(file);
+  if (!written) {
+    XELOGE("winkey: failed to write '{}'.", config_path);
+    return false;
+  }
+  XELOGI("winkey: saved config '{}'.", config_path);
+  return true;
+}
+
+WinKeySettings GetSettingsFromCvars() {
+  WinKeySettings settings;
+  settings.keyboard_mode = cvars::keyboard_mode;
+  settings.keyboard_user_index = cvars::keyboard_user_index;
+#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+                              cvar_default_value)             \
+  settings.cvar_name = cvars::cvar_name;
+#include "xenia/hid/winkey/winkey_binding_table.inc"
+#undef XE_HID_WINKEY_BINDING
+  settings.raw_mouse = cvars::raw_mouse;
+  settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
+  settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
+  settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
+  settings.raw_mouse_deadzone_compensation =
+      cvars::raw_mouse_deadzone_compensation;
+  settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
+  settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
+  settings.raw_mouse_capture_toggle_key = cvars::raw_mouse_capture_toggle_key;
+  settings.raw_mouse_capture_on_start = cvars::raw_mouse_capture_on_start;
+  return settings;
+}
+
+void ApplySettingsToCvars(const WinKeySettings& settings) {
+  cvars::keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
+  cvars::keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
+#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+                              cvar_default_value)             \
+  cvars::cvar_name = settings.cvar_name;
+#include "xenia/hid/winkey/winkey_binding_table.inc"
+#undef XE_HID_WINKEY_BINDING
+  cvars::raw_mouse = settings.raw_mouse;
+  cvars::raw_mouse_sensitivity =
+      std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0);
+  cvars::raw_mouse_full_scale_velocity =
+      std::clamp(settings.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
+  cvars::raw_mouse_response_curve =
+      std::clamp(settings.raw_mouse_response_curve, 0.1, 4.0);
+  cvars::raw_mouse_deadzone_compensation =
+      settings.raw_mouse_deadzone_compensation;
+  cvars::raw_mouse_minimum_response =
+      std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5);
+  cvars::raw_mouse_invert_y = settings.raw_mouse_invert_y;
+  cvars::raw_mouse_capture_toggle_key = settings.raw_mouse_capture_toggle_key;
+  cvars::raw_mouse_capture_on_start = settings.raw_mouse_capture_on_start;
+}
+
+}  // namespace xe::hid::winkey

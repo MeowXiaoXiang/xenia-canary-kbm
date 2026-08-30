@@ -157,6 +157,24 @@ class MouseEvent : public UIEvent {
   int32_t scroll_y_ = 0;
 };
 
+class RawMouseMoveEvent : public UIEvent {
+ public:
+  explicit RawMouseMoveEvent(Window* target, int32_t delta_x, int32_t delta_y)
+      : UIEvent(target), delta_x_(delta_x), delta_y_(delta_y) {}
+  ~RawMouseMoveEvent() override = default;
+
+  bool is_handled() const { return handled_; }
+  void set_handled(bool value) { handled_ = value; }
+
+  int32_t delta_x() const { return delta_x_; }
+  int32_t delta_y() const { return delta_y_; }
+
+ private:
+  bool handled_ = false;
+  int32_t delta_x_ = 0;
+  int32_t delta_y_ = 0;
+};
+
 class TouchEvent : public UIEvent {
  public:
   enum class Action {

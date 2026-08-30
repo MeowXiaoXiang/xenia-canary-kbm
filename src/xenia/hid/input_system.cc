@@ -46,6 +46,13 @@ void InputSystem::AddDriver(std::unique_ptr<InputDriver> driver) {
   drivers_.push_back(std::move(driver));
 }
 
+void InputSystem::SetHostUIVisible(bool visible) {
+  auto driver_lock = lock();
+  for (const auto& driver : drivers_) {
+    driver->OnHostUIVisibilityChanged(visible);
+  }
+}
+
 void InputSystem::UpdateUsedSlot(InputDriver* driver, uint8_t slot,
                                  bool connected) {
   if (slot == XUserIndexAny) {

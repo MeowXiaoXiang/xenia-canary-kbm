@@ -605,6 +605,8 @@ class Window {
                  WindowDestructionReceiver& destruction_receiver);
   void OnMouseWheel(MouseEvent& e,
                     WindowDestructionReceiver& destruction_receiver);
+  void OnRawMouseMove(RawMouseMoveEvent& e,
+                      WindowDestructionReceiver& destruction_receiver);
 
   void OnTouchEvent(TouchEvent& e,
                     WindowDestructionReceiver& destruction_receiver);

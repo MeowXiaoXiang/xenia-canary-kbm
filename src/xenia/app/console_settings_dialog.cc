@@ -7,6 +7,7 @@
  ******************************************************************************
  */
 #include "xenia/app/emulator_window.h"
+#include "xenia/app/localization.h"
 #include "xenia/app/profile_dialogs.h"
 #include "xenia/base/png_utils.h"
 #include "xenia/base/system.h"
@@ -21,15 +22,25 @@
 namespace xe {
 namespace app {
 
-static const std::map<uint32_t, std::string> kLanguageMap = {
-    {1, "English"},    {2, "Japanese"},
-    {3, "German"},     {4, "French"},
-    {5, "Spanish"},    {6, "Italian"},
-    {7, "Korean"},     {8, "Traditional Chinese"},
-    {9, "Portuguese"}, {11, "Polish"},
-    {12, "Russian"},   {13, "Swedish"},
-    {14, "Turkish"},   {15, "Norwegian"},
-    {16, "Dutch"},     {17, "Simplified Chinese"}};
+using localization::StringId;
+
+static const std::map<uint32_t, StringId> kLanguageMap = {
+    {1, StringId::kGuestLanguageEnglish},
+    {2, StringId::kGuestLanguageJapanese},
+    {3, StringId::kGuestLanguageGerman},
+    {4, StringId::kGuestLanguageFrench},
+    {5, StringId::kGuestLanguageSpanish},
+    {6, StringId::kGuestLanguageItalian},
+    {7, StringId::kGuestLanguageKorean},
+    {8, StringId::kGuestLanguageTraditionalChinese},
+    {9, StringId::kGuestLanguagePortuguese},
+    {11, StringId::kGuestLanguagePolish},
+    {12, StringId::kGuestLanguageRussian},
+    {13, StringId::kGuestLanguageSwedish},
+    {14, StringId::kGuestLanguageTurkish},
+    {15, StringId::kGuestLanguageNorwegian},
+    {16, StringId::kGuestLanguageDutch},
+    {17, StringId::kGuestLanguageSimplifiedChinese}};
 
 static const std::map<uint8_t, std::string> kCountryMap = {
     {1, "AE"},   {2, "AL"},   {3, "AM"},   {4, "AR"},   {5, "AT"},
@@ -87,11 +98,35 @@ void DrawCombobox(ImGuiIO& io, std::string_view combobox_name,
   }
 }
 
+void DrawLanguageCombobox(ImGuiIO& io, xe::be<uint32_t>& value) {
+  const char* preview = localization::Get(StringId::kUnknown);
+  for (const auto& option : kLanguageMap) {
+    if (option.first == value.get()) {
+      preview = localization::Get(option.second);
+      break;
+    }
+  }
+
+  if (ImGui::BeginCombo(localization::Get(StringId::kConsoleLanguage),
+                        preview)) {
+    for (const auto& option : kLanguageMap) {
+      const bool selected = option.first == value.get();
+      if (ImGui::Selectable(localization::Get(option.second), selected)) {
+        value = option.first;
+      }
+      if (selected) {
+        ImGui::SetItemDefaultFocus();
+      }
+    }
+    ImGui::EndCombo();
+  }
+}
+
 void DrawResolutionCombobox(ImGuiIO& io,
                             const std::span<const kernel::Resolution> options,
                             xe::be<int32_t>& resolution,
                             xe::be<uint32_t>& video_flags) {
-  const char* preview = "Unknown";
+  const char* preview = localization::Get(StringId::kUnknown);
   for (const auto& opt : options) {
     if (opt.to_host() == resolution.get()) {
       preview = opt.name_.c_str();
@@ -99,7 +134,8 @@ void DrawResolutionCombobox(ImGuiIO& io,
     }
   }
 
-  if (ImGui::BeginCombo("Resolution", preview)) {
+  if (ImGui::BeginCombo(localization::Get(StringId::kConsoleResolution),
+                        preview)) {
     for (const auto& opt : options) {
       const bool selected = (opt.to_host() == resolution.get());
       if (ImGui::Selectable(opt.name_.c_str(), selected)) {
@@ -136,7 +172,8 @@ void DrawTimezoneCombobox(ImGuiIO& io, kernel::XConfigData* xdata) {
     index = std::distance(kernel::kTimezones.cbegin(), it);
   }
 
-  if (ImGui::BeginCombo("Timezone", kernel::kTimezones[index].name.c_str())) {
+  if (ImGui::BeginCombo(localization::Get(StringId::kConsoleTimezone),
+                        kernel::kTimezones[index].name.c_str())) {
     for (size_t i = 0; i < kernel::kTimezones.size(); ++i) {
       const bool is_selected =
           (kernel::kTimezones[i] == kernel::kTimezones[index]);
@@ -243,11 +280,15 @@ void GroupBox(const char* label, auto draw_fn) {
 }
 
 void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
+  const auto tr = [](StringId id) { return localization::Get(id); };
+
   ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(20, 20), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowBgAlpha(0.90f);
   bool dialog_open = true;
-  if (!ImGui::Begin("Console settings", &dialog_open,
+  const std::string title =
+      fmt::format("{}###ConsoleSettings", tr(StringId::kConsoleTitle));
+  if (!ImGui::Begin(title.c_str(), &dialog_open,
                     ImGuiWindowFlags_NoCollapse |
                         ImGuiWindowFlags_AlwaysAutoResize |
                         ImGuiWindowFlags_NoMove)) {
@@ -263,62 +304,67 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
   }
 
   if (ImGui::BeginTabBar("##Categories")) {
-    if (ImGui::BeginTabItem("User")) {
+    if (ImGui::BeginTabItem(tr(StringId::kConsoleUser))) {
       ImGui::BeginDisabled(emulator_window_.emulator()->is_title_open());
       ImGui::Dummy(ImVec2(2.f, 2.f));
 
-      GroupBox("Time", [&]() {
+      GroupBox(tr(StringId::kConsoleTime), [&]() {
         DrawTimezoneCombobox(io, &xconfig_data_);
 
-        FlagCheckbox("Disable Daylight-Saving Time",
+        FlagCheckbox(tr(StringId::kConsoleDisableDst),
                      xconfig_data_.user.retail_flags,
                      static_cast<uint32_t>(kernel::X_RETAIL_FLAGS::DSTOff));
 
         FlagCheckbox(
-            "24H Time", xconfig_data_.user.retail_flags,
+            tr(StringId::kConsole24Hour), xconfig_data_.user.retail_flags,
             static_cast<uint32_t>(kernel::X_RETAIL_FLAGS::TwentyFourHourClock));
       });
 
-      GroupBox("Locale", [&]() {
-        DrawCombobox(io, "Language", kLanguageMap, xconfig_data_.user.language);
-        DrawCombobox(io, "Country", kCountryMap, xconfig_data_.user.country);
+      GroupBox(tr(StringId::kConsoleLocale), [&]() {
+        DrawLanguageCombobox(io, xconfig_data_.user.language);
+        DrawCombobox(io, tr(StringId::kConsoleCountry), kCountryMap,
+                     xconfig_data_.user.country);
       });
 
-      GroupBox("Profile", [&]() {
-        DrawCombobox(io, "Default Profile", profiles_,
+      GroupBox(tr(StringId::kConsoleProfile), [&]() {
+        DrawCombobox(io, tr(StringId::kConsoleDefaultProfile), profiles_,
                      xconfig_data_.user.default_profile);
 
-        FlagCheckbox("Parental Control",
+        FlagCheckbox(tr(StringId::kConsoleParentalControl),
                      xconfig_data_.user.parental_control_flags,
                      static_cast<uint8_t>(kernel::X_PC_FLAGS::PCEnabled));
       });
 
       ImGui::Dummy(ImVec2(2.f, 2.f));
 
-      GroupBox("Retail Options", [&]() {
-        FlagCheckbox("Dashboard Initialized", xconfig_data_.user.retail_flags,
+      GroupBox(tr(StringId::kConsoleRetailOptions), [&]() {
+        FlagCheckbox(tr(StringId::kConsoleDashboardInitialized),
+                     xconfig_data_.user.retail_flags,
                      static_cast<uint32_t>(
                          kernel::X_RETAIL_FLAGS::DashboardInitialized));
         FlagCheckbox(
-            "IPTV Initialized", xconfig_data_.user.retail_flags,
+            tr(StringId::kConsoleIptvInitialized),
+            xconfig_data_.user.retail_flags,
             static_cast<uint32_t>(kernel::X_RETAIL_FLAGS::IPTVEnabled));
         FlagCheckbox(
-            "DVR Initialized", xconfig_data_.user.retail_flags,
+            tr(StringId::kConsoleDvrInitialized),
+            xconfig_data_.user.retail_flags,
             static_cast<uint32_t>(kernel::X_RETAIL_FLAGS::IPTVDVREnabled));
         FlagCheckbox(
-            "Kinect Initialized", xconfig_data_.user.retail_flags,
+            tr(StringId::kConsoleKinectInitialized),
+            xconfig_data_.user.retail_flags,
             static_cast<uint32_t>(kernel::X_RETAIL_FLAGS::KinectInitialized));
       });
       ImGui::EndDisabled();
       ImGui::EndTabItem();
     }
 
-    if (ImGui::BeginTabItem("System")) {
+    if (ImGui::BeginTabItem(tr(StringId::kConsoleSystem))) {
       ImGui::BeginDisabled(emulator_window_.emulator()->is_title_open());
       ImGui::Dummy(ImVec2(2.f, 2.f));
 
-      GroupBox("Video Options", [&]() {
-        DrawCombobox(io, "AV Region", kAVRegion,
+      GroupBox(tr(StringId::kConsoleVideoOptions), [&]() {
+        DrawCombobox(io, tr(StringId::kConsoleAvRegion), kAVRegion,
                      xconfig_data_.secured.av_region);
 
         DrawResolutionCombobox(
@@ -329,13 +375,14 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
             kernel::Resolution(xconfig_data_.user.av_pack_hdmi_sz.get());
 
         ImGui::BeginDisabled(res.is_widescreen());
-        FlagCheckbox("Widescreen", xconfig_data_.user.video_flags,
+        FlagCheckbox(tr(StringId::kConsoleWidescreen),
+                     xconfig_data_.user.video_flags,
                      static_cast<uint32_t>(kernel::X_VIDEO_FLAGS::Widescreen));
         ImGui::EndDisabled();
       });
 
-      GroupBox("Audio Options", [&]() {
-        FlagCheckbox("Mono", xconfig_data_.user.audio_flags,
+      GroupBox(tr(StringId::kConsoleAudioOptions), [&]() {
+        FlagCheckbox(tr(StringId::kConsoleMono), xconfig_data_.user.audio_flags,
                      static_cast<uint32_t>(kernel::X_AUDIO_FLAGS::AnalogMono));
 
         FlagCheckbox(
@@ -350,23 +397,23 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
                      static_cast<uint32_t>(
                          kernel::X_AUDIO_FLAGS::DolbyDigitalWithWMAPRO));
 
-        FlagCheckbox("Low Latency (unsupported)",
+        FlagCheckbox(tr(StringId::kConsoleLowLatencyUnsupported),
                      xconfig_data_.user.audio_flags,
                      static_cast<uint32_t>(kernel::X_AUDIO_FLAGS::LowLatency));
 
         float volume = xconfig_data_.user.music_volume.get();
-        if (ImGui::SliderFloat("Audio player volume", &volume, 0.0f, 1.0f,
-                               "%.2f")) {
+        if (ImGui::SliderFloat(tr(StringId::kConsoleAudioPlayerVolume), &volume,
+                               0.0f, 1.0f, "%.2f")) {
           xconfig_data_.user.music_volume = volume;
         }
       });
 
-      GroupBox("Network", [&]() {
+      GroupBox(tr(StringId::kConsoleNetwork), [&]() {
         if (ImGui::BeginTable("##NetworkTable", 2)) {
           ImGui::TableNextRow();
           ImGui::TableNextColumn();
 
-          ImGui::Text("MAC Address: ");
+          ImGui::TextUnformatted(tr(StringId::kConsoleMacAddress));
           ImGui::TableNextColumn();
 
           ByteArray("mac", xconfig_data_.secured.mac_address.data(),
@@ -375,7 +422,7 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
           ImGui::TableNextRow();
           ImGui::TableNextColumn();
 
-          ImGui::Text("Network ID: ");
+          ImGui::TextUnformatted(tr(StringId::kConsoleNetworkId));
           ImGui::TableNextColumn();
 
           ByteArray("netid", xconfig_data_.secured.online_network_id.data(),
@@ -396,21 +443,21 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
   ImGui::Separator();
 
   ImGui::BeginDisabled(emulator_window_.emulator()->is_title_open());
-  if (ImGui::Button("Save")) {
+  if (ImGui::Button(tr(StringId::kConsoleSave))) {
     SaveConfig();
     save_confirmation_disappearance_ = ImGui::GetTime() + 3.0;
   }
 
   if (save_confirmation_disappearance_ > ImGui::GetTime()) {
     ImGui::SameLine();
-    ImGui::Text("Settings Saved!");
+    ImGui::TextUnformatted(tr(StringId::kConsoleSaved));
   }
 
   ImGui::SameLine();
   ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
                        ImGui::GetContentRegionAvail().x - 55.f);
 
-  if (ImGui::Button("Reset", ImVec2(55.f, 0.0f))) {
+  if (ImGui::Button(tr(StringId::kConsoleReset), ImVec2(55.f, 0.0f))) {
     xconfig_->SetDefaults();
     xconfig_data_ = *xconfig_->GetXConfig();
     save_confirmation_disappearance_ = ImGui::GetTime() + 3.0;
