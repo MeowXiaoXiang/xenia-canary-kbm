@@ -38,6 +38,18 @@ class InputSystem {
   X_STATUS Setup();
 
   void AddDriver(std::unique_ptr<InputDriver> driver);
+  void SetHostUIVisible(bool visible);
+
+  template <typename Driver>
+  Driver* GetDriver() {
+    auto driver_lock = lock();
+    for (const auto& driver : drivers_) {
+      if (auto* typed_driver = dynamic_cast<Driver*>(driver.get())) {
+        return typed_driver;
+      }
+    }
+    return nullptr;
+  }
 
   X_RESULT GetCapabilities(uint32_t user_index, uint32_t flags,
                            X_INPUT_CAPABILITIES* out_caps);
