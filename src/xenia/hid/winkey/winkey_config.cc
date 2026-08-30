@@ -37,6 +37,8 @@ DECLARE_bool(raw_mouse);
 DECLARE_double(raw_mouse_sensitivity);
 DECLARE_double(raw_mouse_full_scale_velocity);
 DECLARE_double(raw_mouse_response_curve);
+DECLARE_bool(raw_mouse_deadzone_compensation);
+DECLARE_double(raw_mouse_minimum_response);
 DECLARE_bool(raw_mouse_invert_y);
 DECLARE_string(raw_mouse_capture_toggle_key);
 DECLARE_bool(raw_mouse_capture_on_start);
@@ -384,6 +386,9 @@ WinKeySettings GetSettingsFromCvars() {
   settings.raw_mouse_full_scale_velocity =
       cvars::raw_mouse_full_scale_velocity;
   settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
+  settings.raw_mouse_deadzone_compensation =
+      cvars::raw_mouse_deadzone_compensation;
+  settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
   settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
   settings.raw_mouse_capture_toggle_key =
       cvars::raw_mouse_capture_toggle_key;
@@ -408,6 +413,10 @@ void ApplySettingsToCvars(const WinKeySettings& settings) {
       std::clamp(settings.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
   cvars::raw_mouse_response_curve =
       std::clamp(settings.raw_mouse_response_curve, 0.1, 4.0);
+  cvars::raw_mouse_deadzone_compensation =
+      settings.raw_mouse_deadzone_compensation;
+  cvars::raw_mouse_minimum_response =
+      std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5);
   cvars::raw_mouse_invert_y = settings.raw_mouse_invert_y;
   cvars::raw_mouse_capture_toggle_key =
       settings.raw_mouse_capture_toggle_key;

@@ -46,6 +46,8 @@ struct WinKeySettings {
   double raw_mouse_sensitivity = 10.0;
   double raw_mouse_full_scale_velocity = 24000.0;
   double raw_mouse_response_curve = 1.2;
+  bool raw_mouse_deadzone_compensation = false;
+  double raw_mouse_minimum_response = 0.30;
   bool raw_mouse_invert_y = false;
   std::string raw_mouse_capture_toggle_key = "F8";
   bool raw_mouse_capture_on_start = false;

@@ -63,6 +63,18 @@ DEFINE_transient_double(
     "near the center, and values below 1 boost low speeds.",
     "HID.WinKey");
 
+DEFINE_transient_bool(
+    raw_mouse_deadzone_compensation, false,
+    "Raise non-zero Raw Input mouse output above a configurable minimum "
+    "response. Off preserves the original mouse-to-stick translation.",
+    "HID.WinKey");
+
+DEFINE_transient_double(
+    raw_mouse_minimum_response, 0.30,
+    "Minimum absolute right-stick response applied only while Raw Input mouse "
+    "movement is non-zero and deadzone compensation is enabled.",
+    "HID.WinKey");
+
 DEFINE_transient_bool(raw_mouse_invert_y, false,
                       "Invert Raw Input mouse Y movement.", "HID.WinKey");
 
@@ -271,6 +283,14 @@ static int16_t MouseDeltaToThumb(int64_t delta, double elapsed_seconds,
   normalized =
       std::copysign(std::pow(std::abs(normalized), response_curve), normalized);
 
+  if (settings.raw_mouse_deadzone_compensation) {
+    const double minimum_response =
+        std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5);
+    normalized = std::copysign(
+        minimum_response + (1.0 - minimum_response) * std::abs(normalized),
+        normalized);
+  }
+
   const long scaled =
       std::lround(normalized * std::numeric_limits<int16_t>::max());
   return static_cast<int16_t>(
@@ -447,6 +467,8 @@ void WinKeyInputDriver::ApplySettings(const WinKeySettings& source_settings) {
       settings.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
   settings.raw_mouse_response_curve =
       std::clamp(settings.raw_mouse_response_curve, 0.1, 4.0);
+  settings.raw_mouse_minimum_response =
+      std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5);
 
   {
     auto lock = settings_critical_region_.Acquire();
