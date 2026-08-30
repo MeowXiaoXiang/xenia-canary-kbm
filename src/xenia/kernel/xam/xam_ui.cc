@@ -887,7 +887,13 @@ bool xeDrawProfileContent(xe::ui::ImGuiDrawer* imgui_drawer,
                           const xe::ui::ImmediateTexture* profile_icon,
                           std::function<bool()> context_menu,
                           std::function<void()> on_profile_change,
-                          uint64_t* selected_xuid) {
+                          uint64_t* selected_xuid,
+                          const ProfileContentLabels* labels) {
+  static constexpr ProfileContentLabels kDefaultLabels;
+  if (!labels) {
+    labels = &kDefaultLabels;
+  }
+
   const ImVec2 start_position = ImGui::GetCursorPos();
 
   ImGui::BeginGroup();
@@ -910,13 +916,15 @@ bool xeDrawProfileContent(xe::ui::ImGuiDrawer* imgui_drawer,
     ImGui::BeginGroup();
     {
       ImGui::TextUnformatted(
-          fmt::format("User: {}\n", account->GetGamertagString()).c_str());
+          fmt::format(fmt::runtime(labels->user), account->GetGamertagString())
+              .c_str());
       ImGui::TextUnformatted(fmt::format("XUID: {:016X}  \n", xuid).c_str());
       if (user_index != XUserIndexAny) {
         ImGui::TextUnformatted(
-            fmt::format("Assigned to slot: {}\n", user_index + 1).c_str());
+            fmt::format(fmt::runtime(labels->assigned_to_slot), user_index + 1)
+                .c_str());
       } else {
-        ImGui::TextUnformatted(fmt::format("Profile is not signed in").c_str());
+        ImGui::TextUnformatted(labels->not_signed_in);
       }
     }
     ImGui::EndGroup();

@@ -9,6 +9,9 @@
 
 #include "xenia/app/emulator_window.h"
 
+#include <cmath>
+#include <cstdio>
+
 #include "third_party/imgui/imgui.h"
 #include "third_party/stb/stb_image_write.h"
 #if defined(__clang__)
@@ -22,6 +25,7 @@
 
 #include "xenia/app/console_settings_dialog.h"
 #include "xenia/app/content_list_dialog.h"
+#include "xenia/app/localization.h"
 #include "xenia/base/assert.h"
 #include "xenia/base/clock.h"
 #include "xenia/base/cvar.h"
@@ -211,6 +215,14 @@ std::unique_ptr<EmulatorWindow> EmulatorWindow::Create(
 }
 
 EmulatorWindow::~EmulatorWindow() {
+#if XE_PLATFORM_WIN32
+  if (auto* input_system = emulator_->input_system()) {
+    if (auto* driver =
+            input_system->GetDriver<hid::winkey::WinKeyInputDriver>()) {
+      driver->SetCaptureStateCallback({});
+    }
+  }
+#endif  // XE_PLATFORM_WIN32
   // Notify the ImGui drawer that the immediate drawer is being destroyed.
   ShutdownGraphicsSystemPresenterPainting();
 }
@@ -257,6 +269,39 @@ void EmulatorWindow::ShutdownGraphicsSystemPresenterPainting() {
 }
 
 void EmulatorWindow::OnEmulatorInitialized() {
+#if XE_PLATFORM_WIN32
+  if (auto* input_system = emulator_->input_system()) {
+    if (auto* driver =
+            input_system->GetDriver<hid::winkey::WinKeyInputDriver>()) {
+      driver->SetCaptureStateCallback(
+          [this](bool active, const std::string& toggle_binding) {
+            using localization::StringId;
+            const std::string display_binding =
+                hid::winkey::FormatWinKeyBinding(toggle_binding);
+            const std::string description =
+                active
+                    ? fmt::format(
+                          fmt::runtime(
+                              localization::Get(StringId::kMouseCaptureLocked)),
+                          display_binding.empty()
+                              ? localization::Get(StringId::kMouseCaptureHotkey)
+                              : display_binding)
+                    : localization::Get(StringId::kMouseCaptureReturned);
+            new xe::ui::HostNotificationWindow(
+                imgui_drawer(),
+                active ? localization::Get(StringId::kMouseCaptureEnabled)
+                       : localization::Get(StringId::kMouseCaptureReleased),
+                description, 0);
+          });
+
+      // With hid = "any", the WinKey backend is only known after input
+      // initialization. Rebuild the initially-created menu so its settings
+      // page is available only when auto-selection actually chose WinKey.
+      BuildMainMenu();
+    }
+  }
+#endif  // XE_PLATFORM_WIN32
+
   if (!emulator_->kernel_state()
            ->xam_state()
            ->profile_manager()
@@ -334,6 +379,9 @@ void EmulatorWindow::DisplayConfigGameConfigLoadCallback::PostGameConfigLoad() {
 }
 
 void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
+  using localization::StringId;
+  const auto tr = [](StringId id) { return localization::Get(id); };
+
   gpu::GraphicsSystem* graphics_system =
       emulator_window_.emulator_->graphics_system();
   if (!graphics_system) {
@@ -350,7 +398,9 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
   // through it.
   ImGui::SetNextWindowBgAlpha(0.6f);
   bool dialog_open = true;
-  if (!ImGui::Begin("Post-processing", &dialog_open,
+  const std::string title =
+      fmt::format("{}###PostProcessing", tr(StringId::kPostTitle));
+  if (!ImGui::Begin(title.c_str(), &dialog_open,
                     ImGuiWindowFlags_NoCollapse |
                         ImGuiWindowFlags_AlwaysAutoResize |
                         ImGuiWindowFlags_HorizontalScrollbar)) {
@@ -363,27 +413,25 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
   // have one frame with an empty window.
 
   // Prevent user confusion which has been reported multiple times.
-  ImGui::TextUnformatted("All effects can be used on GPUs of any brand.");
+  ImGui::TextUnformatted(tr(StringId::kPostAnyGpu));
   ImGui::Spacing();
 
   gpu::CommandProcessor* command_processor =
       graphics_system->command_processor();
   if (command_processor) {
     if (ImGui::TreeNodeEx(
-            "Anti-aliasing",
+            tr(StringId::kPostAntiAliasing),
             ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
       gpu::CommandProcessor::SwapPostEffect current_swap_post_effect =
           command_processor->GetDesiredSwapPostEffect();
       int new_swap_post_effect_index = int(current_swap_post_effect);
-      ImGui::RadioButton("None", &new_swap_post_effect_index,
+      ImGui::RadioButton(tr(StringId::kPostNone), &new_swap_post_effect_index,
                          int(gpu::CommandProcessor::SwapPostEffect::kNone));
+      ImGui::RadioButton(tr(StringId::kPostFxaaNormal),
+                         &new_swap_post_effect_index,
+                         int(gpu::CommandProcessor::SwapPostEffect::kFxaa));
       ImGui::RadioButton(
-          "NVIDIA Fast Approximate Anti-Aliasing (FXAA) [Normal Quality]",
-          &new_swap_post_effect_index,
-          int(gpu::CommandProcessor::SwapPostEffect::kFxaa));
-      ImGui::RadioButton(
-          "NVIDIA Fast Approximate Anti-Aliasing (FXAA) [Extreme Quality]",
-          &new_swap_post_effect_index,
+          tr(StringId::kPostFxaaExtreme), &new_swap_post_effect_index,
           int(gpu::CommandProcessor::SwapPostEffect::kFxaaExtreme));
       gpu::CommandProcessor::SwapPostEffect new_swap_post_effect =
           gpu::CommandProcessor::SwapPostEffect(new_swap_post_effect_index);
@@ -411,19 +459,18 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
         current_presenter_config;
 
     if (ImGui::TreeNodeEx(
-            "Resampling and sharpening",
+            tr(StringId::kPostResamplingSharpening),
             ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
       // Filtering effect.
       int new_effect_index = int(new_presenter_config.GetEffect());
       ImGui::RadioButton(
-          "None / Bilinear", &new_effect_index,
+          tr(StringId::kPostNoneBilinear), &new_effect_index,
           int(ui::Presenter::GuestOutputPaintConfig::Effect::kBilinear));
       ImGui::RadioButton(
-          "AMD FidelityFX Contrast Adaptive Sharpening (CAS)",
-          &new_effect_index,
+          tr(StringId::kPostCas), &new_effect_index,
           int(ui::Presenter::GuestOutputPaintConfig::Effect::kCas));
       ImGui::RadioButton(
-          "AMD FidelityFX Super Resolution 1.0 (FSR)", &new_effect_index,
+          tr(StringId::kPostFsr), &new_effect_index,
           int(ui::Presenter::GuestOutputPaintConfig::Effect::kFsr));
       new_presenter_config.SetEffect(
           ui::Presenter::GuestOutputPaintConfig::Effect(new_effect_index));
@@ -435,26 +482,13 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
       const char* effect_description = nullptr;
       switch (new_presenter_config.GetEffect()) {
         case ui::Presenter::GuestOutputPaintConfig::Effect::kBilinear:
-          effect_description =
-              "Simple bilinear filtering is done if resampling is needed.\n"
-              "Otherwise, only anti-aliasing is done if enabled, or displaying "
-              "as is.";
+          effect_description = tr(StringId::kPostBilinearDescription);
           break;
         case ui::Presenter::GuestOutputPaintConfig::Effect::kCas:
-          effect_description =
-              "Sharpening and resampling to up to 2x2 to improve the fidelity "
-              "of details.\n"
-              "For scaling by more than 2x2, bilinear stretching is done "
-              "afterwards.";
+          effect_description = tr(StringId::kPostCasDescription);
           break;
         case ui::Presenter::GuestOutputPaintConfig::Effect::kFsr:
-          effect_description =
-              "High-quality edge-preserving upscaling to arbitrary target "
-              "resolutions.\n"
-              "For scaling by more than 2x2, multiple upsampling passes are "
-              "done.\n"
-              "If not upscaling, Contrast Adaptive Sharpening (CAS) is used "
-              "instead.";
+          effect_description = tr(StringId::kPostFsrDescription);
           break;
       }
       if (effect_description) {
@@ -469,8 +503,7 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
           ImGui::Spacing();
         }
 
-        ImGui::TextUnformatted(
-            "FXAA is highly recommended when using CAS or FSR.");
+        ImGui::TextUnformatted(tr(StringId::kPostFxaaRecommended));
 
         ImGui::Spacing();
 
@@ -488,8 +521,7 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
             ui::Presenter::GuestOutputPaintConfig::Effect::kFsr) {
           float fsr_sharpness_reduction =
               new_presenter_config.GetFsrSharpnessReduction();
-          ImGui::TextUnformatted(
-              "FSR sharpness reduction when upscaling (lower is sharper):");
+          ImGui::TextUnformatted(tr(StringId::kPostFsrSharpnessReduction));
           const auto label = fmt::format(
               "{} %%", static_cast<int>(fsr_sharpness_reduction * 100));
           // Power 2.0 scaling as the reduction is in stops, used in exp2.
@@ -502,7 +534,9 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
           fsr_sharpness_reduction =
               .5f * fsr_sharpness_reduction * fsr_sharpness_reduction;
           ImGui::SameLine();
-          if (ImGui::Button("Reset##ResetFSRSharpnessReduction")) {
+          const std::string reset_fsr = fmt::format(
+              "{}##ResetFSRSharpnessReduction", tr(StringId::kPostReset));
+          if (ImGui::Button(reset_fsr.c_str())) {
             fsr_sharpness_reduction = ui::Presenter::GuestOutputPaintConfig ::
                 kFsrSharpnessReductionDefault;
           }
@@ -515,9 +549,8 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
         ImGui::TextUnformatted(
             new_presenter_config.GetEffect() ==
                     ui::Presenter::GuestOutputPaintConfig::Effect::kFsr
-                ? "CAS additional sharpness when not upscaling (higher is "
-                  "sharper):"
-                : "CAS additional sharpness (higher is sharper):");
+                ? tr(StringId::kPostCasSharpnessFsr)
+                : tr(StringId::kPostCasSharpness));
         const auto label = fmt::format(
             "{} %%", static_cast<int>(cas_additional_sharpness * 100));
         ImGui::SliderFloat(
@@ -526,7 +559,9 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
             ui::Presenter::GuestOutputPaintConfig::kCasAdditionalSharpnessMax,
             label.c_str(), ImGuiSliderFlags_NoInput);
         ImGui::SameLine();
-        if (ImGui::Button("Reset##ResetCASAdditionalSharpness")) {
+        const std::string reset_cas = fmt::format(
+            "{}##ResetCASAdditionalSharpness", tr(StringId::kPostReset));
+        if (ImGui::Button(reset_cas.c_str())) {
           cas_additional_sharpness = ui::Presenter::GuestOutputPaintConfig ::
               kCasAdditionalSharpnessDefault;
         }
@@ -544,12 +579,11 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
       ImGui::TreePop();
     }
 
-    if (ImGui::TreeNodeEx("Dithering", ImGuiTreeNodeFlags_Framed |
-                                           ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::TreeNodeEx(
+            tr(StringId::kPostDithering),
+            ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
       bool dither = current_presenter_config.GetDither();
-      ImGui::Checkbox(
-          "Dither the final output to 8bpc to make gradients smoother",
-          &dither);
+      ImGui::Checkbox(tr(StringId::kPostDither8bpc), &dither);
       new_presenter_config.SetDither(dither);
 
       ImGui::TreePop();
@@ -592,6 +626,421 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
     return;
   }
 }
+
+#if XE_PLATFORM_WIN32
+EmulatorWindow::WinKeyConfigDialog::WinKeyConfigDialog(
+    ui::ImGuiDrawer* imgui_drawer, EmulatorWindow& emulator_window)
+    : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
+  settings_ = hid::winkey::GetSettingsFromCvars();
+  original_settings_ = settings_;
+}
+
+EmulatorWindow::WinKeyConfigDialog::~WinKeyConfigDialog() {
+  CancelBindingCapture();
+  if (!committed_or_restored_) {
+    RestoreOriginal();
+  }
+}
+
+hid::winkey::WinKeyInputDriver* EmulatorWindow::WinKeyConfigDialog::GetDriver()
+    const {
+  hid::InputSystem* input_system = emulator_window_.emulator_->input_system();
+  return input_system
+             ? input_system->GetDriver<hid::winkey::WinKeyInputDriver>()
+             : nullptr;
+}
+
+void EmulatorWindow::WinKeyConfigDialog::ApplyDraft() {
+  committed_or_restored_ = false;
+  if (auto* driver = GetDriver()) {
+    driver->ApplySettings(settings_);
+  } else {
+    hid::winkey::ApplySettingsToCvars(settings_);
+  }
+}
+
+void EmulatorWindow::WinKeyConfigDialog::RestoreOriginal() {
+  settings_ = original_settings_;
+  if (auto* driver = GetDriver()) {
+    driver->ApplySettings(settings_);
+  } else {
+    hid::winkey::ApplySettingsToCvars(settings_);
+  }
+  committed_or_restored_ = true;
+}
+
+void EmulatorWindow::WinKeyConfigDialog::StartBindingCapture(
+    std::string* target, bool append) {
+  binding_capture_target_ = target;
+  binding_capture_append_ = append;
+  if (auto* driver = GetDriver()) {
+    driver->BeginBindingCapture();
+  }
+}
+
+void EmulatorWindow::WinKeyConfigDialog::CancelBindingCapture() {
+  if (auto* driver = GetDriver()) {
+    driver->CancelBindingCapture();
+  }
+  binding_capture_target_ = nullptr;
+  binding_capture_append_ = false;
+}
+
+bool EmulatorWindow::WinKeyConfigDialog::HandleBindingCaptureResult() {
+  auto* driver = GetDriver();
+  if (!driver || !binding_capture_target_) {
+    return false;
+  }
+  const auto result = driver->ConsumeBindingCaptureResult();
+  using Status = hid::winkey::WinKeyInputDriver::BindingCaptureStatus;
+  switch (result.status) {
+    case Status::kCaptured:
+      if (binding_capture_append_ && !binding_capture_target_->empty()) {
+        *binding_capture_target_ += " " + result.value;
+      } else {
+        *binding_capture_target_ = result.value;
+      }
+      binding_capture_target_ = nullptr;
+      binding_capture_append_ = false;
+      return true;
+    case Status::kCleared:
+      binding_capture_target_->clear();
+      binding_capture_target_ = nullptr;
+      binding_capture_append_ = false;
+      return true;
+    case Status::kCancelled:
+      binding_capture_target_ = nullptr;
+      binding_capture_append_ = false;
+      return false;
+    default:
+      return false;
+  }
+}
+
+void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
+  using localization::StringId;
+  const auto tr = [](StringId id) { return localization::Get(id); };
+
+  ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(560, 660), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowBgAlpha(0.94f);
+
+  bool dialog_open = true;
+  const std::string title =
+      fmt::format("{}###WinKeySettings", tr(StringId::kWinKeyTitle));
+  if (!ImGui::Begin(title.c_str(), &dialog_open, ImGuiWindowFlags_NoCollapse)) {
+    ImGui::End();
+    return;
+  }
+
+  if (!GetDriver()) {
+    ImGui::TextWrapped("%s", tr(StringId::kWinKeyBackendInactive));
+    ImGui::Spacing();
+  }
+
+  bool changed = HandleBindingCaptureResult();
+  auto draw_binding = [&](const char* id, std::string& binding,
+                          bool allow_alternatives = true) {
+    ImGui::PushID(id);
+    const bool capturing = binding_capture_target_ == &binding;
+    const std::string label = capturing
+                                  ? tr(StringId::kWinKeyPressBinding)
+                                  : hid::winkey::FormatWinKeyBinding(binding);
+    const float action_width = allow_alternatives ? 52.0f : 28.0f;
+    ImGui::BeginDisabled(GetDriver() == nullptr);
+    if (ImGui::Button(label.c_str(),
+                      ImVec2(std::max(80.0f, ImGui::GetContentRegionAvail().x -
+                                                 action_width),
+                             0.0f))) {
+      StartBindingCapture(&binding, false);
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("%s", tr(StringId::kWinKeyBindingTooltip));
+    }
+    if (allow_alternatives) {
+      ImGui::SameLine();
+      if (ImGui::SmallButton("+")) {
+        StartBindingCapture(&binding, true);
+      }
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", tr(StringId::kWinKeyAddAlternativeBinding));
+      }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("x")) {
+      if (capturing) {
+        CancelBindingCapture();
+      }
+      binding.clear();
+      changed = true;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("%s", tr(StringId::kWinKeyClearBinding));
+    }
+    ImGui::PopID();
+  };
+  if (ImGui::TreeNodeEx(
+          tr(StringId::kWinKeyKeyboard),
+          ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
+    const char* keyboard_mode_names[] = {tr(StringId::kWinKeyModeDisabled),
+                                         tr(StringId::kWinKeyModeController),
+                                         tr(StringId::kWinKeyModePassthrough)};
+    int keyboard_mode = std::clamp(settings_.keyboard_mode, 0, 2);
+    if (ImGui::BeginCombo(tr(StringId::kWinKeyKeyboardMode),
+                          keyboard_mode_names[keyboard_mode])) {
+      for (int i = 0; i < 3; ++i) {
+        if (ImGui::Selectable(keyboard_mode_names[i], keyboard_mode == i)) {
+          settings_.keyboard_mode = i;
+          changed = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+
+    if (settings_.keyboard_mode == int(hid::winkey::KeyboardMode::Enabled)) {
+      int controller_slot = std::clamp(settings_.keyboard_user_index, 0, 3);
+      const char* controller_slot_names[] = {
+          tr(StringId::kWinKeyPlayer1), tr(StringId::kWinKeyPlayer2),
+          tr(StringId::kWinKeyPlayer3), tr(StringId::kWinKeyPlayer4)};
+      if (ImGui::BeginCombo(tr(StringId::kWinKeyControllerSlot),
+                            controller_slot_names[controller_slot])) {
+        for (int i = 0; i < 4; ++i) {
+          if (ImGui::Selectable(controller_slot_names[i],
+                                controller_slot == i)) {
+            settings_.keyboard_user_index = i;
+            changed = true;
+          }
+        }
+        ImGui::EndCombo();
+      }
+
+      ImGui::TextWrapped("%s", tr(StringId::kWinKeyBindingHelp));
+      if (ImGui::BeginTable("WinKeyBindings", 2,
+                            ImGuiTableFlags_BordersInnerV |
+                                ImGuiTableFlags_RowBg |
+                                ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn(tr(StringId::kWinKeyXboxInput),
+                                ImGuiTableColumnFlags_WidthFixed, 165.0f);
+        ImGui::TableSetupColumn(tr(StringId::kWinKeyKeyboardMouse));
+        ImGui::TableHeadersRow();
+#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+                              cvar_default_value)             \
+  ImGui::TableNextRow();                                      \
+  ImGui::TableSetColumnIndex(0);                              \
+  ImGui::TextUnformatted(description);                        \
+  ImGui::TableSetColumnIndex(1);                              \
+  draw_binding(#cvar_name, settings_.cvar_name);
+#include "xenia/hid/winkey/winkey_binding_table.inc"
+#undef XE_HID_WINKEY_BINDING
+        ImGui::EndTable();
+      }
+    } else if (settings_.keyboard_mode ==
+               int(hid::winkey::KeyboardMode::Passthrough)) {
+      ImGui::TextWrapped("%s", tr(StringId::kWinKeyPassthroughHelp));
+    }
+    ImGui::TreePop();
+  }
+
+  if (ImGui::TreeNodeEx(
+          tr(StringId::kWinKeyMouse),
+          ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
+    const bool mouse_controls_available =
+        settings_.keyboard_mode == int(hid::winkey::KeyboardMode::Enabled);
+    ImGui::BeginDisabled(!mouse_controls_available);
+    if (ImGui::Checkbox(tr(StringId::kWinKeyEnableRawMouse),
+                        &settings_.raw_mouse)) {
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    if (!mouse_controls_available) {
+      ImGui::TextWrapped("%s", tr(StringId::kWinKeyRawMouseRequiresController));
+    }
+
+    ImGui::BeginDisabled(!mouse_controls_available);
+    ImGui::Spacing();
+    ImGui::TextUnformatted(tr(StringId::kWinKeySensitivity));
+    float sensitivity = float(settings_.raw_mouse_sensitivity);
+    ImGui::SetNextItemWidth(300.0f);
+    if (ImGui::SliderFloat(
+            "##MouseSensitivitySlider", &sensitivity, 0.01f, 256.0f, "%.3f x",
+            ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
+      settings_.raw_mouse_sensitivity = sensitivity;
+      changed = true;
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    if (ImGui::InputDouble("##MouseSensitivityInput",
+                           &settings_.raw_mouse_sensitivity, 0.0, 0.0, "%.3f",
+                           ImGuiInputTextFlags_CharsDecimal)) {
+      settings_.raw_mouse_sensitivity =
+          std::clamp(settings_.raw_mouse_sensitivity, 0.01, 256.0);
+      changed = true;
+    }
+    ImGui::SameLine();
+    const std::string reset_sensitivity =
+        fmt::format("{}##MouseSensitivity", tr(StringId::kPostReset));
+    if (ImGui::Button(reset_sensitivity.c_str())) {
+      settings_.raw_mouse_sensitivity = 10.0;
+      changed = true;
+    }
+    ImGui::TextWrapped("%s", tr(StringId::kWinKeySensitivityGuide));
+
+    if (ImGui::Checkbox(tr(StringId::kWinKeyCompensateGameDeadzone),
+                        &settings_.raw_mouse_deadzone_compensation)) {
+      changed = true;
+    }
+    if (settings_.raw_mouse_deadzone_compensation) {
+      ImGui::TextUnformatted(tr(StringId::kWinKeyMinimumResponse));
+      float minimum_response = float(settings_.raw_mouse_minimum_response);
+      ImGui::SetNextItemWidth(300.0f);
+      if (ImGui::SliderFloat("##MinimumResponse", &minimum_response, 0.0f, 0.5f,
+                             "%.3f", ImGuiSliderFlags_AlwaysClamp)) {
+        settings_.raw_mouse_minimum_response = minimum_response;
+        changed = true;
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(90.0f);
+      if (ImGui::InputDouble("##MinimumResponseInput",
+                             &settings_.raw_mouse_minimum_response, 0.0, 0.0,
+                             "%.3f", ImGuiInputTextFlags_CharsDecimal)) {
+        settings_.raw_mouse_minimum_response =
+            std::clamp(settings_.raw_mouse_minimum_response, 0.0, 0.5);
+        changed = true;
+      }
+      ImGui::TextDisabled("%s", tr(StringId::kWinKeyMinimumResponseHelp));
+    }
+
+    if (ImGui::Checkbox(tr(StringId::kWinKeyInvertVertical),
+                        &settings_.raw_mouse_invert_y)) {
+      changed = true;
+    }
+    if (ImGui::Checkbox(tr(StringId::kWinKeyCaptureOnStart),
+                        &settings_.raw_mouse_capture_on_start)) {
+      changed = true;
+    }
+    ImGui::TextUnformatted(tr(StringId::kWinKeyCaptureToggle));
+    draw_binding("CaptureToggle", settings_.raw_mouse_capture_toggle_key,
+                 false);
+
+    if (ImGui::TreeNodeEx(tr(StringId::kWinKeyFineTuning),
+                          ImGuiTreeNodeFlags_Framed)) {
+      ImGui::TextUnformatted(tr(StringId::kWinKeyAimCurve));
+      float curve = float(settings_.raw_mouse_response_curve);
+      ImGui::SetNextItemWidth(300.0f);
+      if (ImGui::SliderFloat(
+              "##MouseCurve", &curve, 0.1f, 4.0f, "%.3f",
+              ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
+        settings_.raw_mouse_response_curve = curve;
+        changed = true;
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(90.0f);
+      if (ImGui::InputDouble("##MouseCurveInput",
+                             &settings_.raw_mouse_response_curve, 0.0, 0.0,
+                             "%.3f", ImGuiInputTextFlags_CharsDecimal)) {
+        settings_.raw_mouse_response_curve =
+            std::clamp(settings_.raw_mouse_response_curve, 0.1, 4.0);
+        changed = true;
+      }
+      ImGui::TextDisabled("%s", tr(StringId::kWinKeyAimCurveHelp));
+
+      ImGui::TextUnformatted(tr(StringId::kWinKeyFullStickThreshold));
+      ImGui::SetNextItemWidth(220.0f);
+      if (ImGui::InputDouble(
+              "##FullScaleVelocity", &settings_.raw_mouse_full_scale_velocity,
+              100.0, 1000.0, "%.0f", ImGuiInputTextFlags_CharsDecimal)) {
+        settings_.raw_mouse_full_scale_velocity =
+            std::clamp(settings_.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
+        changed = true;
+      }
+      ImGui::TextDisabled(tr(StringId::kWinKeyFullStickHelp),
+                          settings_.raw_mouse_sensitivity,
+                          settings_.raw_mouse_full_scale_velocity /
+                              std::max(settings_.raw_mouse_sensitivity, 0.01));
+      ImGui::TreePop();
+    }
+    ImGui::EndDisabled();
+
+    if (ImGui::TreeNodeEx(tr(StringId::kWinKeyDiagnostics),
+                          ImGuiTreeNodeFlags_Framed)) {
+      if (auto* driver = GetDriver()) {
+        const auto diagnostics = driver->GetDiagnostics();
+        const float stick_output =
+            std::max(std::abs(float(diagnostics.thumb_x)) / 32767.0f,
+                     std::abs(float(diagnostics.thumb_y)) / 32767.0f);
+        const std::string stick_label = fmt::format(
+            fmt::runtime(tr(StringId::kWinKeyLastStickOutput)),
+            stick_output * 100.0f,
+            stick_output >= 0.999f ? tr(StringId::kWinKeyMaximum) : "");
+        ImGui::ProgressBar(stick_output, ImVec2(-1.0f, 0.0f),
+                           stick_label.c_str());
+        ImGui::TextWrapped(tr(StringId::kWinKeyRawSpeed),
+                           diagnostics.raw_counts_per_second_x,
+                           diagnostics.raw_counts_per_second_y,
+                           diagnostics.thumb_x, diagnostics.thumb_y);
+        ImGui::Text(tr(StringId::kWinKeyRawInputCapture),
+                    diagnostics.raw_mouse_registered
+                        ? tr(StringId::kWinKeyReady)
+                        : tr(StringId::kWinKeyOff),
+                    diagnostics.capture_active ? tr(StringId::kWinKeyActive)
+                                               : tr(StringId::kWinKeyReleased));
+        ImGui::TextDisabled("%s", tr(StringId::kWinKeyInputPaused));
+      } else {
+        ImGui::TextDisabled("%s", tr(StringId::kWinKeyDiagnosticsUnavailable));
+      }
+      ImGui::TreePop();
+    }
+    ImGui::TreePop();
+  }
+
+  if (changed) {
+    ApplyDraft();
+  }
+
+  ImGui::Separator();
+  if (ImGui::Button(tr(StringId::kWinKeySave))) {
+    CancelBindingCapture();
+    ApplyDraft();
+    if (hid::winkey::SaveConfig()) {
+      original_settings_ = settings_;
+      committed_or_restored_ = true;
+      save_failed_ = false;
+    } else {
+      save_failed_ = true;
+    }
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(tr(StringId::kWinKeyCancel))) {
+    CancelBindingCapture();
+    RestoreOriginal();
+    Close();
+    ImGui::End();
+    emulator_window_.ToggleWinKeyConfigDialog();
+    return;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(tr(StringId::kWinKeyResetAll))) {
+    CancelBindingCapture();
+    settings_ = hid::winkey::WinKeySettings();
+    ApplyDraft();
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s", tr(StringId::kWinKeySettingsFile));
+  if (save_failed_) {
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
+                       tr(StringId::kWinKeySaveFailed));
+  }
+
+  ImGui::End();
+  if (!dialog_open) {
+    CancelBindingCapture();
+    RestoreOriginal();
+    Close();
+    emulator_window_.ToggleWinKeyConfigDialog();
+  }
+}
+#endif  // XE_PLATFORM_WIN32
 
 void EmulatorWindow::ContentInstallDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
@@ -745,52 +1194,56 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
   }
 }
 
-bool EmulatorWindow::Initialize() {
-  window_->AddListener(&window_listener_);
-  window_->AddInputListener(&window_listener_, kZOrderEmulatorWindowInput);
+void EmulatorWindow::BuildMainMenu() {
+  using localization::StringId;
+  const auto tr = [](StringId id) { return localization::Get(id); };
 
   // Main menu.
   // FIXME: This code is really messy.
   auto main_menu = MenuItem::Create(MenuItem::Type::kNormal);
-  auto file_menu = MenuItem::Create(MenuItem::Type::kPopup, "&File");
-  auto recent_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Open Recent");
-  auto zar_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Zar Package");
+  auto file_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuFile));
+  auto recent_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuOpenRecent));
+  auto zar_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuZarPackage));
   FillRecentlyLaunchedTitlesMenu(recent_menu.get());
   {
     file_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "&Open...", "Ctrl+O",
-                         std::bind(&EmulatorWindow::FileOpen, this)));
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kMenuOpen),
+                         "Ctrl+O", std::bind(&EmulatorWindow::FileOpen, this)));
     file_menu->AddChild(std::move(recent_menu));
     file_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     zar_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Create",
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kMenuCreate),
                          std::bind(&EmulatorWindow::CreateZarchive, this)));
     zar_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Extract",
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kMenuExtract),
                          std::bind(&EmulatorWindow::ExtractZarchive, this)));
     file_menu->AddChild(std::move(zar_menu));
 #ifdef DEBUG
     file_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     file_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Close",
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kMenuClose),
                          std::bind(&EmulatorWindow::FileClose, this)));
 #endif  // #ifdef DEBUG
     file_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     file_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Show content directory...",
+        MenuItem::Type::kString, tr(StringId::kMenuShowContentDirectory),
         std::bind(&EmulatorWindow::ShowContentDirectory, this)));
     file_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     file_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "E&xit", "Alt+F4",
-                         [this]() { window_->RequestClose(); }));
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kMenuExit),
+                         "Alt+F4", [this]() { window_->RequestClose(); }));
   }
   main_menu->AddChild(std::move(file_menu));
 
   // Profile Menu
-  auto profile_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Profile");
+  auto profile_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuProfile));
   {
     profile_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Show Profile Menu", "",
+        MenuItem::Type::kString, tr(StringId::kMenuShowProfile), "",
         std::bind(&EmulatorWindow::ToggleProfilesConfigDialog, this)));
   }
   main_menu->AddChild(std::move(profile_menu));
@@ -811,132 +1264,189 @@ bool EmulatorWindow::Initialize() {
   main_menu->AddChild(std::move(content_menu));
 
   // CPU menu.
-  auto cpu_menu = MenuItem::Create(MenuItem::Type::kPopup, "&CPU");
+  auto cpu_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuCpu));
   {
     cpu_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Reset Time Scalar", "Numpad *",
+        MenuItem::Type::kString, tr(StringId::kMenuResetTimeScalar), "Numpad *",
         std::bind(&EmulatorWindow::CpuTimeScalarReset, this)));
     cpu_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Time Scalar /= 2", "Numpad -",
+        MenuItem::Type::kString, tr(StringId::kMenuHalfTimeScalar), "Numpad -",
         std::bind(&EmulatorWindow::CpuTimeScalarSetHalf, this)));
     cpu_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Time Scalar *= 2", "Numpad +",
-        std::bind(&EmulatorWindow::CpuTimeScalarSetDouble, this)));
+        MenuItem::Type::kString, tr(StringId::kMenuDoubleTimeScalar),
+        "Numpad +", std::bind(&EmulatorWindow::CpuTimeScalarSetDouble, this)));
   }
 #if XE_OPTION_PROFILING
   cpu_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
   {
     cpu_menu->AddChild(MenuItem::Create(MenuItem::Type::kString,
-                                        "Toggle Profiler &Display", "F3",
+                                        tr(StringId::kMenuToggleProfiler), "F3",
                                         []() { Profiler::ToggleDisplay(); }));
     cpu_menu->AddChild(MenuItem::Create(MenuItem::Type::kString,
-                                        "&Pause/Resume Profiler", "`",
+                                        tr(StringId::kMenuPauseProfiler), "`",
                                         []() { Profiler::TogglePause(); }));
   }
 #endif
   cpu_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
   {
     cpu_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Break and Show Guest Debugger",
+        MenuItem::Type::kString, tr(StringId::kMenuGuestDebugger),
         "Pause/Break", std::bind(&EmulatorWindow::CpuBreakIntoDebugger, this)));
     cpu_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Break into Host Debugger",
+        MenuItem::Type::kString, tr(StringId::kMenuHostDebugger),
         "Ctrl+Pause/Break",
         std::bind(&EmulatorWindow::CpuBreakIntoHostDebugger, this)));
   }
   main_menu->AddChild(std::move(cpu_menu));
 
   // GPU menu.
-  auto gpu_menu = MenuItem::Create(MenuItem::Type::kPopup, "&GPU");
+  auto gpu_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuGpu));
   {
-    gpu_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "&Trace Frame", "F4",
-                         std::bind(&EmulatorWindow::GpuTraceFrame, this)));
+    gpu_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuTraceFrame), "F4",
+        std::bind(&EmulatorWindow::GpuTraceFrame, this)));
   }
   gpu_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
   {
-    gpu_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "&Clear Runtime Caches", "F5",
-                         std::bind(&EmulatorWindow::GpuClearCaches, this)));
+    gpu_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuClearRuntimeCaches), "F5",
+        std::bind(&EmulatorWindow::GpuClearCaches, this)));
   }
   main_menu->AddChild(std::move(gpu_menu));
 
   // Display menu.
-  auto display_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Display");
+  auto display_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuDisplay));
   {
     display_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Post-processing settings", "F6",
+        MenuItem::Type::kString, tr(StringId::kMenuPostProcessing), "F6",
         std::bind(&EmulatorWindow::ToggleDisplayConfigDialog, this)));
   }
   display_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
   {
-    display_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "&Fullscreen", "F11",
-                         std::bind(&EmulatorWindow::ToggleFullscreen, this)));
-    display_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "&Take Screenshot", "F12",
-                         std::bind(&EmulatorWindow::TakeScreenshot, this)));
+    display_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuFullscreen), "F11",
+        std::bind(&EmulatorWindow::ToggleFullscreen, this)));
+    display_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuScreenshot), "F12",
+        std::bind(&EmulatorWindow::TakeScreenshot, this)));
   }
   main_menu->AddChild(std::move(display_menu));
 
+#if XE_PLATFORM_WIN32
+  bool show_winkey_menu = cvars::hid == "winkey" || hid::winkey::ConfigExists();
+  if (!show_winkey_menu) {
+    if (auto* input_system = emulator_->input_system()) {
+      show_winkey_menu =
+          input_system->GetDriver<hid::winkey::WinKeyInputDriver>() != nullptr;
+    }
+  }
+  if (show_winkey_menu) {
+    auto winkey_menu =
+        MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuWinKey));
+    winkey_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuWinKeySettings), "",
+        std::bind(&EmulatorWindow::ToggleWinKeyConfigDialog, this)));
+    main_menu->AddChild(std::move(winkey_menu));
+  }
+#endif  // XE_PLATFORM_WIN32
+
   // HID menu.
-  auto hid_menu = MenuItem::Create(MenuItem::Type::kPopup, "&HID");
+  auto hid_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuHid));
   {
     hid_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Toggle controller vibration", "",
+        MenuItem::Type::kString, tr(StringId::kMenuControllerVibration), "",
         std::bind(&EmulatorWindow::ToggleControllerVibration, this)));
     hid_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Display controller hotkeys", "",
+        MenuItem::Type::kString, tr(StringId::kMenuControllerHotkeys), "",
         std::bind(&EmulatorWindow::DisplayHotKeysConfig, this)));
   }
   main_menu->AddChild(std::move(hid_menu));
 
   // XMP menu
-  auto xmp_menu = MenuItem::Create(MenuItem::Type::kPopup, "&XMP");
+  auto xmp_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuXmp));
   {
     xmp_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Show XMP Menu", "",
+        MenuItem::Type::kString, tr(StringId::kMenuShowXmp), "",
         std::bind(&EmulatorWindow::ToggleXMPConfigDialog, this)));
   }
   main_menu->AddChild(std::move(xmp_menu));
 
   // Console menu
-  auto console_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Console");
+  auto console_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuConsole));
   {
     console_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&Open console settings", "",
+        MenuItem::Type::kString, tr(StringId::kMenuConsoleSettings), "",
         std::bind(&EmulatorWindow::ToggleConsoleSettingsDialog, this)));
   }
   main_menu->AddChild(std::move(console_menu));
 
+  // Host UI language is separate from the emulated console language.
+  auto ui_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuUi));
+  auto language_menu = MenuItem::Create(MenuItem::Type::kPopup,
+                                        tr(StringId::kMenuInterfaceLanguage));
+  const bool traditional_chinese = localization::IsTraditionalChinese();
+  language_menu->AddChild(MenuItem::Create(
+      MenuItem::Type::kString,
+      tr(traditional_chinese ? StringId::kLanguageEnglish
+                             : StringId::kLanguageEnglishActive),
+      [this]() {
+        localization::SetLanguage(localization::Language::kEnglish);
+        BuildMainMenu();
+      }));
+  language_menu->AddChild(MenuItem::Create(
+      MenuItem::Type::kString,
+      tr(traditional_chinese ? StringId::kLanguageTraditionalChineseActive
+                             : StringId::kLanguageTraditionalChinese),
+      [this]() {
+        localization::SetLanguage(localization::Language::kTraditionalChinese);
+        BuildMainMenu();
+      }));
+  ui_menu->AddChild(std::move(language_menu));
+  main_menu->AddChild(std::move(ui_menu));
+
   // Help menu.
-  auto help_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Help");
+  auto help_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuHelp));
   {
     help_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "FA&Q...", "F1",
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kMenuFaq), "F1",
                          std::bind(&EmulatorWindow::ShowFAQ, this)));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
-    help_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Game &compatibility...",
-                         std::bind(&EmulatorWindow::ShowCompatibility, this)));
+    help_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuCompatibility),
+        std::bind(&EmulatorWindow::ShowCompatibility, this)));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     help_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Build commit on GitHub...", "F2",
+        MenuItem::Type::kString, tr(StringId::kMenuBuildCommit), "F2",
         std::bind(&EmulatorWindow::ShowBuildCommit, this)));
     help_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Recent changes on GitHub...", []() {
+        MenuItem::Type::kString, tr(StringId::kMenuRecentChanges), []() {
           LaunchWebBrowser(
               "https://github.com/xenia-canary/xenia-canary/"
               "compare/" XE_BUILD_COMMIT "..." XE_BUILD_BRANCH);
         }));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     help_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&About...",
+        MenuItem::Type::kString, tr(StringId::kMenuAbout),
         []() { LaunchWebBrowser("https://xenia.jp/about/"); }));
   }
   main_menu->AddChild(std::move(help_menu));
 
   window_->SetMainMenu(std::move(main_menu));
+}
+
+bool EmulatorWindow::Initialize() {
+  window_->AddListener(&window_listener_);
+  window_->AddInputListener(&window_listener_, kZOrderEmulatorWindowInput);
+
+  BuildMainMenu();
 
   window_->SetMainMenuEnabled(false);
 
@@ -1080,14 +1590,6 @@ void EmulatorWindow::OnKeyDown(ui::KeyEvent& e) {
     } break;
     case ui::VirtualKey::kF12: {
       TakeScreenshot();
-    } break;
-
-    case ui::VirtualKey::kEscape: {
-      // Allow users to escape fullscreen (but not enter it).
-      if (!window_->IsFullscreen()) {
-        return;
-      }
-      SetFullscreen(false);
     } break;
 
 #ifdef DEBUG
@@ -1641,6 +2143,14 @@ void EmulatorWindow::SetFullscreen(bool fullscreen_) {
   window_->SetCursorVisibility(fullscreen_
                                    ? ui::Window::CursorVisibility::kAutoHidden
                                    : ui::Window::CursorVisibility::kVisible);
+#if XE_PLATFORM_WIN32
+  if (auto* input_system = emulator_->input_system()) {
+    if (auto* driver =
+            input_system->GetDriver<hid::winkey::WinKeyInputDriver>()) {
+      driver->RefreshRawMouseCapture();
+    }
+  }
+#endif  // XE_PLATFORM_WIN32
 }
 
 void EmulatorWindow::ToggleFullscreen() {
@@ -1659,6 +2169,19 @@ void EmulatorWindow::ToggleDisplayConfigDialog() {
     }
   }
 }
+
+#if XE_PLATFORM_WIN32
+void EmulatorWindow::ToggleWinKeyConfigDialog() {
+  if (!winkey_config_dialog_) {
+    winkey_config_dialog_ =
+        std::make_unique<WinKeyConfigDialog>(imgui_drawer_.get(), *this);
+  } else if (winkey_config_dialog_->IsClosing()) {
+    winkey_config_dialog_.release();
+  } else {
+    winkey_config_dialog_.reset();
+  }
+}
+#endif  // XE_PLATFORM_WIN32
 
 void EmulatorWindow::ToggleProfilesConfigDialog() {
   if (!profile_config_dialog_) {
@@ -1861,66 +2384,64 @@ const std::map<int, EmulatorWindow::ControllerHotKey> controller_hotkey_map = {
     {X_INPUT_GAMEPAD_A | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ReadbackResolve,
-         "A + Guide = Toggle Readback Resolve", true)},
+         localization::StringId::kHotkeyAReadbackResolve, true)},
     {X_INPUT_GAMEPAD_B | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ToggleLogging,
-         "B + Guide = Toggle between loglevel set in config and the 'Disabled' "
-         "loglevel.",
-         true, true)},
+         localization::StringId::kHotkeyBToggleLogging, true, true)},
     {X_INPUT_GAMEPAD_Y | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ToggleFullscreen,
-         "Y + Guide = Toggle Fullscreen", true)},
+         localization::StringId::kHotkeyYToggleFullscreenGuide, true)},
     {X_INPUT_GAMEPAD_X | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ClearMemoryPageState,
-         "X + Guide = Toggle Clear Memory Page State", true)},
+         localization::StringId::kHotkeyXClearMemoryPageState, true)},
 
     {X_INPUT_GAMEPAD_RIGHT_SHOULDER | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ClearGPUCache,
-         "Right Shoulder + Guide = Clear GPU Cache", true)},
+         localization::StringId::kHotkeyRightShoulderClearGpuCache, true)},
     {X_INPUT_GAMEPAD_LEFT_SHOULDER | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ToggleControllerVibration,
-         "Left Shoulder + Guide = Toggle Controller Vibration", true)},
+         localization::StringId::kHotkeyLeftShoulderToggleVibration, true)},
 
     // CPU Time Scalar with no rumble feedback
     {X_INPUT_GAMEPAD_DPAD_DOWN | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::CpuTimeScalarSetHalf,
-         "D-PAD Down + Guide = Half CPU Scalar")},
+         localization::StringId::kHotkeyDpadDownHalfCpuScalar)},
     {X_INPUT_GAMEPAD_DPAD_UP | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::CpuTimeScalarSetDouble,
-         "D-PAD Up + Guide = Double CPU Scalar")},
+         localization::StringId::kHotkeyDpadUpDoubleCpuScalar)},
     {X_INPUT_GAMEPAD_DPAD_RIGHT | X_INPUT_GAMEPAD_GUIDE,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::CpuTimeScalarReset,
-         "D-PAD Right + Guide = Reset CPU Scalar")},
+         localization::StringId::kHotkeyDpadRightResetCpuScalar)},
 
     // non-pass through hotkeys
-    {X_INPUT_GAMEPAD_Y, EmulatorWindow::ControllerHotKey(
-                            EmulatorWindow::ButtonFunctions::ToggleFullscreen,
-                            "Y = Toggle Fullscreen", true, false)},
-    {X_INPUT_GAMEPAD_START, EmulatorWindow::ControllerHotKey(
-                                EmulatorWindow::ButtonFunctions::RunTitle,
-                                "Start = Run Selected Title", false, false)},
+    {X_INPUT_GAMEPAD_Y,
+     EmulatorWindow::ControllerHotKey(
+         EmulatorWindow::ButtonFunctions::ToggleFullscreen,
+         localization::StringId::kHotkeyYToggleFullscreen, true, false)},
+    {X_INPUT_GAMEPAD_START,
+     EmulatorWindow::ControllerHotKey(
+         EmulatorWindow::ButtonFunctions::RunTitle,
+         localization::StringId::kHotkeyStartRunSelectedTitle, false, false)},
     {X_INPUT_GAMEPAD_BACK | X_INPUT_GAMEPAD_START,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::ToggleLogging,
-         "Back + Start = Toggle between loglevel set in config and the "
-         "'Disabled' loglevel.",
-         false, false)},
+         localization::StringId::kHotkeyBackStartToggleLogging, false, false)},
     {X_INPUT_GAMEPAD_DPAD_DOWN,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::IncTitleSelect,
-         "D-PAD Down = Title Selection +1", true, false)},
+         localization::StringId::kHotkeyDpadDownNextTitle, true, false)},
     {X_INPUT_GAMEPAD_DPAD_UP,
      EmulatorWindow::ControllerHotKey(
          EmulatorWindow::ButtonFunctions::DecTitleSelect,
-         "D-PAD Up = Title Selection -1", true, false)}};
+         localization::StringId::kHotkeyDpadUpPreviousTitle, true, false)}};
 
 EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
     int buttons) {
@@ -2099,10 +2620,13 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
 
     std::string title = fmt::format(
         "{}: {}\n\n{}", selected_title_index + 1, title_name,
-        controller_hotkey_map.find(X_INPUT_GAMEPAD_START)->second.pretty);
+        localization::Get(controller_hotkey_map.find(X_INPUT_GAMEPAD_START)
+                              ->second.description_id));
 
-    xe::ui::ImGuiDialog::ShowMessageBox(imgui_drawer_.get(), "Title Selection",
-                                        title);
+    xe::ui::ImGuiDialog::ShowMessageBox(
+        imgui_drawer_.get(),
+        localization::Get(localization::StringId::kHotkeysTitleSelection),
+        title);
   }
 
   if (!notificationTitle.empty()) {
@@ -2207,13 +2731,16 @@ void EmulatorWindow::CycleReadbackResolve() {
 }
 
 void EmulatorWindow::DisplayHotKeysConfig() {
+  using localization::StringId;
+  const auto tr = [](StringId id) { return localization::Get(id); };
+
   std::string msg = "";
   std::string msg_passthru = "";
 
   bool guide_enabled = !IsUseNexusForGameBarEnabled() && cvars::guide_button;
 
   for (auto const& [key, val] : controller_hotkey_map) {
-    std::string pretty_text = val.pretty;
+    std::string pretty_text = tr(val.description_id);
 
     if (!guide_enabled) {
       pretty_text = std::regex_replace(
@@ -2222,11 +2749,11 @@ void EmulatorWindow::DisplayHotKeysConfig() {
     }
 
     if (emulator_->is_title_open() && !val.title_passthru) {
-      pretty_text += " (Disabled)";
+      pretty_text += tr(StringId::kHotkeysDisabledSuffix);
     }
 
     if (val.title_passthru && !cvars::controller_hotkeys) {
-      pretty_text += " (Disabled)";
+      pretty_text += tr(StringId::kHotkeysDisabledSuffix);
     }
 
     if (val.title_passthru) {
@@ -2237,26 +2764,31 @@ void EmulatorWindow::DisplayHotKeysConfig() {
   }
 
   // Add Title
-  msg.insert(0, "Gameplay Hotkeys\n");
+  msg.insert(0, fmt::format("{}\n", tr(StringId::kHotkeysGameplay)));
 
   // Prepend non-passthru hotkeys
   msg_passthru += "\n";
   msg.insert(0, msg_passthru);
   msg += "\n";
 
-  msg += "Readback Resolve: " + cvars::readback_resolve;
+  msg += fmt::format("{}: {}", tr(StringId::kHotkeysReadbackResolve),
+                     cvars::readback_resolve);
   msg += "\n";
 
-  msg += "Clear Memory Page State: " +
-         xe::string_util::BoolToString(cvars::clear_memory_page_state);
+  msg += fmt::format(
+      "{}: {}", tr(StringId::kHotkeysClearMemoryPageState),
+      tr(cvars::clear_memory_page_state ? StringId::kHotkeysEnabled
+                                        : StringId::kHotkeysDisabled));
   msg += "\n";
 
-  msg += "Controller Hotkeys: " +
-         xe::string_util::BoolToString(cvars::controller_hotkeys);
+  msg +=
+      fmt::format("{}: {}", tr(StringId::kHotkeysControllerHotkeys),
+                  tr(cvars::controller_hotkeys ? StringId::kHotkeysEnabled
+                                               : StringId::kHotkeysDisabled));
 
   ClearDialogs();
-  xe::ui::ImGuiDialog::ShowMessageBox(imgui_drawer_.get(), "Controller Hotkeys",
-                                      msg);
+  xe::ui::ImGuiDialog::ShowMessageBox(imgui_drawer_.get(),
+                                      tr(StringId::kHotkeysTitle), msg);
 }
 
 std::string EmulatorWindow::CanonicalizeFileExtension(
@@ -2323,6 +2855,20 @@ xe::X_STATUS EmulatorWindow::RunTitle(
 
   disable_hotkeys_ = false;
 
+  if (profile_config_dialog_) {
+    profile_config_dialog_.reset();
+    emulator_->kernel_state()->xam_state()->is_xam_dialog_present_.store(false);
+  }
+
+  if (display_config_dialog_) {
+    display_config_dialog_.reset();
+  }
+
+#if XE_PLATFORM_WIN32
+  if (winkey_config_dialog_) {
+    winkey_config_dialog_.reset();
+  }
+#endif  // XE_PLATFORM_WIN32
   ClearDialogs();
 
   if (result) {

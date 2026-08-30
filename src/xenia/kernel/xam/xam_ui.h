@@ -112,13 +112,20 @@ class KeyboardInputDialog : public XamDialog {
   bool cancelled_ = true;
 };
 
+struct ProfileContentLabels {
+  const char* user = "User: {}\n";
+  const char* assigned_to_slot = "Assigned to slot: {}\n";
+  const char* not_signed_in = "Profile is not signed in";
+};
+
 bool xeDrawProfileContent(xe::ui::ImGuiDrawer* imgui_drawer,
                           const uint64_t xuid, const uint8_t user_index,
                           const X_XAMACCOUNTINFO* account,
                           const xe::ui::ImmediateTexture* profile_icon,
                           std::function<bool()> context_menu,
                           std::function<void()> on_profile_change,
-                          uint64_t* selected_xuid);
+                          uint64_t* selected_xuid,
+                          const ProfileContentLabels* labels = nullptr);
 
 }  // namespace xam
 }  // namespace kernel

@@ -13,6 +13,14 @@
 #include <memory>
 #include <string>
 
+#include "xenia/base/platform.h"
+
+#if XE_PLATFORM_WIN32
+#include "xenia/hid/winkey/winkey_config.h"
+#include "xenia/hid/winkey/winkey_input_driver.h"
+#endif  // XE_PLATFORM_WIN32
+
+#include "xenia/app/localization.h"
 #include "xenia/app/profile_dialogs.h"
 #include "xenia/emulator.h"
 #include "xenia/gpu/command_processor.h"
@@ -130,14 +138,15 @@ class EmulatorWindow {
     // If true vibrate the controller after activating the hotkey, otherwise
     // false.
     bool rumble;
-    std::string pretty;
+    localization::StringId description_id;
     ButtonFunctions function;
 
     ControllerHotKey(ButtonFunctions fn = ButtonFunctions::Unknown,
-                     std::string pretty = "", bool rumble = false,
-                     bool active = true) {
+                     localization::StringId description_id =
+                         localization::StringId::kUnknown,
+                     bool rumble = false, bool active = true) {
       function = fn;
-      this->pretty = pretty;
+      this->description_id = description_id;
       title_passthru = active;
       this->rumble = rumble;
     }
@@ -219,6 +228,34 @@ class EmulatorWindow {
     EmulatorWindow& emulator_window_;
   };
 
+#if XE_PLATFORM_WIN32
+  class WinKeyConfigDialog final : public ui::ImGuiDialog {
+   public:
+    WinKeyConfigDialog(ui::ImGuiDrawer* imgui_drawer,
+                       EmulatorWindow& emulator_window);
+    ~WinKeyConfigDialog() override;
+
+   protected:
+    void OnDraw(ImGuiIO& io) override;
+
+   private:
+    hid::winkey::WinKeyInputDriver* GetDriver() const;
+    void ApplyDraft();
+    void RestoreOriginal();
+    void StartBindingCapture(std::string* target, bool append);
+    void CancelBindingCapture();
+    bool HandleBindingCaptureResult();
+
+    EmulatorWindow& emulator_window_;
+    hid::winkey::WinKeySettings original_settings_;
+    hid::winkey::WinKeySettings settings_;
+    bool committed_or_restored_ = false;
+    bool save_failed_ = false;
+    std::string* binding_capture_target_ = nullptr;
+    bool binding_capture_append_ = false;
+  };
+#endif  // XE_PLATFORM_WIN32
+
   class XMPConfigDialog final : public ui::ImGuiDialog {
    public:
     XMPConfigDialog(ui::ImGuiDrawer* imgui_drawer,
@@ -244,6 +281,7 @@ class EmulatorWindow {
                           uint32_t height);
 
   bool Initialize();
+  void BuildMainMenu();
 
   // For comparisons, use GetSwapPostEffectForCvarValue instead as the default
   // fallback may be used for multiple values.
@@ -280,6 +318,9 @@ class EmulatorWindow {
   void GpuTraceFrame();
   void GpuClearCaches();
   void ToggleDisplayConfigDialog();
+#if XE_PLATFORM_WIN32
+  void ToggleWinKeyConfigDialog();
+#endif  // XE_PLATFORM_WIN32
   void ToggleControllerVibration();
   void ShowCompatibility();
   void ShowFAQ();
@@ -321,6 +362,9 @@ class EmulatorWindow {
   bool initializing_shader_storage_ = false;
 
   std::unique_ptr<DisplayConfigDialog> display_config_dialog_;
+#if XE_PLATFORM_WIN32
+  std::unique_ptr<WinKeyConfigDialog> winkey_config_dialog_;
+#endif  // XE_PLATFORM_WIN32
   std::unique_ptr<ConsoleSettingsDialog> console_settings_dialog_;
   std::unique_ptr<ContentListDialog> content_list_dialog_;
   // Storing pointers and toggling dialog state is useful for broadcasting
