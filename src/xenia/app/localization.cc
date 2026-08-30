@@ -75,7 +75,10 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"&Help", "說明(&H)"},
         {"FA&Q...", "常見問題(&Q)..."},
         {"Game &compatibility...", "遊戲相容性(&C)..."},
-        {"Build commit on GitHub...", "在 GitHub 顯示此版本 commit..."},
+        {"Fork build commit on GitHub...",
+         "在 GitHub 顯示 fork 版本 commit..."},
+        {"Upstream base commit on GitHub...",
+         "在 GitHub 顯示上游基底 commit..."},
         {"Recent changes on GitHub...", "在 GitHub 顯示最近變更..."},
         {"&About...", "關於(&A)..."},
 

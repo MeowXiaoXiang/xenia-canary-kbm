@@ -187,7 +187,8 @@ static bool exception_pointers_handler(HostExceptionReport* report) {
 #ifdef XE_BUILD_IS_PR
       "PR#" XE_BUILD_PR_NUMBER " - "
 #endif
-      XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT " on " XE_BUILD_DATE);
+      "WinKey Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
+      " | upstream " XE_BUILD_UPSTREAM_COMMIT_SHORT " on " XE_BUILD_DATE);
 
   std::string title_info = "Title not started yet.";
 

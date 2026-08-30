@@ -550,7 +550,7 @@ bool ImGuiDrawer::LoadTraditionalChineseFont(ImGuiIO& io, float font_size) {
       "作個刪包半嗎找括指擇操料沒派登看確編該資輯"
       "伸僅像升及對彩抖拉搖晰曲桿樣檔準滿濾瞄色記通鋸門檻雙頻齒"
       "償實應止生產絕補零靜非驗"
-      "冊由考是校送參這插註傳槽熱"
+      "冊由考是校送參這插註傳槽熱游基底"
       "（），。：；！？／［］、｜";
 
   static ImVector<ImWchar> glyph_ranges;

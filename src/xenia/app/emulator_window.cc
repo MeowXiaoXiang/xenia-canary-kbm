@@ -194,10 +194,12 @@ EmulatorWindow::EmulatorWindow(Emulator* emulator,
 #endif
                 " ("
 #ifdef XE_BUILD_IS_PR
-                "PR#" XE_BUILD_PR_NUMBER " - "
+                "PR#" XE_BUILD_PR_NUMBER
+                " - "
 #endif
-                XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT " on " XE_BUILD_DATE
-                ")";
+                "WinKey Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
+                " | upstream " XE_BUILD_UPSTREAM_COMMIT_SHORT
+                " on " XE_BUILD_DATE ")";
 
   LoadRecentlyLaunchedTitles();
 }
@@ -1424,13 +1426,17 @@ void EmulatorWindow::BuildMainMenu() {
         std::bind(&EmulatorWindow::ShowCompatibility, this)));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     help_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, tr(StringId::kMenuBuildCommit), "F2",
-        std::bind(&EmulatorWindow::ShowBuildCommit, this)));
+        MenuItem::Type::kString, tr(StringId::kMenuForkBuildCommit), "F2",
+        std::bind(&EmulatorWindow::ShowForkBuildCommit, this)));
+    help_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuUpstreamBaseCommit), "",
+        std::bind(&EmulatorWindow::ShowUpstreamBaseCommit, this)));
     help_menu->AddChild(MenuItem::Create(
         MenuItem::Type::kString, tr(StringId::kMenuRecentChanges), []() {
           LaunchWebBrowser(
-              "https://github.com/xenia-canary/xenia-canary/"
-              "compare/" XE_BUILD_COMMIT "..." XE_BUILD_BRANCH);
+              "https://github.com/MeowXiaoXiang/"
+              "xenia-canary-winkey-input/compare/" XE_BUILD_UPSTREAM_COMMIT
+              "..." XE_BUILD_COMMIT);
         }));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     help_menu->AddChild(MenuItem::Create(
@@ -1619,7 +1625,7 @@ void EmulatorWindow::OnKeyDown(ui::KeyEvent& e) {
     } break;
 
     case ui::VirtualKey::kF2: {
-      ShowBuildCommit();
+      ShowForkBuildCommit();
     } break;
 
     case ui::VirtualKey::kF9: {
@@ -2280,14 +2286,22 @@ void EmulatorWindow::ShowFAQ() {
   LaunchWebBrowser("https://github.com/xenia-canary/xenia-canary/wiki/FAQ");
 }
 
-void EmulatorWindow::ShowBuildCommit() {
+void EmulatorWindow::ShowForkBuildCommit() {
 #ifdef XE_BUILD_IS_PR
   LaunchWebBrowser(
-      "https://github.com/xenia-canary/xenia-canary/pull/" XE_BUILD_PR_NUMBER);
+      "https://github.com/MeowXiaoXiang/xenia-canary-winkey-input/"
+      "pull/" XE_BUILD_PR_NUMBER);
 #else
   LaunchWebBrowser(
-      "https://github.com/xenia-canary/xenia-canary/commit/" XE_BUILD_COMMIT);
+      "https://github.com/MeowXiaoXiang/xenia-canary-winkey-input/"
+      "commit/" XE_BUILD_COMMIT);
 #endif
+}
+
+void EmulatorWindow::ShowUpstreamBaseCommit() {
+  LaunchWebBrowser(
+      "https://github.com/xenia-canary/xenia-canary/"
+      "commit/" XE_BUILD_UPSTREAM_COMMIT);
 }
 
 void EmulatorWindow::UpdateTitle() {

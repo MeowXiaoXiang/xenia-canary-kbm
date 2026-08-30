@@ -8,6 +8,22 @@ Raw Input mouse movement into the emulated right stick. It is deliberately a
 generic controller-input feature: it contains no game-specific memory hooks,
 patches, or per-title profiles.
 
+## Build provenance and upstream updates
+
+Every local build records two revisions. **Fork build commit** is the exact
+commit from this repository that was compiled. **Upstream base commit** is the
+merge base with `upstream/canary_experimental` — the Xenia Canary revision that
+is actually present in that fork commit. Both are shown in the title and
+startup log, and the Help menu opens each commit in its correct repository.
+
+Do not edit either revision by hand. `xenia-build.py` calculates the upstream
+base automatically whenever it generates `build/version.h`. When updating
+upstream, fetch `upstream`, integrate the intended
+`upstream/canary_experimental` revision, then rebuild and confirm that the
+displayed upstream base has advanced as expected. This keeps the public fork
+traceable even when its own input commits are newer than the integrated Canary
+revision.
+
 ## Enable and configure
 
 1. Start Xenia with the WinKey input backend selected, for example

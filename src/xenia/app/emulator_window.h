@@ -324,7 +324,8 @@ class EmulatorWindow {
   void ToggleControllerVibration();
   void ShowCompatibility();
   void ShowFAQ();
-  void ShowBuildCommit();
+  void ShowForkBuildCommit();
+  void ShowUpstreamBaseCommit();
 
   EmulatorWindow::ControllerHotKey ProcessControllerHotkey(int buttons);
   void VibrateController(xe::hid::InputSystem* input_sys, uint32_t user_index,

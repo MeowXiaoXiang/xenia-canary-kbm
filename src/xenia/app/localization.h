@@ -66,7 +66,8 @@ enum class StringId : uint16_t {
   kMenuHelp,
   kMenuFaq,
   kMenuCompatibility,
-  kMenuBuildCommit,
+  kMenuForkBuildCommit,
+  kMenuUpstreamBaseCommit,
   kMenuRecentChanges,
   kMenuAbout,
 
