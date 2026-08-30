@@ -1002,6 +1002,29 @@ LRESULT Win32Window::WndProc(HWND hWnd, UINT message, WPARAM wParam,
   }
 
   switch (message) {
+    case WM_INPUT: {
+      RAWINPUT raw_input = {};
+      UINT raw_input_size = sizeof(raw_input);
+      const UINT copied_size =
+          GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT,
+                          &raw_input, &raw_input_size, sizeof(RAWINPUTHEADER));
+      if (copied_size != UINT(-1) &&
+          copied_size >= sizeof(RAWINPUTHEADER) + sizeof(RAWMOUSE) &&
+          raw_input.header.dwType == RIM_TYPEMOUSE &&
+          !(raw_input.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+        const int32_t delta_x = raw_input.data.mouse.lLastX;
+        const int32_t delta_y = raw_input.data.mouse.lLastY;
+        if (delta_x || delta_y) {
+          RawMouseMoveEvent e(this, delta_x, delta_y);
+          WindowDestructionReceiver destruction_receiver(this);
+          OnRawMouseMove(e, destruction_receiver);
+          if (destruction_receiver.IsWindowDestroyedOrClosed()) {
+            break;
+          }
+        }
+      }
+    } break;
+
     case WM_CLOSE:
     // In case the Windows window was somehow forcibly destroyed without
     // WM_CLOSE.

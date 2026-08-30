@@ -10,6 +10,8 @@
 #ifndef XENIA_HID_WINKEY_WINKEY_INPUT_DRIVER_H_
 #define XENIA_HID_WINKEY_WINKEY_INPUT_DRIVER_H_
 
+#include <atomic>
+#include <chrono>
 #include <queue>
 
 #include "xenia/base/mutex.h"
@@ -59,6 +61,7 @@ class WinKeyInputDriver final : public InputDriver {
 
     void OnKeyDown(ui::KeyEvent& e) override;
     void OnKeyUp(ui::KeyEvent& e) override;
+    void OnRawMouseMove(ui::RawMouseMoveEvent& e) override;
 
    private:
     WinKeyInputDriver& driver_;
@@ -69,6 +72,7 @@ class WinKeyInputDriver final : public InputDriver {
                        const std::string_view binding);
 
   void OnKey(ui::KeyEvent& e, bool is_down);
+  void OnRawMouseMove(ui::RawMouseMoveEvent& e);
 
   WinKeyWindowInputListener window_input_listener_;
 
@@ -77,6 +81,11 @@ class WinKeyInputDriver final : public InputDriver {
   std::vector<KeyBinding> key_bindings_;
   uint8_t key_map_[256];
   uint32_t packet_number_ = 1;
+
+  std::atomic<int64_t> raw_mouse_delta_x_{0};
+  std::atomic<int64_t> raw_mouse_delta_y_{0};
+  std::chrono::steady_clock::time_point raw_mouse_last_sample_time_;
+  bool raw_mouse_registered_ = false;
 };
 
 }  // namespace winkey

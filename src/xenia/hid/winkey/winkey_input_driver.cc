@@ -9,12 +9,17 @@
 
 #include "xenia/hid/winkey/winkey_input_driver.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include "xenia/base/logging.h"
 #include "xenia/base/platform_win.h"
 #include "xenia/hid/hid_flags.h"
 #include "xenia/hid/input_system.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window.h"
+#include "xenia/ui/window_win.h"
 
 #define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
@@ -36,6 +41,27 @@ DEFINE_int32(
     "Controller port that keyboard emulates. [0, 3] - Keyboard is assigned to "
     "selected slot. Passthrough does not require assigning slot.",
     "HID");
+
+DEFINE_bool(raw_mouse, false,
+            "Use Windows Raw Input mouse movement for the emulated right "
+            "thumbstick. Requires keyboard_mode = 1 and an application restart.",
+            "HID.WinKey");
+
+DEFINE_double(raw_mouse_sensitivity, 1.0,
+              "Raw mouse sensitivity multiplier.", "HID.WinKey");
+
+DEFINE_double(raw_mouse_full_scale_velocity, 24000.0,
+              "Raw Input counts per second that produce full right-stick "
+              "deflection before applying the response curve.",
+              "HID.WinKey");
+
+DEFINE_double(raw_mouse_response_curve, 1.0,
+              "Raw mouse response exponent. 1 is linear, values above 1 add "
+              "precision near the center, and values below 1 boost low speeds.",
+              "HID.WinKey");
+
+DEFINE_bool(raw_mouse_invert_y, false, "Invert Raw Input mouse Y movement.",
+            "HID.WinKey");
 
 namespace xe {
 namespace hid {
@@ -186,6 +212,37 @@ bool __inline IsKeyDown(ui::VirtualKey virtual_key) {
   return IsKeyDown(static_cast<uint8_t>(virtual_key));
 }
 
+static int16_t MouseDeltaToThumb(int64_t delta, double elapsed_seconds) {
+  if (!delta) {
+    return 0;
+  }
+
+  const double full_scale_velocity =
+      std::max(cvars::raw_mouse_full_scale_velocity, 1.0);
+  const double sensitivity = std::max(cvars::raw_mouse_sensitivity, 0.0);
+  double normalized =
+      (double(delta) / elapsed_seconds) * sensitivity / full_scale_velocity;
+  normalized = std::clamp(normalized, -1.0, 1.0);
+
+  const double response_curve =
+      std::max(cvars::raw_mouse_response_curve, 0.01);
+  normalized =
+      std::copysign(std::pow(std::abs(normalized), response_curve), normalized);
+
+  const long scaled =
+      std::lround(normalized * std::numeric_limits<int16_t>::max());
+  return static_cast<int16_t>(
+      std::clamp(scaled, long(std::numeric_limits<int16_t>::min()),
+                 long(std::numeric_limits<int16_t>::max())));
+}
+
+static int16_t AddThumbWithSaturation(int16_t left, int16_t right) {
+  const int32_t sum = int32_t(left) + int32_t(right);
+  return static_cast<int16_t>(
+      std::clamp(sum, int32_t(std::numeric_limits<int16_t>::min()),
+                 int32_t(std::numeric_limits<int16_t>::max())));
+}
+
 void WinKeyInputDriver::ParseKeyBinding(ui::VirtualKey output_key,
                                         const std::string_view description,
                                         const std::string_view source_tokens) {
@@ -228,7 +285,9 @@ void WinKeyInputDriver::ParseKeyBinding(ui::VirtualKey output_key,
 
 WinKeyInputDriver::WinKeyInputDriver(xe::ui::Window* window,
                                      size_t window_z_order)
-    : InputDriver(window, window_z_order), window_input_listener_(*this) {
+    : InputDriver(window, window_z_order),
+      window_input_listener_(*this),
+      raw_mouse_last_sample_time_(std::chrono::steady_clock::now()) {
 #define XE_HID_WINKEY_BINDING(button, description, cvar_name,          \
                               cvar_default_value)                      \
   ParseKeyBinding(xe::ui::VirtualKey::kXInputPad##button, description, \
@@ -240,10 +299,45 @@ WinKeyInputDriver::WinKeyInputDriver(xe::ui::Window* window,
 }
 
 WinKeyInputDriver::~WinKeyInputDriver() {
+  if (raw_mouse_registered_) {
+    RAWINPUTDEVICE raw_mouse_device = {};
+    raw_mouse_device.usUsagePage = 0x01;
+    raw_mouse_device.usUsage = 0x02;
+    raw_mouse_device.dwFlags = RIDEV_REMOVE;
+    raw_mouse_device.hwndTarget = nullptr;
+    if (!RegisterRawInputDevices(&raw_mouse_device, 1,
+                                 sizeof(raw_mouse_device))) {
+      XELOGW("winkey: failed to unregister Raw Input mouse, error {}.",
+             GetLastError());
+    }
+  }
   window()->RemoveInputListener(&window_input_listener_);
 }
 
-X_STATUS WinKeyInputDriver::Setup() { return X_STATUS_SUCCESS; }
+X_STATUS WinKeyInputDriver::Setup() {
+  if (!cvars::raw_mouse) {
+    return X_STATUS_SUCCESS;
+  }
+
+  auto* win32_window = static_cast<ui::Win32Window*>(window());
+  RAWINPUTDEVICE raw_mouse_device = {};
+  raw_mouse_device.usUsagePage = 0x01;
+  raw_mouse_device.usUsage = 0x02;
+  raw_mouse_device.dwFlags = 0;
+  raw_mouse_device.hwndTarget = win32_window->hwnd();
+  if (!raw_mouse_device.hwndTarget ||
+      !RegisterRawInputDevices(&raw_mouse_device, 1,
+                               sizeof(raw_mouse_device))) {
+    XELOGE("winkey: failed to register Raw Input mouse, error {}.",
+           GetLastError());
+    return X_STATUS_SUCCESS;
+  }
+
+  raw_mouse_registered_ = true;
+  raw_mouse_last_sample_time_ = std::chrono::steady_clock::now();
+  XELOGI("winkey: Raw Input mouse registered for right thumbstick.");
+  return X_STATUS_SUCCESS;
+}
 
 X_RESULT WinKeyInputDriver::GetCapabilities(uint32_t user_index, uint32_t flags,
                                             X_INPUT_CAPABILITIES* out_caps) {
@@ -375,6 +469,32 @@ X_RESULT WinKeyInputDriver::GetState(uint32_t user_index,
     }
   }
 
+  if (cvars::raw_mouse && raw_mouse_registered_) {
+    const auto sample_time = std::chrono::steady_clock::now();
+    double elapsed_seconds =
+        std::chrono::duration<double>(sample_time -
+                                      raw_mouse_last_sample_time_)
+            .count();
+    raw_mouse_last_sample_time_ = sample_time;
+    elapsed_seconds = std::clamp(elapsed_seconds, 0.001, 0.1);
+
+    int64_t delta_x = raw_mouse_delta_x_.exchange(0);
+    int64_t delta_y = raw_mouse_delta_y_.exchange(0);
+    if (!window()->HasFocus()) {
+      delta_x = 0;
+      delta_y = 0;
+    }
+
+    const int16_t mouse_thumb_x =
+        MouseDeltaToThumb(delta_x, elapsed_seconds);
+    const int64_t mapped_delta_y =
+        cvars::raw_mouse_invert_y ? delta_y : -delta_y;
+    const int16_t mouse_thumb_y =
+        MouseDeltaToThumb(mapped_delta_y, elapsed_seconds);
+    thumb_rx = AddThumbWithSaturation(thumb_rx, mouse_thumb_x);
+    thumb_ry = AddThumbWithSaturation(thumb_ry, mouse_thumb_y);
+  }
+
   out_state->packet_number = packet_number_;
   out_state->gamepad.buttons = buttons;
   out_state->gamepad.left_trigger = left_trigger;
@@ -498,6 +618,11 @@ void WinKeyInputDriver::WinKeyWindowInputListener::OnKeyUp(ui::KeyEvent& e) {
   driver_.OnKey(e, false);
 }
 
+void WinKeyInputDriver::WinKeyWindowInputListener::OnRawMouseMove(
+    ui::RawMouseMoveEvent& e) {
+  driver_.OnRawMouseMove(e);
+}
+
 void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
   if (static_cast<KeyboardMode>(cvars::keyboard_mode) ==
       KeyboardMode::Disabled) {
@@ -512,6 +637,18 @@ void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
 
   auto global_lock = global_critical_region_.Acquire();
   key_events_.push(key);
+}
+
+void WinKeyInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
+  if (!cvars::raw_mouse || !raw_mouse_registered_ ||
+      static_cast<KeyboardMode>(cvars::keyboard_mode) !=
+          KeyboardMode::Enabled ||
+      !window()->HasFocus()) {
+    return;
+  }
+
+  raw_mouse_delta_x_.fetch_add(e.delta_x(), std::memory_order_relaxed);
+  raw_mouse_delta_y_.fetch_add(e.delta_y(), std::memory_order_relaxed);
 }
 
 InputType WinKeyInputDriver::GetInputType() const {
