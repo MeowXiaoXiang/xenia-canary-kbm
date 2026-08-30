@@ -61,8 +61,8 @@
 #include "xenia/hid/sdl/sdl_hid.h"
 #endif  // !XE_PLATFORM_ANDROID
 #if XE_PLATFORM_WIN32
-#include "xenia/hid/winkey/winkey_hid.h"
 #include "xenia/hid/winkey/winkey_config.h"
+#include "xenia/hid/winkey/winkey_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
 

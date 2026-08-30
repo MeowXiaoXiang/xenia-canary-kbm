@@ -661,9 +661,8 @@ void Window::OnMouseWheel(MouseEvent& e,
   }
 }
 
-void Window::OnRawMouseMove(
-    RawMouseMoveEvent& e,
-    WindowDestructionReceiver& destruction_receiver) {
+void Window::OnRawMouseMove(RawMouseMoveEvent& e,
+                            WindowDestructionReceiver& destruction_receiver) {
   PropagateEventThroughInputListeners(
       [&e](auto listener) {
         listener->OnRawMouseMove(e);

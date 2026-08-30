@@ -11,8 +11,8 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
 #include <vector>
 
@@ -114,8 +114,7 @@ bool ParseUnsigned(std::string_view text, int base, uint16_t& value) {
 }
 
 bool ParseVirtualKeyName(std::string_view text, uint16_t& virtual_key) {
-  if (text.size() > 2 && text[0] == '0' &&
-      (text[1] == 'x' || text[1] == 'X')) {
+  if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
     return ParseUnsigned(text.substr(2), 16, virtual_key);
   }
 
@@ -383,24 +382,20 @@ WinKeySettings GetSettingsFromCvars() {
 #undef XE_HID_WINKEY_BINDING
   settings.raw_mouse = cvars::raw_mouse;
   settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
-  settings.raw_mouse_full_scale_velocity =
-      cvars::raw_mouse_full_scale_velocity;
+  settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
   settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
   settings.raw_mouse_deadzone_compensation =
       cvars::raw_mouse_deadzone_compensation;
   settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
   settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
-  settings.raw_mouse_capture_toggle_key =
-      cvars::raw_mouse_capture_toggle_key;
-  settings.raw_mouse_capture_on_start =
-      cvars::raw_mouse_capture_on_start;
+  settings.raw_mouse_capture_toggle_key = cvars::raw_mouse_capture_toggle_key;
+  settings.raw_mouse_capture_on_start = cvars::raw_mouse_capture_on_start;
   return settings;
 }
 
 void ApplySettingsToCvars(const WinKeySettings& settings) {
   cvars::keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
-  cvars::keyboard_user_index =
-      std::clamp(settings.keyboard_user_index, 0, 3);
+  cvars::keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
 #define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   cvars::cvar_name = settings.cvar_name;
@@ -418,8 +413,7 @@ void ApplySettingsToCvars(const WinKeySettings& settings) {
   cvars::raw_mouse_minimum_response =
       std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5);
   cvars::raw_mouse_invert_y = settings.raw_mouse_invert_y;
-  cvars::raw_mouse_capture_toggle_key =
-      settings.raw_mouse_capture_toggle_key;
+  cvars::raw_mouse_capture_toggle_key = settings.raw_mouse_capture_toggle_key;
   cvars::raw_mouse_capture_on_start = settings.raw_mouse_capture_on_start;
 }
 
