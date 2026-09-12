@@ -1,19 +1,32 @@
 # Changelog
 
-All notable user-facing changes to Xenia Canary - WinKey Input are documented
+All notable user-facing changes to Xenia Canary - KBM Controller Input are documented
 here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its
 source milestones.
 
 ## [Unreleased]
 
-Future entries should describe user-visible WinKey changes, maintenance changes
+Future entries should describe user-visible KBM Controller changes, maintenance changes
 that affect building or configuration, and upstream integrations that change
 the compatibility baseline.
 
+### Changed
+
+- Renamed the public input backend from WinKey to KBM Controller.
+- Kept upstream keyboard passthrough under `--hid=keyboard` and made the KBM
+  virtual controller available only through the opt-in `--hid=kbm` selector.
+
+### Breaking changes
+
+- Replaced `winkey.toml` with `kbm.toml`. Existing WinKey settings are not
+  automatically imported; configure and save them again in KBM Controller
+  Settings.
+
 ## [0.1.0] - 2026-08-30
 
-First public source milestone. Tagged from upstream-integrated merge commit
+First public source milestone using the former WinKey name. Tagged from
+upstream-integrated merge commit
 `7acdad2`; the embedded Xenia Canary base is `0c843efb3`.
 
 ### Added
