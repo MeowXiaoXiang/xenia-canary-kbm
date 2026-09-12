@@ -80,8 +80,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
 
   class KbmWindowListener final : public ui::WindowListener {
    public:
-    explicit KbmWindowListener(KbmInputDriver& driver)
-        : driver_(driver) {}
+    explicit KbmWindowListener(KbmInputDriver& driver) : driver_(driver) {}
 
     void OnClosing(ui::UIEvent& e) override;
     void OnResize(ui::UISetupEvent& e) override;

@@ -34,8 +34,7 @@ struct KbmSettings {
   bool enabled = true;
   int32_t user_index = 0;
 
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
   std::string cvar_name = cvar_default_value;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING

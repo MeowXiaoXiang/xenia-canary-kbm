@@ -64,9 +64,9 @@
 #include "xenia/hid/sdl/sdl_hid.h"
 #endif  // !XE_PLATFORM_ANDROID
 #if XE_PLATFORM_WIN32
-#include "xenia/hid/keyboard/keyboard_hid.h"
 #include "xenia/hid/kbm/kbm_config.h"
 #include "xenia/hid/kbm/kbm_hid.h"
+#include "xenia/hid/keyboard/keyboard_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
 
@@ -464,7 +464,7 @@ std::vector<std::unique_ptr<hid::InputDriver>> EmulatorApp::CreateInputDrivers(
     factory.Add("keyboard", xe::hid::keyboard::Create);
 #endif
 #if XE_PLATFORM_WIN32
-          // Keyboard and KBM are added after physical controller drivers.
+    // Keyboard and KBM are added after physical controller drivers.
     factory.Add("keyboard", xe::hid::keyboard::Create);
     factory.Add("kbm", xe::hid::kbm::Create);
 #endif  // XE_PLATFORM_WIN32

@@ -22,21 +22,19 @@
 #include "xenia/ui/window_win.h"
 #include "xenia/ui/windowed_app_context.h"
 
-#define XE_HID_KBM_BINDING(button, description, cvar_name,        \
-                              cvar_default_value)                    \
-  DEFINE_transient_string(cvar_name, cvar_default_value,             \
-                          "Keys or chords bound to " description     \
-                          ", with alternatives separated by spaces", \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  DEFINE_transient_string(cvar_name, cvar_default_value,                       \
+                          "Keys or chords bound to " description               \
+                          ", with alternatives separated by spaces",           \
                           "HID.KBM")
 #include "kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
 
-DEFINE_transient_bool(kbm_enabled, true,
-                      "Enable the KBM virtual controller.", "HID.KBM");
+DEFINE_transient_bool(kbm_enabled, true, "Enable the KBM virtual controller.",
+                      "HID.KBM");
 
 DEFINE_transient_int32(kbm_user_index, 0,
-                       "Controller port that KBM emulates. [0, 3].",
-                       "HID.KBM");
+                       "Controller port that KBM emulates. [0, 3].", "HID.KBM");
 
 DEFINE_transient_bool(
     raw_mouse, true,
@@ -170,9 +168,9 @@ static int16_t AddThumbWithSaturation(int16_t left, int16_t right) {
 }
 
 void KbmInputDriver::ParseKeyBinding(std::vector<KeyBinding>& bindings,
-                                        ui::VirtualKey output_key,
-                                        const std::string_view description,
-                                        const std::string_view source_tokens) {
+                                     ui::VirtualKey output_key,
+                                     const std::string_view description,
+                                     const std::string_view source_tokens) {
   for (const std::string_view source_token :
        utf8::split(source_tokens, " ", true)) {
     KeyBinding key_binding;
@@ -201,25 +199,22 @@ void KbmInputDriver::ParseKeyBinding(std::vector<KeyBinding>& bindings,
     key_binding.super = chord.super;
 
     bindings.push_back(key_binding);
-    XELOGI("kbm: \"{}\" binds key 0x{:X} to controller input {}.",
-           source_token, static_cast<uint16_t>(key_binding.input_key),
-           description);
+    XELOGI("kbm: \"{}\" binds key 0x{:X} to controller input {}.", source_token,
+           static_cast<uint16_t>(key_binding.input_key), description);
   }
 }
 
 void KbmInputDriver::RebuildKeyBindings(const KbmSettings& settings) {
   std::vector<KeyBinding> bindings;
-#define XE_HID_KBM_BINDING(button, description, cvar_name,       \
-                              cvar_default_value)                   \
-  ParseKeyBinding(bindings, xe::ui::VirtualKey::kXInputPad##button, \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  ParseKeyBinding(bindings, xe::ui::VirtualKey::kXInputPad##button,            \
                   description, settings.cvar_name);
 #include "kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   key_bindings_ = std::move(bindings);
 }
 
-KbmInputDriver::KbmInputDriver(xe::ui::Window* window,
-                                     size_t window_z_order)
+KbmInputDriver::KbmInputDriver(xe::ui::Window* window, size_t window_z_order)
     : KeyboardInputDriver(window, window_z_order, this),
       window_listener_(*this),
       raw_mouse_last_sample_time_(std::chrono::steady_clock::now()),
@@ -227,7 +222,7 @@ KbmInputDriver::KbmInputDriver(xe::ui::Window* window,
   settings_ = GetSettingsFromCvars();
   RebuildKeyBindings(settings_);
   ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
-                   raw_mouse_capture_toggle_);
+                raw_mouse_capture_toggle_);
 
   window->AddListener(&window_listener_);
 }
@@ -332,7 +327,7 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
     settings_ = settings;
     RebuildKeyBindings(settings_);
     if (!ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
-                          raw_mouse_capture_toggle_)) {
+                       raw_mouse_capture_toggle_)) {
       raw_mouse_capture_toggle_ = {};
       if (!settings_.raw_mouse_capture_toggle_key.empty()) {
         XELOGW("kbm: failed to parse Raw Input capture toggle \"{}\".",
@@ -399,7 +394,7 @@ void KbmInputDriver::CancelBindingCapture() {
 }
 
 bool KbmInputDriver::CompleteBindingCapture(BindingCaptureStatus status,
-                                               std::string value) {
+                                            std::string value) {
   auto lock = global_critical_region_.Acquire();
   if (!binding_capture_active_) {
     return false;
@@ -414,8 +409,7 @@ bool KbmInputDriver::IsControllerForUserEnabled(uint32_t user_index) const {
   return IsKbmForUserEnabled(GetSettings(), user_index);
 }
 
-void KbmInputDriver::ApplyGamepadState(uint32_t,
-                                       X_INPUT_STATE* out_state) {
+void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
   auto settings_lock = settings_critical_region_.Acquire();
   const KbmSettings& settings = settings_;
 
@@ -631,11 +625,10 @@ void KbmInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
       capture_toggle.virtual_key &&
       e.virtual_key() ==
           static_cast<ui::VirtualKey>(capture_toggle.virtual_key) &&
-      ModifiersMatch(capture_toggle.shift, capture_toggle.ctrl,
-                     capture_toggle.alt, capture_toggle.super,
-                     e.is_shift_pressed(), e.is_ctrl_pressed(),
-                     e.is_alt_pressed(), IsKeyDown(VK_LWIN) ||
-                                             IsKeyDown(VK_RWIN))) {
+      ModifiersMatch(
+          capture_toggle.shift, capture_toggle.ctrl, capture_toggle.alt,
+          capture_toggle.super, e.is_shift_pressed(), e.is_ctrl_pressed(),
+          e.is_alt_pressed(), IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN))) {
     e.set_handled(true);
     if (is_down && !e.prev_state()) {
       ToggleRawMouseCapture();
@@ -844,8 +837,7 @@ bool KbmInputDriver::UpdateRawMouseClipRectangle() {
 
   RECT clip_rect = {corners[0].x, corners[0].y, corners[1].x, corners[1].y};
   if (!ClipCursor(&clip_rect)) {
-    XELOGW("kbm: failed to clip the mouse cursor, error {}.",
-           GetLastError());
+    XELOGW("kbm: failed to clip the mouse cursor, error {}.", GetLastError());
     return false;
   }
   return CenterRawMouseCursor();

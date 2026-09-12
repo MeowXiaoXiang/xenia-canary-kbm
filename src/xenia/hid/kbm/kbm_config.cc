@@ -27,8 +27,7 @@ DECLARE_string(hid);
 DECLARE_bool(kbm_enabled);
 DECLARE_int32(kbm_user_index);
 
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
   DECLARE_string(cvar_name);
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
@@ -368,8 +367,7 @@ KbmSettings GetSettingsFromCvars() {
   KbmSettings settings;
   settings.enabled = cvars::kbm_enabled;
   settings.user_index = cvars::kbm_user_index;
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
   settings.cvar_name = cvars::cvar_name;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
@@ -389,8 +387,7 @@ KbmSettings GetSettingsFromCvars() {
 void ApplySettingsToCvars(const KbmSettings& settings) {
   cvars::kbm_enabled = settings.enabled;
   cvars::kbm_user_index = std::clamp(settings.user_index, 0, 3);
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
   cvars::cvar_name = settings.cvar_name;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING

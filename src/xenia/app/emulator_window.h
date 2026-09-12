@@ -232,7 +232,7 @@ class EmulatorWindow {
   class KbmConfigDialog final : public ui::ImGuiDialog {
    public:
     KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
-                       EmulatorWindow& emulator_window);
+                    EmulatorWindow& emulator_window);
     ~KbmConfigDialog() override;
 
    protected:
