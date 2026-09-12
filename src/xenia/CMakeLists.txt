@@ -43,6 +43,7 @@ add_subdirectory(app)
 add_subdirectory(apu/sdl)
 add_subdirectory(helper/sdl)
 add_subdirectory(hid/sdl)
+add_subdirectory(hid/keyboard)
 
 # Platform-conditional modules
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

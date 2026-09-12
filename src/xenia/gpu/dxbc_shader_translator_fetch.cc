@@ -83,14 +83,7 @@ void DxbcShaderTranslator::ProcessVertexFetchInstruction(
           a_.OpAdd(address_dest, index_operand, dxbc::Src::LF(0.5f));
           a_.OpRoundNI(address_dest, address_src);
         } else {
-          // UGLY HACK. Remove ASAP.
-          // Proper fix requires accurate RCP implementation.
-          if (cvars::ac6_ground_fix) {
-            a_.OpAdd(address_dest, index_operand, dxbc::Src::LF(0.00025f));
-            a_.OpRoundNI(address_dest, address_src);
-          } else {
-            a_.OpRoundNI(address_dest, index_operand);
-          }
+          a_.OpRoundNI(address_dest, index_operand);
         }
         if (index_operand_temp_pushed) {
           PopSystemTemp();
@@ -99,9 +92,11 @@ void DxbcShaderTranslator::ProcessVertexFetchInstruction(
       a_.OpFToI(address_dest, address_src);
       // Extract the byte address from the fetch constant to
       // system_temp_result_.w (which is not used yet).
+      // Drop the upper bits so writeback & XPS addresses alias their
+      // physical backing in shared memory.
       a_.OpAnd(dxbc::Dest::R(system_temp_result_, 0b1000),
                fetch_constant_src.SelectFromSwizzled(0),
-               dxbc::Src::LU(~uint32_t(3)));
+               dxbc::Src::LU(0x1FFFFFFC));
       // Merge the index and the base address.
       a_.OpIMAd(address_dest, address_src,
                 dxbc::Src::LU(instr.attributes.stride * sizeof(uint32_t)),
@@ -110,7 +105,7 @@ void DxbcShaderTranslator::ProcessVertexFetchInstruction(
       // Fetching from the same location - extract the byte address of the
       // beginning of the buffer.
       a_.OpAnd(address_dest, fetch_constant_src.SelectFromSwizzled(0),
-               dxbc::Src::LU(~uint32_t(3)));
+               dxbc::Src::LU(0x1FFFFFFC));
     }
   }
 

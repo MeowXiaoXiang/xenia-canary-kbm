@@ -906,7 +906,7 @@ void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
       chord.shift = e.is_shift_pressed();
       chord.ctrl = e.is_ctrl_pressed();
       chord.alt = e.is_alt_pressed();
-      chord.super = e.is_super_pressed();
+      chord.super = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
       if (CompleteBindingCapture(BindingCaptureStatus::kCaptured,
                                  FormatWinKeyChord(chord))) {
         e.set_handled(true);
@@ -937,7 +937,8 @@ void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
       ModifiersMatch(capture_toggle.shift, capture_toggle.ctrl,
                      capture_toggle.alt, capture_toggle.super,
                      e.is_shift_pressed(), e.is_ctrl_pressed(),
-                     e.is_alt_pressed(), e.is_super_pressed())) {
+                     e.is_alt_pressed(), IsKeyDown(VK_LWIN) ||
+                                             IsKeyDown(VK_RWIN))) {
     e.set_handled(true);
     if (is_down && !e.prev_state()) {
       ToggleRawMouseCapture();
@@ -964,7 +965,7 @@ void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
   key.shift = e.is_shift_pressed();
   key.ctrl = e.is_ctrl_pressed();
   key.alt = e.is_alt_pressed();
-  key.super = e.is_super_pressed();
+  key.super = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
 
   auto global_lock = global_critical_region_.Acquire();
   key_events_.push(key);
