@@ -7,11 +7,14 @@
 <h1 align="center">Xenia Canary — KBM Controller Input</h1>
 
 This is a Windows-focused experimental fork of
-[Xenia Canary](https://github.com/xenia-canary/xenia-canary). It adds an
-opt-in KBM Controller backend that maps keyboard and Windows Raw Input mouse movement
-to an emulated Xbox 360 controller.
+[Xenia Canary](https://github.com/xenia-canary/xenia-canary). It adds a KBM
+Controller backend that maps keyboard and Windows Raw Input mouse movement to
+an emulated Xbox 360 controller.
 
-It is not an official Xenia Canary build or support channel. This repository
+On Windows, KBM Controller is the default HID backend. Use `--hid=any` to
+restore general hardware backend selection, or `--hid=keyboard` for explicit
+keyboard passthrough. It is not an official Xenia Canary build or support channel.
+This repository
 does not publish releases; build it locally when you want to try the
 experimental input path. General emulator information, compatibility reports,
 and upstream contribution guidance belong to the

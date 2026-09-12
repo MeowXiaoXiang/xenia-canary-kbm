@@ -39,6 +39,7 @@ class KeyboardInputExtension {
   }
   virtual void ApplyGamepadState(uint32_t user_index,
                                  X_INPUT_STATE* out_state) {}
+  virtual bool UsesGenericKeyboardMode() const { return true; }
 };
 
 class KeyboardInputDriver : public InputDriver {

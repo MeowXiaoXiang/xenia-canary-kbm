@@ -14,8 +14,9 @@ the compatibility baseline.
 ### Changed
 
 - Renamed the public input backend from WinKey to KBM Controller.
-- Kept upstream keyboard passthrough under `--hid=keyboard` and made the KBM
-  virtual controller available only through the opt-in `--hid=kbm` selector.
+- Kept upstream keyboard passthrough under the explicit `--hid=keyboard`
+  selector and made KBM Controller the default Windows HID backend, while
+  retaining `--hid=any` for general hardware backend selection.
 
 ### Breaking changes
 

@@ -103,6 +103,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool IsControllerForUserEnabled(uint32_t user_index) const override;
   void ApplyGamepadState(uint32_t user_index,
                          X_INPUT_STATE* out_state) override;
+  bool UsesGenericKeyboardMode() const override { return false; }
   bool CompleteBindingCapture(BindingCaptureStatus status,
                               std::string value = {});
   void ToggleRawMouseCapture();

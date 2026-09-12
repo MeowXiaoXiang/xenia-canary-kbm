@@ -26,8 +26,8 @@ revision.
 
 ## Enable and configure
 
-1. Start Xenia with the KBM Controller input backend selected, for example
-   `--hid=kbm`.
+1. On Windows, KBM Controller is selected by default. You can also select it
+   explicitly with `--hid=kbm`.
 2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
    selected, or after a `kbm.toml` file already exists.
 3. Enable **KBM Controller**, select its controller slot, configure bindings,
@@ -49,8 +49,9 @@ raw Windows virtual-key codes.
 
 KBM Controller does not expose keyboard passthrough. To expose a physical
 keyboard to the guest, start Xenia with `--hid=keyboard` and configure the
-upstream keyboard driver separately. `--hid=kbm` remains an opt-in virtual
-controller with Raw Input mouse-to-right-stick support.
+upstream keyboard driver separately. `--hid=kbm` is the default Windows
+virtual controller with Raw Input mouse-to-right-stick support; use
+`--hid=any` for general hardware backend selection.
 
 ## Raw Input mouse tuning
 

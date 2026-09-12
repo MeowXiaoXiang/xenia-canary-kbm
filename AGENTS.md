@@ -19,10 +19,11 @@ It is a research and source repository; it does not publish prebuilt releases.
 
 ## Scope
 
-- Keep KBM changes Windows-specific, opt-in, and generic. Do not add
+- Keep KBM changes Windows-specific and generic. Do not add
   game-specific memory hooks, game patches, or title profiles.
-- Keep `--hid=keyboard` as the upstream keyboard passthrough backend and
-  `--hid=kbm` as the opt-in virtual controller backend.
+- Keep `--hid=keyboard` as the explicit upstream keyboard passthrough backend.
+  On Windows, `--hid=kbm` is the default virtual controller backend and
+  `--hid=any` remains available for general hardware backend selection.
 - Do not add game ISOs, title content, saves, shader caches, logs, captures,
   or any proprietary Xbox files to Git.
 - Keep user-facing strings in `src/xenia/app/localization.cc` synchronized

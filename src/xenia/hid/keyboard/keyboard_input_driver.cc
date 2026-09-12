@@ -165,11 +165,19 @@ uint8_t KeyboardInputDriver::VirtualKeyToHIDUsage(uint16_t vk) const {
 }
 
 bool KeyboardInputDriver::IsPassthroughEnabled() {
+  if (extension_ && !extension_->UsesGenericKeyboardMode()) {
+    return false;
+  }
+
   return static_cast<KeyboardMode>(cvars::keyboard_mode) ==
          KeyboardMode::Passthrough;
 }
 
 bool KeyboardInputDriver::IsKeyboardForUserEnabled(uint32_t user_index) {
+  if (extension_ && !extension_->UsesGenericKeyboardMode()) {
+    return false;
+  }
+
   if (static_cast<KeyboardMode>(cvars::keyboard_mode) !=
       KeyboardMode::Enabled) {
     return false;
@@ -552,6 +560,10 @@ void KeyboardInputDriver::KeyboardWindowInputListener::OnRawMouseMove(
 }
 
 void KeyboardInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
+  if (extension_ && !extension_->UsesGenericKeyboardMode()) {
+    return;
+  }
+
   if (static_cast<KeyboardMode>(cvars::keyboard_mode) ==
       KeyboardMode::Disabled) {
     return;
@@ -618,6 +630,9 @@ InputType KeyboardInputDriver::GetInputType() const {
       if (extension_->IsControllerForUserEnabled(user_index)) {
         return InputType::Controller;
       }
+    }
+    if (!extension_->UsesGenericKeyboardMode()) {
+      return InputType::None;
     }
   }
 
