@@ -464,7 +464,7 @@ std::vector<std::unique_ptr<hid::InputDriver>> EmulatorApp::CreateInputDrivers(
     factory.Add("keyboard", xe::hid::keyboard::Create);
 #endif
 #if XE_PLATFORM_WIN32
-    // Keyboard and Kbm are added after physical controller drivers.
+          // Keyboard and KBM are added after physical controller drivers.
     factory.Add("keyboard", xe::hid::keyboard::Create);
     factory.Add("kbm", xe::hid::kbm::Create);
 #endif  // XE_PLATFORM_WIN32

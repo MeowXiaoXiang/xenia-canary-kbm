@@ -24,8 +24,8 @@
 #include "xenia/base/string.h"
 
 DECLARE_string(hid);
-DECLARE_int32(keyboard_mode);
-DECLARE_int32(keyboard_user_index);
+DECLARE_bool(kbm_enabled);
+DECLARE_int32(kbm_user_index);
 
 #define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
@@ -222,12 +222,7 @@ std::string FormatChord(const KbmChord& chord, bool display) {
 std::filesystem::path config_path;
 
 bool IsKbmConfigVar(const cvar::IConfigVar& config_var) {
-  if (config_var.category() == "HID.Kbm") {
-    return true;
-  }
-  return config_var.category() == "HID" &&
-         (config_var.name() == "keyboard_mode" ||
-          config_var.name() == "keyboard_user_index");
+  return config_var.category() == "HID.KBM";
 }
 
 void LoadConfig() {
@@ -309,8 +304,6 @@ void SetupConfig(const std::filesystem::path& storage_root) {
   if (std::filesystem::exists(config_path)) {
     LoadConfig();
   } else if (cvars::hid == "kbm") {
-    // This also preserves values imported from the old main config before the
-    // HID.Kbm cvars became transient.
     SaveConfig();
   }
 }
@@ -345,7 +338,7 @@ bool SaveConfig() {
   }
 
   std::string output =
-      "# Kbm keyboard and Raw Input mouse settings.\n"
+      "# KBM Controller keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n";
   std::string category;
   for (const auto* config_var : vars) {
@@ -373,8 +366,8 @@ bool SaveConfig() {
 
 KbmSettings GetSettingsFromCvars() {
   KbmSettings settings;
-  settings.keyboard_mode = cvars::keyboard_mode;
-  settings.keyboard_user_index = cvars::keyboard_user_index;
+  settings.enabled = cvars::kbm_enabled;
+  settings.user_index = cvars::kbm_user_index;
 #define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   settings.cvar_name = cvars::cvar_name;
@@ -394,8 +387,8 @@ KbmSettings GetSettingsFromCvars() {
 }
 
 void ApplySettingsToCvars(const KbmSettings& settings) {
-  cvars::keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
-  cvars::keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
+  cvars::kbm_enabled = settings.enabled;
+  cvars::kbm_user_index = std::clamp(settings.user_index, 0, 3);
 #define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   cvars::cvar_name = settings.cvar_name;

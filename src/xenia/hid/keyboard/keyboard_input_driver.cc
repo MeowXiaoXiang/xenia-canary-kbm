@@ -220,8 +220,11 @@ void KeyboardInputDriver::ParseKeyBinding(
 }
 
 KeyboardInputDriver::KeyboardInputDriver(xe::ui::Window* window,
-                                         size_t window_z_order)
-    : InputDriver(window, window_z_order), window_input_listener_(*this) {
+                                         size_t window_z_order,
+                                         KeyboardInputExtension* extension)
+    : InputDriver(window, window_z_order),
+      window_input_listener_(*this),
+      extension_(extension) {
 #define XE_HID_KEYBOARD_BINDING(button, description, cvar_name,        \
                                 cvar_default_value)                    \
   ParseKeyBinding(xe::ui::VirtualKey::kXInputPad##button, description, \
@@ -241,6 +244,22 @@ X_STATUS KeyboardInputDriver::Setup() { return X_STATUS_SUCCESS; }
 X_RESULT KeyboardInputDriver::GetCapabilities(uint32_t user_index,
                                               uint32_t flags,
                                               X_INPUT_CAPABILITIES* out_caps) {
+  if (extension_ && extension_->IsControllerForUserEnabled(user_index)) {
+    out_caps->type = X_INPUT_DEVTYPE::XINPUT_DEVTYPE_GAMEPAD;
+    out_caps->sub_type = X_INPUT_DEVSUBTYPE::XINPUT_DEVSUBTYPE_GAMEPAD;
+    out_caps->flags = 0;
+    out_caps->gamepad.buttons = 0xFFFF;
+    out_caps->gamepad.left_trigger = 0xFF;
+    out_caps->gamepad.right_trigger = 0xFF;
+    out_caps->gamepad.thumb_lx = (int16_t)0xFFFFu;
+    out_caps->gamepad.thumb_ly = (int16_t)0xFFFFu;
+    out_caps->gamepad.thumb_rx = (int16_t)0xFFFFu;
+    out_caps->gamepad.thumb_ry = (int16_t)0xFFFFu;
+    out_caps->vibration.left_motor_speed = 0;
+    out_caps->vibration.right_motor_speed = 0;
+    return X_ERROR_SUCCESS;
+  }
+
   if (!IsKeyboardForUserEnabled(user_index) && !IsPassthroughEnabled()) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
@@ -268,6 +287,13 @@ X_RESULT KeyboardInputDriver::GetCapabilities(uint32_t user_index,
 
 X_RESULT KeyboardInputDriver::GetState(uint32_t user_index,
                                        X_INPUT_STATE* out_state) {
+  if (extension_ && extension_->IsControllerForUserEnabled(user_index)) {
+    memset(out_state, 0, sizeof(*out_state));
+    out_state->packet_number = ++packet_number_;
+    extension_->ApplyGamepadState(user_index, out_state);
+    return X_ERROR_SUCCESS;
+  }
+
   if (!IsKeyboardForUserEnabled(user_index)) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
@@ -386,6 +412,10 @@ X_RESULT KeyboardInputDriver::GetState(uint32_t user_index,
 
 X_RESULT KeyboardInputDriver::SetState(uint32_t user_index,
                                        X_INPUT_VIBRATION* vibration) {
+  if (extension_ && extension_->IsControllerForUserEnabled(user_index)) {
+    return X_ERROR_SUCCESS;
+  }
+
   if (!IsKeyboardForUserEnabled(user_index) && !IsPassthroughEnabled()) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
@@ -484,17 +514,41 @@ X_RESULT KeyboardInputDriver::GetKeystroke(uint32_t user_index, uint32_t flags,
 
 void KeyboardInputDriver::KeyboardWindowInputListener::OnKeyDown(
     ui::KeyEvent& e) {
-  driver_.OnKey(e, true);
+  if (driver_.extension_) {
+    driver_.extension_->OnKey(e, true);
+  }
+  if (!e.is_handled()) {
+    driver_.OnKey(e, true);
+  }
 }
 
 void KeyboardInputDriver::KeyboardWindowInputListener::OnKeyUp(
     ui::KeyEvent& e) {
-  driver_.OnKey(e, false);
+  if (driver_.extension_) {
+    driver_.extension_->OnKey(e, false);
+  }
+  if (!e.is_handled()) {
+    driver_.OnKey(e, false);
+  }
 }
 
 void KeyboardInputDriver::KeyboardWindowInputListener::OnKeyChar(
     ui::KeyEvent& e) {
   driver_.OnChar(e);
+}
+
+void KeyboardInputDriver::KeyboardWindowInputListener::OnMouseDown(
+    ui::MouseEvent& e) {
+  if (driver_.extension_) {
+    driver_.extension_->OnMouseDown(e);
+  }
+}
+
+void KeyboardInputDriver::KeyboardWindowInputListener::OnRawMouseMove(
+    ui::RawMouseMoveEvent& e) {
+  if (driver_.extension_) {
+    driver_.extension_->OnRawMouseMove(e);
+  }
 }
 
 void KeyboardInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
@@ -554,6 +608,14 @@ void KeyboardInputDriver::OnChar(ui::KeyEvent& e) {
 }
 
 InputType KeyboardInputDriver::GetInputType() const {
+  if (extension_) {
+    for (uint32_t user_index = 0; user_index < 4; ++user_index) {
+      if (extension_->IsControllerForUserEnabled(user_index)) {
+        return InputType::Controller;
+      }
+    }
+  }
+
   switch (static_cast<KeyboardMode>(cvars::keyboard_mode)) {
     case KeyboardMode::Disabled:
       return InputType::None;
@@ -565,6 +627,12 @@ InputType KeyboardInputDriver::GetInputType() const {
       break;
   }
   return InputType::Controller;
+}
+
+void KeyboardInputDriver::OnHostUIVisibilityChanged(bool visible) {
+  if (extension_) {
+    extension_->OnHostUIVisibilityChanged(visible);
+  }
 }
 
 }  // namespace keyboard

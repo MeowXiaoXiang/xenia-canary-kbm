@@ -18,8 +18,6 @@
 
 namespace xe::hid::kbm {
 
-enum class KeyboardMode { Disabled, Enabled, Passthrough };
-
 struct KbmChord {
   uint16_t virtual_key = 0;
   bool shift = false;
@@ -33,8 +31,8 @@ std::string FormatKbmChord(const KbmChord& chord);
 std::string FormatKbmBinding(std::string_view binding);
 
 struct KbmSettings {
-  int32_t keyboard_mode = 1;
-  int32_t keyboard_user_index = 0;
+  bool enabled = true;
+  int32_t user_index = 0;
 
 #define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \

@@ -785,23 +785,13 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   if (ImGui::TreeNodeEx(
           tr(StringId::kKbmKeyboard),
           ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    const char* keyboard_mode_names[] = {tr(StringId::kKbmModeDisabled),
-                                         tr(StringId::kKbmModeController),
-                                         tr(StringId::kKbmModePassthrough)};
-    int keyboard_mode = std::clamp(settings_.keyboard_mode, 0, 2);
-    if (ImGui::BeginCombo(tr(StringId::kKbmKeyboardMode),
-                          keyboard_mode_names[keyboard_mode])) {
-      for (int i = 0; i < 3; ++i) {
-        if (ImGui::Selectable(keyboard_mode_names[i], keyboard_mode == i)) {
-          settings_.keyboard_mode = i;
-          changed = true;
-        }
-      }
-      ImGui::EndCombo();
+    if (ImGui::Checkbox(tr(StringId::kKbmEnableController),
+                        &settings_.enabled)) {
+      changed = true;
     }
 
-    if (settings_.keyboard_mode == int(hid::kbm::KeyboardMode::Enabled)) {
-      int controller_slot = std::clamp(settings_.keyboard_user_index, 0, 3);
+    if (settings_.enabled) {
+      int controller_slot = std::clamp(settings_.user_index, 0, 3);
       const char* controller_slot_names[] = {
           tr(StringId::kKbmPlayer1), tr(StringId::kKbmPlayer2),
           tr(StringId::kKbmPlayer3), tr(StringId::kKbmPlayer4)};
@@ -810,7 +800,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
         for (int i = 0; i < 4; ++i) {
           if (ImGui::Selectable(controller_slot_names[i],
                                 controller_slot == i)) {
-            settings_.keyboard_user_index = i;
+            settings_.user_index = i;
             changed = true;
           }
         }
@@ -837,9 +827,6 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
 #undef XE_HID_KBM_BINDING
         ImGui::EndTable();
       }
-    } else if (settings_.keyboard_mode ==
-               int(hid::kbm::KeyboardMode::Passthrough)) {
-      ImGui::TextWrapped("%s", tr(StringId::kKbmPassthroughHelp));
     }
     ImGui::TreePop();
   }
@@ -847,8 +834,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   if (ImGui::TreeNodeEx(
           tr(StringId::kKbmMouse),
           ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    const bool mouse_controls_available =
-        settings_.keyboard_mode == int(hid::kbm::KeyboardMode::Enabled);
+    const bool mouse_controls_available = settings_.enabled;
     ImGui::BeginDisabled(!mouse_controls_available);
     if (ImGui::Checkbox(tr(StringId::kKbmEnableRawMouse),
                         &settings_.raw_mouse)) {

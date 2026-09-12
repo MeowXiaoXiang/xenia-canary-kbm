@@ -30,25 +30,27 @@ revision.
    `--hid=kbm`.
 2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
    selected, or after a `kbm.toml` file already exists.
-3. Select a keyboard mode and controller slot, configure bindings, then choose
-   **Save**.
+3. Enable **KBM Controller**, select its controller slot, configure bindings,
+   then choose **Save**.
 
 When KBM Controller is selected for the first time, the backend creates
 `kbm.toml` in Xenia's storage root. This file intentionally remains
-separate from `xenia-canary.config.toml`. Existing values from the main
-configuration are imported once when the separate file is created.
+separate from `xenia-canary.config.toml`. It does not import or migrate a
+previous `winkey.toml`; save the desired bindings again in the KBM Controller
+Settings dialog.
 
 ## Keyboard bindings
 
-Use **Virtual Xbox 360 controller** mode to map host input to a controller
+KBM Controller maps host input to the selected virtual Xbox 360 controller
 slot. Click a binding field and press the desired key, mouse button, or
 modifier chord. Use **+** to add an alternative binding and **x** to clear one.
 Bindings are displayed as names such as `F8` or `Ctrl+Shift+K`, rather than
 raw Windows virtual-key codes.
 
-**Passthrough** exposes the keyboard as a keyboard device instead of a virtual
-controller. Raw mouse right-stick control is available only in Virtual Xbox
-360 controller mode.
+KBM Controller does not expose keyboard passthrough. To expose a physical
+keyboard to the guest, start Xenia with `--hid=keyboard` and configure the
+upstream keyboard driver separately. `--hid=kbm` remains an opt-in virtual
+controller with Raw Input mouse-to-right-stick support.
 
 ## Raw Input mouse tuning
 

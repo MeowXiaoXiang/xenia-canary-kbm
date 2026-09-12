@@ -27,207 +27,72 @@
   DEFINE_transient_string(cvar_name, cvar_default_value,             \
                           "Keys or chords bound to " description     \
                           ", with alternatives separated by spaces", \
-                          "HID.Kbm")
+                          "HID.KBM")
 #include "kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
 
-DEFINE_transient_int32(
-    keyboard_mode, 1,
-    "Allows user do specify keyboard working mode. Possible values: 0 "
-    "- Disabled, 1 - Enabled, 2 - Passthrough. Passthrough requires "
-    "controller being connected!",
-    "HID");
+DEFINE_transient_bool(kbm_enabled, true,
+                      "Enable the KBM virtual controller.", "HID.KBM");
 
-DEFINE_transient_int32(
-    keyboard_user_index, 0,
-    "Controller port that keyboard emulates. [0, 3] - Keyboard is assigned to "
-    "selected slot. Passthrough does not require assigning slot.",
-    "HID");
+DEFINE_transient_int32(kbm_user_index, 0,
+                       "Controller port that KBM emulates. [0, 3].",
+                       "HID.KBM");
 
 DEFINE_transient_bool(
     raw_mouse, true,
     "Use Windows Raw Input mouse movement for the emulated right "
-    "thumbstick. Requires keyboard_mode = 1.",
-    "HID.Kbm");
+    "thumbstick. Requires kbm_enabled = true.",
+    "HID.KBM");
 
 DEFINE_transient_double(raw_mouse_sensitivity, 10.0,
-                        "Raw mouse sensitivity multiplier.", "HID.Kbm");
+                        "Raw mouse sensitivity multiplier.", "HID.KBM");
 
 DEFINE_transient_double(
     raw_mouse_full_scale_velocity, 24000.0,
     "Raw Input counts per second that produce full right-stick deflection "
     "before applying the response curve.",
-    "HID.Kbm");
+    "HID.KBM");
 
 DEFINE_transient_double(
     raw_mouse_response_curve, 1.2,
     "Raw mouse response exponent. 1 is linear, values above 1 add precision "
     "near the center, and values below 1 boost low speeds.",
-    "HID.Kbm");
+    "HID.KBM");
 
 DEFINE_transient_bool(
     raw_mouse_deadzone_compensation, false,
     "Raise non-zero Raw Input mouse output above a configurable minimum "
     "response. Off preserves the original mouse-to-stick translation.",
-    "HID.Kbm");
+    "HID.KBM");
 
 DEFINE_transient_double(
     raw_mouse_minimum_response, 0.30,
     "Minimum absolute right-stick response applied only while Raw Input mouse "
     "movement is non-zero and deadzone compensation is enabled.",
-    "HID.Kbm");
+    "HID.KBM");
 
 DEFINE_transient_bool(raw_mouse_invert_y, false,
-                      "Invert Raw Input mouse Y movement.", "HID.Kbm");
+                      "Invert Raw Input mouse Y movement.", "HID.KBM");
 
 DEFINE_transient_string(
     raw_mouse_capture_toggle_key, "F8",
     "Key or modifier chord used to toggle Raw Input mouse capture. Leave "
     "empty to disable the hotkey.",
-    "HID.Kbm");
+    "HID.KBM");
 
 DEFINE_transient_bool(
     raw_mouse_capture_on_start, false,
     "Capture and hide the mouse when Raw Input is initialized. The mouse is "
     "automatically released when Xenia loses focus.",
-    "HID.Kbm");
+    "HID.KBM");
 
 namespace xe {
 namespace hid {
 namespace kbm {
 
-static uint8_t VirtualKeyToHIDUsage(UINT vk) {
-  // Letters: contiguous in both VK and HID space
-  if (vk >= 'A' && vk <= 'Z') {
-    return vk - 'A' + 0x04;
-  }
-
-  // Digits 1-9 (0 is irregular: 0x27)
-  if (vk >= '1' && vk <= '9') {
-    return vk - '1' + 0x1E;
-  }
-
-  // F1-F12
-  if (vk >= VK_F1 && vk <= VK_F12) {
-    return vk - VK_F1 + 0x3A;
-  }
-
-  // F13-F24
-  if (vk >= VK_F13 && vk <= VK_F24) {
-    return vk - VK_F13 + 0x68;
-  }
-
-  // Numpad 1-9 (0 is irregular: 0x62)
-  if (vk >= VK_NUMPAD1 && vk <= VK_NUMPAD9) {
-    return vk - VK_NUMPAD1 + 0x59;
-  }
-
-  // Modifiers (Left side starts at 0xE0, Right at 0xE4)
-  if (vk >= VK_LCONTROL && vk <= VK_LWIN) {
-    return vk - VK_LCONTROL + 0xE0;
-  }
-  if (vk >= VK_RCONTROL && vk <= VK_RWIN) {
-    return vk - VK_RCONTROL + 0xE4;
-  }
-
-  switch (vk) {
-    case '0':
-      return 0x27;
-    case VK_RETURN:
-      return 0x28;
-    case VK_ESCAPE:
-      return 0x29;
-    case VK_BACK:
-      return 0x2A;
-    case VK_TAB:
-      return 0x2B;
-    case VK_SPACE:
-      return 0x2C;
-    case VK_OEM_MINUS:
-      return 0x2D;
-    case VK_OEM_PLUS:
-      return 0x2E;
-    case VK_OEM_4:
-      return 0x2F;
-    case VK_OEM_6:
-      return 0x30;
-    case VK_OEM_5:
-      return 0x31;
-    case VK_OEM_1:
-      return 0x33;
-    case VK_OEM_7:
-      return 0x34;
-    case VK_OEM_3:
-      return 0x35;
-    case VK_OEM_COMMA:
-      return 0x36;
-    case VK_OEM_PERIOD:
-      return 0x37;
-    case VK_OEM_2:
-      return 0x38;
-    case VK_CAPITAL:
-      return 0x39;
-    case VK_SNAPSHOT:
-      return 0x46;
-    case VK_SCROLL:
-      return 0x47;
-    case VK_PAUSE:
-      return 0x48;
-    case VK_INSERT:
-      return 0x49;
-    case VK_HOME:
-      return 0x4A;
-    case VK_PRIOR:
-      return 0x4B;
-    case VK_DELETE:
-      return 0x4C;
-    case VK_END:
-      return 0x4D;
-    case VK_NEXT:
-      return 0x4E;
-    case VK_RIGHT:
-      return 0x4F;
-    case VK_LEFT:
-      return 0x50;
-    case VK_DOWN:
-      return 0x51;
-    case VK_UP:
-      return 0x52;
-    case VK_NUMLOCK:
-      return 0x53;
-    case VK_DIVIDE:
-      return 0x54;
-    case VK_MULTIPLY:
-      return 0x55;
-    case VK_SUBTRACT:
-      return 0x56;
-    case VK_ADD:
-      return 0x57;
-    case VK_NUMPAD0:
-      return 0x62;
-    case VK_DECIMAL:
-      return 0x63;
-    case VK_APPS:
-      return 0x65;
-    default:
-      break;
-  }
-  return 0x00;
-}
-
-bool static IsPassthroughEnabled(const KbmSettings& settings) {
-  return static_cast<KeyboardMode>(settings.keyboard_mode) ==
-         KeyboardMode::Passthrough;
-}
-
-bool static IsKeyboardForUserEnabled(const KbmSettings& settings,
-                                     uint32_t user_index) {
-  if (static_cast<KeyboardMode>(settings.keyboard_mode) !=
-      KeyboardMode::Enabled) {
-    return false;
-  }
-
-  return settings.keyboard_user_index == user_index;
+bool static IsKbmForUserEnabled(const KbmSettings& settings,
+                                uint32_t user_index) {
+  return settings.enabled && settings.user_index == user_index;
 }
 
 bool __inline IsKeyToggled(uint8_t key) {
@@ -355,8 +220,7 @@ void KbmInputDriver::RebuildKeyBindings(const KbmSettings& settings) {
 
 KbmInputDriver::KbmInputDriver(xe::ui::Window* window,
                                      size_t window_z_order)
-    : InputDriver(window, window_z_order),
-      window_input_listener_(*this),
+    : KeyboardInputDriver(window, window_z_order, this),
       window_listener_(*this),
       raw_mouse_last_sample_time_(std::chrono::steady_clock::now()),
       raw_mouse_last_center_time_(std::chrono::steady_clock::now()) {
@@ -366,21 +230,18 @@ KbmInputDriver::KbmInputDriver(xe::ui::Window* window,
                    raw_mouse_capture_toggle_);
 
   window->AddListener(&window_listener_);
-  window->AddInputListener(&window_input_listener_, window_z_order);
 }
 
 KbmInputDriver::~KbmInputDriver() {
   raw_mouse_capture_requested_ = false;
   ReleaseRawMouseCapture();
   UnregisterRawMouse();
-  window()->RemoveInputListener(&window_input_listener_);
   window()->RemoveListener(&window_listener_);
 }
 
 X_STATUS KbmInputDriver::Setup() {
   KbmSettings settings = GetSettings();
-  if (settings.raw_mouse && static_cast<KeyboardMode>(settings.keyboard_mode) ==
-                                KeyboardMode::Enabled) {
+  if (settings.raw_mouse && settings.enabled) {
     RegisterRawMouse();
   }
   if (raw_mouse_registered_ && settings.raw_mouse_capture_on_start) {
@@ -456,8 +317,7 @@ KbmSettings KbmInputDriver::GetSettings() const {
 
 void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
   KbmSettings settings = source_settings;
-  settings.keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
-  settings.keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
+  settings.user_index = std::clamp(settings.user_index, 0, 3);
   settings.raw_mouse_sensitivity =
       std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0);
   settings.raw_mouse_full_scale_velocity =
@@ -482,9 +342,7 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
   }
   ApplySettingsToCvars(settings);
 
-  const bool should_register =
-      settings.raw_mouse && static_cast<KeyboardMode>(settings.keyboard_mode) ==
-                                KeyboardMode::Enabled;
+  const bool should_register = settings.raw_mouse && settings.enabled;
   if (should_register) {
     RegisterRawMouse();
   } else {
@@ -552,44 +410,14 @@ bool KbmInputDriver::CompleteBindingCapture(BindingCaptureStatus status,
   return true;
 }
 
-X_RESULT KbmInputDriver::GetCapabilities(uint32_t user_index, uint32_t flags,
-                                            X_INPUT_CAPABILITIES* out_caps) {
-  KbmSettings settings = GetSettings();
-  if (!IsKeyboardForUserEnabled(settings, user_index) &&
-      !IsPassthroughEnabled(settings)) {
-    return X_ERROR_DEVICE_NOT_CONNECTED;
-  }
-
-  if (IsPassthroughEnabled(settings)) {
-    out_caps->type = X_INPUT_DEVTYPE::XINPUT_DEVTYPE_KEYBOARD;
-    out_caps->sub_type = X_INPUT_DEVSUBTYPE::XINPUT_DEVSUBTYPE_USB_KEYBOARD;
-    return X_ERROR_SUCCESS;
-  }
-
-  out_caps->type = X_INPUT_DEVTYPE::XINPUT_DEVTYPE_GAMEPAD;
-  out_caps->sub_type = X_INPUT_DEVSUBTYPE::XINPUT_DEVSUBTYPE_GAMEPAD;
-  out_caps->flags = 0;
-  out_caps->gamepad.buttons = 0xFFFF;
-  out_caps->gamepad.left_trigger = 0xFF;
-  out_caps->gamepad.right_trigger = 0xFF;
-  out_caps->gamepad.thumb_lx = (int16_t)0xFFFFu;
-  out_caps->gamepad.thumb_ly = (int16_t)0xFFFFu;
-  out_caps->gamepad.thumb_rx = (int16_t)0xFFFFu;
-  out_caps->gamepad.thumb_ry = (int16_t)0xFFFFu;
-  out_caps->vibration.left_motor_speed = 0;
-  out_caps->vibration.right_motor_speed = 0;
-  return X_ERROR_SUCCESS;
+bool KbmInputDriver::IsControllerForUserEnabled(uint32_t user_index) const {
+  return IsKbmForUserEnabled(GetSettings(), user_index);
 }
 
-X_RESULT KbmInputDriver::GetState(uint32_t user_index,
-                                     X_INPUT_STATE* out_state) {
+void KbmInputDriver::ApplyGamepadState(uint32_t,
+                                       X_INPUT_STATE* out_state) {
   auto settings_lock = settings_critical_region_.Acquire();
   const KbmSettings& settings = settings_;
-  if (!IsKeyboardForUserEnabled(settings, user_index)) {
-    return X_ERROR_DEVICE_NOT_CONNECTED;
-  }
-
-  packet_number_++;
 
   uint16_t buttons = 0;
   uint8_t left_trigger = 0;
@@ -733,7 +561,6 @@ X_RESULT KbmInputDriver::GetState(uint32_t user_index,
     thumb_ry = AddThumbWithSaturation(thumb_ry, mouse_thumb_y);
   }
 
-  out_state->packet_number = packet_number_;
   out_state->gamepad.buttons = buttons;
   out_state->gamepad.left_trigger = left_trigger;
   out_state->gamepad.right_trigger = right_trigger;
@@ -741,136 +568,6 @@ X_RESULT KbmInputDriver::GetState(uint32_t user_index,
   out_state->gamepad.thumb_ly = thumb_ly;
   out_state->gamepad.thumb_rx = thumb_rx;
   out_state->gamepad.thumb_ry = thumb_ry;
-
-  if (IsPassthroughEnabled(settings)) {
-    memset(out_state, 0, sizeof(out_state));
-  }
-
-  return X_ERROR_SUCCESS;
-}
-
-X_RESULT KbmInputDriver::SetState(uint32_t user_index,
-                                     X_INPUT_VIBRATION* vibration) {
-  KbmSettings settings = GetSettings();
-  if (!IsKeyboardForUserEnabled(settings, user_index) &&
-      !IsPassthroughEnabled(settings)) {
-    return X_ERROR_DEVICE_NOT_CONNECTED;
-  }
-
-  return X_ERROR_SUCCESS;
-}
-
-X_RESULT KbmInputDriver::GetKeystroke(uint32_t user_index, uint32_t flags,
-                                         X_INPUT_KEYSTROKE* out_keystroke) {
-  auto settings_lock = settings_critical_region_.Acquire();
-  const KbmSettings& settings = settings_;
-  if (!IsKeyboardForUserEnabled(settings, user_index) &&
-      !IsPassthroughEnabled(settings)) {
-    return X_ERROR_DEVICE_NOT_CONNECTED;
-  }
-  // Pop from the queue.
-  KeyEvent evt;
-  {
-    auto global_lock = global_critical_region_.Acquire();
-    if (key_events_.empty()) {
-      // No keys!
-      return X_ERROR_EMPTY;
-    }
-    evt = key_events_.front();
-    key_events_.pop();
-  }
-
-  X_RESULT result = X_ERROR_EMPTY;
-
-  ui::VirtualKey xinput_virtual_key = ui::VirtualKey::kNone;
-  uint16_t unicode = 0;
-  uint16_t keystroke_flags = 0;
-  uint8_t hid_code = 0;
-
-  const bool capital = IsKeyToggled(VK_CAPITAL) || evt.shift;
-
-  if (!IsPassthroughEnabled(settings)) {
-    if (IsKeyboardForUserEnabled(settings, user_index)) {
-      for (const KeyBinding& b : key_bindings_) {
-        if (b.input_key == evt.virtual_key &&
-            ((b.lowercase == b.uppercase) || (b.lowercase && !capital) ||
-             (b.uppercase && capital)) &&
-            ModifiersMatch(b.shift, b.ctrl, b.alt, b.super, evt.shift, evt.ctrl,
-                           evt.alt, evt.super)) {
-          xinput_virtual_key = b.output_key;
-        }
-      }
-    }
-  } else {
-    xinput_virtual_key = evt.virtual_key;
-
-    if (evt.shift) {
-      keystroke_flags |= 0x0008;  // XINPUT_KEYSTROKE_SHIFT
-    }
-
-    if (evt.ctrl) {
-      keystroke_flags |= 0x0010;  // XINPUT_KEYSTROKE_CTRL
-    }
-
-    if (evt.alt) {
-      keystroke_flags |= 0x0020;  // XINPUT_KEYSTROKE_ALT
-    }
-  }
-
-  if (xinput_virtual_key != ui::VirtualKey::kNone) {
-    if (evt.transition == true) {
-      keystroke_flags |= 0x0001;  // XINPUT_KEYSTROKE_KEYDOWN
-      if (evt.prev_state == evt.transition) {
-        keystroke_flags |= 0x0004;  // XINPUT_KEYSTROKE_REPEAT
-      }
-    } else if (evt.transition == false) {
-      keystroke_flags |= 0x0002;  // XINPUT_KEYSTROKE_KEYUP
-    }
-
-    if (IsPassthroughEnabled(settings)) {
-      const UINT vk = static_cast<UINT>(xinput_virtual_key);
-      hid_code = VirtualKeyToHIDUsage(vk);
-      if (GetKeyboardState(key_map_)) {
-        const UINT sc = MapVirtualKey(vk, MAPVK_VK_TO_VSC);
-        WCHAR buf;
-        if (ToUnicode(vk, sc, key_map_, &buf, 1, 0) == 1) {
-          keystroke_flags |= 0x1000;  // XINPUT_KEYSTROKE_VALIDUNICODE
-          unicode = buf;
-        }
-      }
-    }
-
-    result = X_ERROR_SUCCESS;
-  }
-
-  out_keystroke->virtual_key = uint16_t(xinput_virtual_key);
-  out_keystroke->unicode = unicode;
-  out_keystroke->flags = keystroke_flags;
-  out_keystroke->user_index = user_index;
-  out_keystroke->hid_code = hid_code;
-
-  // X_ERROR_EMPTY if no new keys
-  // X_ERROR_DEVICE_NOT_CONNECTED if no device
-  // X_ERROR_SUCCESS if key
-  return result;
-}
-
-void KbmInputDriver::KbmWindowInputListener::OnKeyDown(ui::KeyEvent& e) {
-  driver_.OnKey(e, true);
-}
-
-void KbmInputDriver::KbmWindowInputListener::OnKeyUp(ui::KeyEvent& e) {
-  driver_.OnKey(e, false);
-}
-
-void KbmInputDriver::KbmWindowInputListener::OnMouseDown(
-    ui::MouseEvent& e) {
-  driver_.OnMouseDown(e);
-}
-
-void KbmInputDriver::KbmWindowInputListener::OnRawMouseMove(
-    ui::RawMouseMoveEvent& e) {
-  driver_.OnRawMouseMove(e);
 }
 
 void KbmInputDriver::KbmWindowListener::OnClosing(ui::UIEvent& e) {
@@ -951,24 +648,9 @@ void KbmInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
     return;
   }
 
-  if (static_cast<KeyboardMode>(settings.keyboard_mode) ==
-          KeyboardMode::Disabled ||
-      host_input_suspended_) {
+  if (!settings.enabled || host_input_suspended_) {
     return;
   }
-
-  KeyEvent key;
-  key.virtual_key = e.virtual_key();
-  key.transition = is_down;
-  key.prev_state = e.prev_state();
-  key.repeat_count = e.repeat_count();
-  key.shift = e.is_shift_pressed();
-  key.ctrl = e.is_ctrl_pressed();
-  key.alt = e.is_alt_pressed();
-  key.super = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
-
-  auto global_lock = global_critical_region_.Acquire();
-  key_events_.push(key);
 }
 
 void KbmInputDriver::OnMouseDown(ui::MouseEvent& e) {
@@ -1007,9 +689,7 @@ void KbmInputDriver::OnMouseDown(ui::MouseEvent& e) {
 
 void KbmInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
   KbmSettings settings = GetSettings();
-  if (!settings.raw_mouse || !raw_mouse_registered_ ||
-      static_cast<KeyboardMode>(settings.keyboard_mode) !=
-          KeyboardMode::Enabled ||
+  if (!settings.raw_mouse || !settings.enabled || !raw_mouse_registered_ ||
       !raw_mouse_capture_active_ || host_input_suspended_ ||
       !window()->HasFocus()) {
     return;
@@ -1187,21 +867,6 @@ bool KbmInputDriver::CenterRawMouseCursor() {
     return false;
   }
   return true;
-}
-
-InputType KbmInputDriver::GetInputType() const {
-  KbmSettings settings = GetSettings();
-  switch (static_cast<KeyboardMode>(settings.keyboard_mode)) {
-    case KeyboardMode::Disabled:
-      return InputType::None;
-    case KeyboardMode::Enabled:
-      return InputType::Controller;
-    case KeyboardMode::Passthrough:
-      return InputType::Keyboard;
-    default:
-      break;
-  }
-  return InputType::Controller;
 }
 
 }  // namespace kbm

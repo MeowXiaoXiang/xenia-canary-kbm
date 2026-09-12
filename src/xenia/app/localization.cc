@@ -57,8 +57,8 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"&Post-processing settings", "後處理設定(&P)"},
         {"&Fullscreen", "全螢幕(&F)"},
         {"&Take Screenshot", "擷取螢幕畫面(&T)"},
-        {"&Kbm", "&Kbm"},
-        {"&Keyboard and mouse settings...", "鍵盤與滑鼠設定(&K)..."},
+        {"&KBM Controller", "&KBM 控制器"},
+        {"&KBM Controller settings...", "KBM 控制器設定(&K)..."},
         {"&HID", "&HID"},
         {"&Toggle controller vibration", "切換控制器震動(&T)"},
         {"&Display controller hotkeys", "顯示控制器 Hotkey(&D)"},
@@ -153,10 +153,10 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"Dither the final output to 8bpc to make gradients smoother",
          "對最終輸出套用 8bpc 色彩抖動，使漸層更平滑"},
 
-        {"Kbm Settings", "Kbm 設定"},
-        {"The Kbm HID backend is not active. These settings will be saved, "
-         "but input requires hid = \"kbm\" on the next launch.",
-         "Kbm HID backend 尚未啟用。設定仍會儲存，但下次啟動時必須使用 hid "
+        {"KBM Controller Settings", "KBM 控制器設定"},
+        {"The KBM Controller HID backend is not active. These settings will "
+         "be saved, but input requires hid = \"kbm\" on the next launch.",
+         "KBM 控制器 HID 後端尚未啟用。設定仍會儲存，但下次啟動時必須使用 hid "
          "= \"kbm\" 才能輸入。"},
         {"Press a key or mouse button...", "請按下按鍵或滑鼠按鈕..."},
         {"Click, then press a key or mouse button. Hold Ctrl, Alt, Shift, or "
@@ -165,11 +165,8 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
          "可建立組合鍵。"},
         {"Add alternative binding", "新增替代綁定"},
         {"Clear binding", "清除綁定"},
-        {"Keyboard", "鍵盤"},
-        {"Disabled", "停用"},
-        {"Virtual Xbox 360 controller", "虛擬 Xbox 360 控制器"},
-        {"Keyboard passthrough", "鍵盤直通"},
-        {"Keyboard mode", "鍵盤模式"},
+        {"KBM Controller", "KBM 控制器"},
+        {"Enable KBM Controller", "啟用 KBM 控制器"},
         {"Controller slot", "控制器插槽"},
         {"Player 1", "玩家 1"},
         {"Player 2", "玩家 2"},
@@ -181,22 +178,18 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
          "可建立組合鍵；使用 + 新增替代按鍵。"},
         {"Xbox 360 input", "Xbox 360 輸入"},
         {"Keyboard / mouse", "鍵盤／滑鼠"},
-        {"Passthrough exposes a keyboard to the guest and does not use the "
-         "Xbox 360 controller bindings below.",
-         "鍵盤直通會將鍵盤直接提供給 Guest，不使用下方的 Xbox 360 "
-         "控制器綁定。"},
         {"Mouse", "滑鼠"},
         {"Enable Raw Input mouse control", "啟用 Raw Input 滑鼠控制"},
-        {"Raw mouse output is available only when Keyboard mode is Virtual "
-         "Xbox 360 controller.",
-         "只有鍵盤模式為虛擬 Xbox 360 控制器時，才能輸出 Raw Input 滑鼠。"},
+        {"Enable KBM Controller to configure Raw Input mouse control.",
+         "啟用 KBM 控制器後才能設定 Raw Input 滑鼠控制。"},
         {"Mouse sensitivity multiplier:", "滑鼠靈敏度倍率："},
         {"Initial reference: 3600 DPI at 10x. This is not universal; in-game "
          "settings and controller limits still apply.",
          "初始參考：3600 DPI 使用 "
          "10x。這不是通用設定；遊戲內靈敏度與搖桿限制仍會影響手感。"},
         {"Invert vertical look", "反轉垂直視角"},
-        {"Capture mouse when Kbm starts", "Kbm 啟動時啟用滑鼠鎖定"},
+        {"Capture mouse when KBM Controller starts",
+         "KBM 控制器啟動時啟用滑鼠鎖定"},
         {"Mouse capture hotkey:", "滑鼠鎖定熱鍵："},
         {"Advanced tuning (optional)", "進階調校（選用）"},
         {"Mouse response curve (1.0 is linear):",
@@ -226,8 +219,9 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"off", "關閉"},
         {"active", "已啟用"},
         {"released", "已解除"},
-        {"Kbm input is temporarily paused while this window is open.",
-         "此設定視窗開啟時，Kbm 輸入會暫時停止傳送至遊戲。"},
+        {"KBM Controller input is temporarily paused while this window is "
+         "open.",
+         "此設定視窗開啟時，KBM 控制器輸入會暫時停止傳送至遊戲。"},
         {"Runtime diagnostics are unavailable.", "執行階段診斷目前無法使用。"},
         {"Save", "儲存"},
         {"Cancel", "取消"},

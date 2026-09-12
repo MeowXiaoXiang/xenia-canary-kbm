@@ -13,11 +13,10 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
-#include <queue>
 
 #include "xenia/base/mutex.h"
-#include "xenia/hid/input_driver.h"
 #include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/keyboard/keyboard_input_driver.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window_listener.h"
 
@@ -25,7 +24,8 @@ namespace xe {
 namespace hid {
 namespace kbm {
 
-class KbmInputDriver final : public InputDriver {
+class KbmInputDriver final : public keyboard::KeyboardInputDriver,
+                             public keyboard::KeyboardInputExtension {
  public:
   enum class BindingCaptureStatus { kNone, kCaptured, kCleared, kCancelled };
 
@@ -52,13 +52,6 @@ class KbmInputDriver final : public InputDriver {
 
   X_STATUS Setup() override;
 
-  X_RESULT GetCapabilities(uint32_t user_index, uint32_t flags,
-                           X_INPUT_CAPABILITIES* out_caps) override;
-  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state) override;
-  X_RESULT SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration) override;
-  X_RESULT GetKeystroke(uint32_t user_index, uint32_t flags,
-                        X_INPUT_KEYSTROKE* out_keystroke) override;
-  virtual InputType GetInputType() const override;
   void OnHostUIVisibilityChanged(bool visible) override {
     SetHostInputSuspended(visible);
   }
@@ -74,17 +67,6 @@ class KbmInputDriver final : public InputDriver {
   void RefreshRawMouseCapture();
 
  protected:
-  struct KeyEvent {
-    ui::VirtualKey virtual_key = ui::VirtualKey::kNone;
-    int repeat_count = 0;
-    bool transition = false;  // going up(false) or going down(true)
-    bool prev_state = false;  // down(true) or up(false)
-    bool shift = false;
-    bool ctrl = false;
-    bool alt = false;
-    bool super = false;
-  };
-
   struct KeyBinding {
     ui::VirtualKey input_key = ui::VirtualKey::kNone;
     ui::VirtualKey output_key = ui::VirtualKey::kNone;
@@ -94,20 +76,6 @@ class KbmInputDriver final : public InputDriver {
     bool ctrl = false;
     bool alt = false;
     bool super = false;
-  };
-
-  class KbmWindowInputListener final : public ui::WindowInputListener {
-   public:
-    explicit KbmWindowInputListener(KbmInputDriver& driver)
-        : driver_(driver) {}
-
-    void OnKeyDown(ui::KeyEvent& e) override;
-    void OnKeyUp(ui::KeyEvent& e) override;
-    void OnMouseDown(ui::MouseEvent& e) override;
-    void OnRawMouseMove(ui::RawMouseMoveEvent& e) override;
-
-   private:
-    KbmInputDriver& driver_;
   };
 
   class KbmWindowListener final : public ui::WindowListener {
@@ -130,9 +98,12 @@ class KbmInputDriver final : public InputDriver {
                        const std::string_view binding);
   void RebuildKeyBindings(const KbmSettings& settings);
 
-  void OnKey(ui::KeyEvent& e, bool is_down);
-  void OnMouseDown(ui::MouseEvent& e);
-  void OnRawMouseMove(ui::RawMouseMoveEvent& e);
+  void OnKey(ui::KeyEvent& e, bool is_down) override;
+  void OnMouseDown(ui::MouseEvent& e) override;
+  void OnRawMouseMove(ui::RawMouseMoveEvent& e) override;
+  bool IsControllerForUserEnabled(uint32_t user_index) const override;
+  void ApplyGamepadState(uint32_t user_index,
+                         X_INPUT_STATE* out_state) override;
   bool CompleteBindingCapture(BindingCaptureStatus status,
                               std::string value = {});
   void ToggleRawMouseCapture();
@@ -144,19 +115,14 @@ class KbmInputDriver final : public InputDriver {
   void UnregisterRawMouse();
   void NotifyCaptureState(bool active);
 
-  KbmWindowInputListener window_input_listener_;
   KbmWindowListener window_listener_;
 
   xe::global_critical_region global_critical_region_;
   mutable xe::global_critical_region settings_critical_region_;
-  std::queue<KeyEvent> key_events_;
   bool binding_capture_active_ = false;
   BindingCaptureResult binding_capture_result_;
   std::vector<KeyBinding> key_bindings_;
   KbmSettings settings_;
-  uint8_t key_map_[256];
-  uint32_t packet_number_ = 1;
-
   std::atomic<int64_t> raw_mouse_delta_x_{0};
   std::atomic<int64_t> raw_mouse_delta_y_{0};
   std::chrono::steady_clock::time_point raw_mouse_last_sample_time_;

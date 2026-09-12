@@ -15,6 +15,7 @@
 #include "xenia/base/mutex.h"
 #include "xenia/hid/input_driver.h"
 #include "xenia/ui/virtual_key.h"
+#include "xenia/ui/window_listener.h"
 
 namespace xe {
 namespace hid {
@@ -22,9 +23,28 @@ namespace keyboard {
 
 enum class KeyboardMode { Disabled, Enabled, Passthrough };
 
-class KeyboardInputDriver final : public InputDriver {
+// Optional platform-specific input behavior that shares the keyboard driver's
+// listener. Extensions must not install a competing WindowInputListener.
+class KeyboardInputExtension {
  public:
-  explicit KeyboardInputDriver(xe::ui::Window* window, size_t window_z_order);
+  virtual ~KeyboardInputExtension() = default;
+
+  virtual void OnKey(ui::KeyEvent& e, bool is_down) {}
+  virtual void OnMouseDown(ui::MouseEvent& e) {}
+  virtual void OnRawMouseMove(ui::RawMouseMoveEvent& e) {}
+  virtual void OnHostUIVisibilityChanged(bool visible) {}
+
+  virtual bool IsControllerForUserEnabled(uint32_t user_index) const {
+    return false;
+  }
+  virtual void ApplyGamepadState(uint32_t user_index,
+                                 X_INPUT_STATE* out_state) {}
+};
+
+class KeyboardInputDriver : public InputDriver {
+ public:
+  explicit KeyboardInputDriver(xe::ui::Window* window, size_t window_z_order,
+                               KeyboardInputExtension* extension = nullptr);
   ~KeyboardInputDriver() override;
 
   uint8_t VirtualKeyToHIDUsage(uint16_t vk) const;
@@ -44,6 +64,7 @@ class KeyboardInputDriver final : public InputDriver {
                         X_INPUT_KEYSTROKE* out_keystroke) override;
 
   virtual InputType GetInputType() const override;
+  void OnHostUIVisibilityChanged(bool visible) override;
 
  protected:
   class KeyboardWindowInputListener final : public ui::WindowInputListener {
@@ -54,6 +75,8 @@ class KeyboardInputDriver final : public InputDriver {
     void OnKeyDown(ui::KeyEvent& e) override;
     void OnKeyUp(ui::KeyEvent& e) override;
     void OnKeyChar(ui::KeyEvent& e) override;
+    void OnMouseDown(ui::MouseEvent& e) override;
+    void OnRawMouseMove(ui::RawMouseMoveEvent& e) override;
 
    private:
     KeyboardInputDriver& driver_;
@@ -93,6 +116,7 @@ class KeyboardInputDriver final : public InputDriver {
   std::vector<KeyBinding> key_bindings_;
 
   KeyboardWindowInputListener window_input_listener_;
+  KeyboardInputExtension* extension_ = nullptr;
 
   uint32_t packet_number_ = 1;
 };
@@ -101,4 +125,4 @@ class KeyboardInputDriver final : public InputDriver {
 }  // namespace hid
 }  // namespace xe
 
-#endif  // XENIA_HID_WINKEY_WINKEY_INPUT_DRIVER_H_
+#endif  // XENIA_HID_KEYBOARD_KEYBOARD_INPUT_DRIVER_H_
