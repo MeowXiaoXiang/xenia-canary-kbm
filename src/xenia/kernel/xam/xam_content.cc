@@ -489,6 +489,16 @@ DECLARE_XAM_EXPORT1(XamContentOpenFile, kContent, kStub);
 dword_result_t XamContentFlush_entry(lpstring_t root_name,
                                      pointer_t<XAM_OVERLAPPED> overlapped_ptr) {
   X_RESULT result = X_ERROR_SUCCESS;
+
+  // We do not buffer any device data, so let's just write header.
+  auto package =
+      kernel_state()->content_manager()->FindPackage(root_name.value());
+  if (!package) {
+    return X_STATUS_INVALID_PARAMETER;
+  }
+
+  package->Flush();
+
   if (overlapped_ptr) {
     kernel_state()->CompleteOverlappedImmediate(overlapped_ptr, result);
     return X_ERROR_IO_PENDING;
@@ -622,8 +632,8 @@ dword_result_t XamContentGetThumbnail_entry(
 }
 DECLARE_XAM_EXPORT1(XamContentGetThumbnail, kContent, kImplemented);
 
-dword_result_t XamContentSetThumbnail_entry(
-    dword_t user_index, pointer_t<XCONTENT_DATA> content_data_ptr,
+dword_result_t xeXamContentSetThumbnail(
+    dword_t user_index, lpvoid_t content_data_ptr, dword_t content_data_size,
     lpvoid_t buffer_ptr, dword_t buffer_size,
     pointer_t<XAM_OVERLAPPED> overlapped_ptr) {
   const auto& user = kernel_state()->xam_state()->GetUserProfile(user_index);
@@ -631,10 +641,22 @@ dword_result_t XamContentSetThumbnail_entry(
   if (!user) {
     return X_ERROR_NO_SUCH_USER;
   }
+  if (buffer_size > XContentMetadata::kThumbLengthV2) {
+    return X_E_INVALIDARG;
+  }
 
-  XCONTENT_DATA_INTERNAL content_data = *content_data_ptr;
-  if (content_data.title_id == kCurrentlyRunningTitleId) {
+  XCONTENT_DATA_INTERNAL content_data;
+  if (content_data_size == sizeof(XCONTENT_DATA)) {
+    content_data = *content_data_ptr.as<XCONTENT_DATA*>();
     content_data.title_id = kernel_state()->title_id();
+  } else if (content_data_size == sizeof(XCONTENT_DATA_AGGREGATE)) {
+    content_data = *content_data_ptr.as<XCONTENT_DATA_AGGREGATE*>();
+    content_data.title_id = kernel_state()->title_id();
+  } else if (content_data_size == sizeof(XCONTENT_DATA_INTERNAL)) {
+    content_data = *content_data_ptr.as<XCONTENT_DATA_INTERNAL*>();
+  } else {
+    assert_always();
+    return X_ERROR_INVALID_PARAMETER;
   }
 
   // Buffer is PNG data.
@@ -650,6 +672,23 @@ dword_result_t XamContentSetThumbnail_entry(
     return result;
   }
 }
+
+dword_result_t XamContentSetThumbnailInternal_entry(lpvoid_t content_data_ptr,
+                                                    lpvoid_t buffer_ptr,
+                                                    dword_t buffer_size) {
+  return xeXamContentSetThumbnail(XUserIndexNone, content_data_ptr,
+                                  sizeof(XCONTENT_DATA_INTERNAL), buffer_ptr,
+                                  buffer_size, nullptr);
+}
+DECLARE_XAM_EXPORT1(XamContentSetThumbnailInternal, kContent, kImplemented);
+
+dword_result_t XamContentSetThumbnail_entry(
+    dword_t user_index, lpvoid_t content_data_ptr, lpvoid_t buffer_ptr,
+    dword_t buffer_size, pointer_t<XAM_OVERLAPPED> overlapped_ptr) {
+  return xeXamContentSetThumbnail(user_index, content_data_ptr,
+                                  sizeof(XCONTENT_DATA), buffer_ptr,
+                                  buffer_size, overlapped_ptr);
+}
 DECLARE_XAM_EXPORT1(XamContentSetThumbnail, kContent, kImplemented);
 
 dword_result_t xeXamContentDelete(dword_t user_index, lpvoid_t content_data_ptr,
@@ -659,6 +698,8 @@ dword_result_t xeXamContentDelete(dword_t user_index, lpvoid_t content_data_ptr,
   XCONTENT_DATA_AGGREGATE content_data = *content_data_ptr.as<XCONTENT_DATA*>();
   if (content_data_size == sizeof(XCONTENT_DATA_AGGREGATE)) {
     content_data = *content_data_ptr.as<XCONTENT_DATA_AGGREGATE*>();
+  } else if (content_data_size == sizeof(XCONTENT_DATA_INTERNAL)) {
+    content_data = *content_data_ptr.as<XCONTENT_DATA_INTERNAL*>();
   }
 
   if (user_index != XUserIndexNone) {
