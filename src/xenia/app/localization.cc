@@ -57,7 +57,7 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"&Post-processing settings", "後處理設定(&P)"},
         {"&Fullscreen", "全螢幕(&F)"},
         {"&Take Screenshot", "擷取螢幕畫面(&T)"},
-        {"&WinKey", "&WinKey"},
+        {"&Kbm", "&Kbm"},
         {"&Keyboard and mouse settings...", "鍵盤與滑鼠設定(&K)..."},
         {"&HID", "&HID"},
         {"&Toggle controller vibration", "切換控制器震動(&T)"},
@@ -153,11 +153,11 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"Dither the final output to 8bpc to make gradients smoother",
          "對最終輸出套用 8bpc 色彩抖動，使漸層更平滑"},
 
-        {"WinKey Settings", "WinKey 設定"},
-        {"The WinKey HID backend is not active. These settings will be saved, "
-         "but input requires hid = \"winkey\" on the next launch.",
-         "WinKey HID backend 尚未啟用。設定仍會儲存，但下次啟動時必須使用 hid "
-         "= \"winkey\" 才能輸入。"},
+        {"Kbm Settings", "Kbm 設定"},
+        {"The Kbm HID backend is not active. These settings will be saved, "
+         "but input requires hid = \"kbm\" on the next launch.",
+         "Kbm HID backend 尚未啟用。設定仍會儲存，但下次啟動時必須使用 hid "
+         "= \"kbm\" 才能輸入。"},
         {"Press a key or mouse button...", "請按下按鍵或滑鼠按鈕..."},
         {"Click, then press a key or mouse button. Hold Ctrl, Alt, Shift, or "
          "Win to create a chord.",
@@ -196,7 +196,7 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
          "初始參考：3600 DPI 使用 "
          "10x。這不是通用設定；遊戲內靈敏度與搖桿限制仍會影響手感。"},
         {"Invert vertical look", "反轉垂直視角"},
-        {"Capture mouse when WinKey starts", "WinKey 啟動時啟用滑鼠鎖定"},
+        {"Capture mouse when Kbm starts", "Kbm 啟動時啟用滑鼠鎖定"},
         {"Mouse capture hotkey:", "滑鼠鎖定熱鍵："},
         {"Advanced tuning (optional)", "進階調校（選用）"},
         {"Mouse response curve (1.0 is linear):",
@@ -226,15 +226,15 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"off", "關閉"},
         {"active", "已啟用"},
         {"released", "已解除"},
-        {"WinKey input is temporarily paused while this window is open.",
-         "此設定視窗開啟時，WinKey 輸入會暫時停止傳送至遊戲。"},
+        {"Kbm input is temporarily paused while this window is open.",
+         "此設定視窗開啟時，Kbm 輸入會暫時停止傳送至遊戲。"},
         {"Runtime diagnostics are unavailable.", "執行階段診斷目前無法使用。"},
         {"Save", "儲存"},
         {"Cancel", "取消"},
         {"Reset all", "全部重設"},
-        {"Settings file: winkey.toml", "設定檔：winkey.toml"},
-        {"Failed to save winkey.toml. Check the log.",
-         "無法儲存 winkey.toml，請檢查記錄檔。"},
+        {"Settings file: kbm.toml", "設定檔：kbm.toml"},
+        {"Failed to save kbm.toml. Check the log.",
+         "無法儲存 kbm.toml，請檢查記錄檔。"},
         {"Mouse capture enabled", "滑鼠鎖定已啟用"},
         {"Mouse capture released", "滑鼠鎖定已解除"},
         {"Mouse captured by Xenia. Press {} to release.",

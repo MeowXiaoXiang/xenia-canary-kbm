@@ -65,15 +65,15 @@
 #endif  // !XE_PLATFORM_ANDROID
 #if XE_PLATFORM_WIN32
 #include "xenia/hid/keyboard/keyboard_hid.h"
-#include "xenia/hid/winkey/winkey_config.h"
-#include "xenia/hid/winkey/winkey_hid.h"
+#include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/kbm/kbm_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
 
 #if XE_PLATFORM_WIN32
 #define APU_OPTIONS "[any, nop, sdl, xaudio2]"
 #define GPU_OPTIONS "[any, d3d12, vulkan, null]"
-#define HID_OPTIONS "[any, nop, sdl, keyboard, winkey, xinput]"
+#define HID_OPTIONS "[any, nop, sdl, keyboard, kbm, xinput]"
 #elif XE_PLATFORM_LINUX
 #define APU_OPTIONS "[any, alsa, nop, sdl]"
 #define GPU_OPTIONS "[any, vulkan, null]"
@@ -221,8 +221,9 @@ class EmulatorApp final : public xe::ui::WindowedApp {
             continue;
           }
 
-          // Skip xinput for "any" and use SDL
-          if (creator.name.compare("xinput") == 0) {
+          // Skip physical XInput and opt-in KBM for "any".
+          if (creator.name.compare("xinput") == 0 ||
+              creator.name.compare("kbm") == 0) {
             continue;
           }
 
@@ -234,7 +235,7 @@ class EmulatorApp final : public xe::ui::WindowedApp {
         return instances;
       }
 
-      // "Specified" path. Winkey is always added on windows.
+      // "Specified" path. Keyboard is always added for passthrough.
       if (name != "keyboard") {
         auto it = std::find_if(
             creators_.cbegin(), creators_.cend(),
@@ -248,7 +249,7 @@ class EmulatorApp final : public xe::ui::WindowedApp {
         }
       }
 
-      // Always add winkey for passthrough.
+      // Always add keyboard for passthrough.
       auto it = std::find_if(
           creators_.cbegin(), creators_.cend(),
           [&name](const auto& f) { return f.name.compare("keyboard") == 0; });
@@ -463,9 +464,9 @@ std::vector<std::unique_ptr<hid::InputDriver>> EmulatorApp::CreateInputDrivers(
     factory.Add("keyboard", xe::hid::keyboard::Create);
 #endif
 #if XE_PLATFORM_WIN32
-    // Keyboard and WinKey are added after physical controller drivers.
+    // Keyboard and Kbm are added after physical controller drivers.
     factory.Add("keyboard", xe::hid::keyboard::Create);
-    factory.Add("winkey", xe::hid::winkey::Create);
+    factory.Add("kbm", xe::hid::kbm::Create);
 #endif  // XE_PLATFORM_WIN32
     for (auto& driver : factory.CreateAll(cvars::hid, window,
                                           EmulatorWindow::kZOrderHidInput)) {
@@ -505,7 +506,7 @@ bool EmulatorApp::OnInitialize() {
 
   config::SetupConfig(storage_root);
 #if XE_PLATFORM_WIN32
-  xe::hid::winkey::SetupConfig(storage_root);
+  xe::hid::kbm::SetupConfig(storage_root);
 #endif  // XE_PLATFORM_WIN32
 
 #if XE_ARCH_AMD64 == 1

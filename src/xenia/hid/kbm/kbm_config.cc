@@ -7,7 +7,7 @@
  ******************************************************************************
  */
 
-#include "xenia/hid/winkey/winkey_config.h"
+#include "xenia/hid/kbm/kbm_config.h"
 
 #include <algorithm>
 #include <array>
@@ -27,11 +27,11 @@ DECLARE_string(hid);
 DECLARE_int32(keyboard_mode);
 DECLARE_int32(keyboard_user_index);
 
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   DECLARE_string(cvar_name);
-#include "xenia/hid/winkey/winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
 
 DECLARE_bool(raw_mouse);
 DECLARE_double(raw_mouse_sensitivity);
@@ -43,7 +43,7 @@ DECLARE_bool(raw_mouse_invert_y);
 DECLARE_string(raw_mouse_capture_toggle_key);
 DECLARE_bool(raw_mouse_capture_on_start);
 
-namespace xe::hid::winkey {
+namespace xe::hid::kbm {
 namespace {
 
 struct NamedVirtualKey {
@@ -184,7 +184,7 @@ std::string VirtualKeyName(uint16_t virtual_key, bool display) {
   return fmt::format("0x{:02X}", virtual_key);
 }
 
-bool IsModifierName(std::string_view text, WinKeyChord& chord) {
+bool IsModifierName(std::string_view text, KbmChord& chord) {
   const std::string normalized = NormalizeKeyName(text);
   if (normalized == "shift") {
     chord.shift = true;
@@ -201,7 +201,7 @@ bool IsModifierName(std::string_view text, WinKeyChord& chord) {
   return true;
 }
 
-std::string FormatChord(const WinKeyChord& chord, bool display) {
+std::string FormatChord(const KbmChord& chord, bool display) {
   std::string result;
   if (chord.ctrl) {
     result += "Ctrl+";
@@ -221,8 +221,8 @@ std::string FormatChord(const WinKeyChord& chord, bool display) {
 
 std::filesystem::path config_path;
 
-bool IsWinKeyConfigVar(const cvar::IConfigVar& config_var) {
-  if (config_var.category() == "HID.WinKey") {
+bool IsKbmConfigVar(const cvar::IConfigVar& config_var) {
+  if (config_var.category() == "HID.Kbm") {
     return true;
   }
   return config_var.category() == "HID" &&
@@ -235,7 +235,7 @@ void LoadConfig() {
   try {
     parsed = toml::parse_file(xe::path_to_utf8(config_path));
   } catch (const toml::parse_error& e) {
-    XELOGE("winkey: failed to parse '{}': {}", config_path, e.what());
+    XELOGE("kbm: failed to parse '{}': {}", config_path, e.what());
     return;
   }
 
@@ -243,7 +243,7 @@ void LoadConfig() {
     return;
   }
   for (const auto& [name, config_var] : *cvar::ConfigVars) {
-    if (!IsWinKeyConfigVar(*config_var)) {
+    if (!IsKbmConfigVar(*config_var)) {
       continue;
     }
     const auto node = parsed.at_path(
@@ -252,12 +252,12 @@ void LoadConfig() {
       config_var->LoadConfigValue(node.node());
     }
   }
-  XELOGI("winkey: loaded config '{}'.", config_path);
+  XELOGI("kbm: loaded config '{}'.", config_path);
 }
 
 }  // namespace
 
-bool ParseWinKeyChord(std::string_view text, WinKeyChord& chord) {
+bool ParseKbmChord(std::string_view text, KbmChord& chord) {
   chord = {};
   if (text.empty()) {
     return false;
@@ -282,18 +282,18 @@ bool ParseWinKeyChord(std::string_view text, WinKeyChord& chord) {
   }
 }
 
-std::string FormatWinKeyChord(const WinKeyChord& chord) {
+std::string FormatKbmChord(const KbmChord& chord) {
   return chord.virtual_key ? FormatChord(chord, false) : std::string();
 }
 
-std::string FormatWinKeyBinding(std::string_view binding) {
+std::string FormatKbmBinding(std::string_view binding) {
   std::string result;
   for (std::string_view token : utf8::split(binding, " ", true)) {
     if (!token.empty() && (token.front() == '_' || token.front() == '^')) {
       token.remove_prefix(1);
     }
-    WinKeyChord chord;
-    const std::string display = ParseWinKeyChord(token, chord)
+    KbmChord chord;
+    const std::string display = ParseKbmChord(token, chord)
                                     ? FormatChord(chord, true)
                                     : std::string(token);
     if (!result.empty()) {
@@ -305,12 +305,12 @@ std::string FormatWinKeyBinding(std::string_view binding) {
 }
 
 void SetupConfig(const std::filesystem::path& storage_root) {
-  config_path = storage_root / "winkey.toml";
+  config_path = storage_root / "kbm.toml";
   if (std::filesystem::exists(config_path)) {
     LoadConfig();
-  } else if (cvars::hid == "winkey") {
+  } else if (cvars::hid == "kbm") {
     // This also preserves values imported from the old main config before the
-    // HID.WinKey cvars became transient.
+    // HID.Kbm cvars became transient.
     SaveConfig();
   }
 }
@@ -328,7 +328,7 @@ bool SaveConfig() {
 
   std::vector<cvar::IConfigVar*> vars;
   for (const auto& [name, config_var] : *cvar::ConfigVars) {
-    if (IsWinKeyConfigVar(*config_var)) {
+    if (IsKbmConfigVar(*config_var)) {
       vars.push_back(config_var);
     }
   }
@@ -340,12 +340,12 @@ bool SaveConfig() {
   xe::filesystem::CreateParentFolder(config_path);
   FILE* file = xe::filesystem::OpenFile(config_path, "wb");
   if (!file) {
-    XELOGE("winkey: failed to open '{}' for writing.", config_path);
+    XELOGE("kbm: failed to open '{}' for writing.", config_path);
     return false;
   }
 
   std::string output =
-      "# WinKey keyboard and Raw Input mouse settings.\n"
+      "# Kbm keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n";
   std::string category;
   for (const auto* config_var : vars) {
@@ -364,22 +364,22 @@ bool SaveConfig() {
       fwrite(output.data(), 1, output.size(), file) == output.size();
   fclose(file);
   if (!written) {
-    XELOGE("winkey: failed to write '{}'.", config_path);
+    XELOGE("kbm: failed to write '{}'.", config_path);
     return false;
   }
-  XELOGI("winkey: saved config '{}'.", config_path);
+  XELOGI("kbm: saved config '{}'.", config_path);
   return true;
 }
 
-WinKeySettings GetSettingsFromCvars() {
-  WinKeySettings settings;
+KbmSettings GetSettingsFromCvars() {
+  KbmSettings settings;
   settings.keyboard_mode = cvars::keyboard_mode;
   settings.keyboard_user_index = cvars::keyboard_user_index;
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   settings.cvar_name = cvars::cvar_name;
-#include "xenia/hid/winkey/winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
   settings.raw_mouse = cvars::raw_mouse;
   settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
   settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
@@ -393,14 +393,14 @@ WinKeySettings GetSettingsFromCvars() {
   return settings;
 }
 
-void ApplySettingsToCvars(const WinKeySettings& settings) {
+void ApplySettingsToCvars(const KbmSettings& settings) {
   cvars::keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
   cvars::keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   cvars::cvar_name = settings.cvar_name;
-#include "xenia/hid/winkey/winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
   cvars::raw_mouse = settings.raw_mouse;
   cvars::raw_mouse_sensitivity =
       std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0);
@@ -417,4 +417,4 @@ void ApplySettingsToCvars(const WinKeySettings& settings) {
   cvars::raw_mouse_capture_on_start = settings.raw_mouse_capture_on_start;
 }
 
-}  // namespace xe::hid::winkey
+}  // namespace xe::hid::kbm

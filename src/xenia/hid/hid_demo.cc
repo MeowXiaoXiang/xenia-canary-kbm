@@ -45,12 +45,12 @@
 #endif
 #if XE_PLATFORM_WIN32
 #include "xenia/hid/keyboard/keyboard_hid.h"
-#include "xenia/hid/winkey/winkey_hid.h"
+#include "xenia/hid/kbm/kbm_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
 
 DEFINE_string(hid, "any",
-              "Input system. Use: [any, nop, sdl, keyboard, winkey, xinput]",
+              "Input system. Use: [any, nop, sdl, keyboard, kbm, xinput]",
               "General");
 
 #define MAX_USERS 4
@@ -150,8 +150,8 @@ std::vector<std::unique_ptr<hid::InputDriver>> HidDemoApp::CreateInputDrivers(
     if (driver && XSUCCEEDED(driver->Setup())) {
       drivers.emplace_back(std::move(driver));
     }
-  } else if (cvars::hid.compare("winkey") == 0) {
-    auto driver = xe::hid::winkey::Create(window, kZOrderHidInput);
+  } else if (cvars::hid.compare("kbm") == 0) {
+    auto driver = xe::hid::kbm::Create(window, kZOrderHidInput);
     if (XSUCCEEDED(driver->Setup())) {
       drivers.emplace_back(std::move(driver));
     }
@@ -183,9 +183,9 @@ std::vector<std::unique_ptr<hid::InputDriver>> HidDemoApp::CreateInputDrivers(
     if (keyboard_driver && XSUCCEEDED(keyboard_driver->Setup())) {
       drivers.emplace_back(std::move(keyboard_driver));
     }
-    auto winkey_driver = xe::hid::winkey::Create(window, kZOrderHidInput);
-    if (winkey_driver && XSUCCEEDED(winkey_driver->Setup())) {
-      drivers.emplace_back(std::move(winkey_driver));
+    auto kbm_driver = xe::hid::kbm::Create(window, kZOrderHidInput);
+    if (kbm_driver && XSUCCEEDED(kbm_driver->Setup())) {
+      drivers.emplace_back(std::move(kbm_driver));
     }
 #endif  // XE_PLATFORM_WIN32
     if (drivers.empty()) {

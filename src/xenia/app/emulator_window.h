@@ -16,8 +16,8 @@
 #include "xenia/base/platform.h"
 
 #if XE_PLATFORM_WIN32
-#include "xenia/hid/winkey/winkey_config.h"
-#include "xenia/hid/winkey/winkey_input_driver.h"
+#include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/kbm/kbm_input_driver.h"
 #endif  // XE_PLATFORM_WIN32
 
 #include "xenia/app/localization.h"
@@ -229,17 +229,17 @@ class EmulatorWindow {
   };
 
 #if XE_PLATFORM_WIN32
-  class WinKeyConfigDialog final : public ui::ImGuiDialog {
+  class KbmConfigDialog final : public ui::ImGuiDialog {
    public:
-    WinKeyConfigDialog(ui::ImGuiDrawer* imgui_drawer,
+    KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
                        EmulatorWindow& emulator_window);
-    ~WinKeyConfigDialog() override;
+    ~KbmConfigDialog() override;
 
    protected:
     void OnDraw(ImGuiIO& io) override;
 
    private:
-    hid::winkey::WinKeyInputDriver* GetDriver() const;
+    hid::kbm::KbmInputDriver* GetDriver() const;
     void ApplyDraft();
     void RestoreOriginal();
     void StartBindingCapture(std::string* target, bool append);
@@ -247,8 +247,8 @@ class EmulatorWindow {
     bool HandleBindingCaptureResult();
 
     EmulatorWindow& emulator_window_;
-    hid::winkey::WinKeySettings original_settings_;
-    hid::winkey::WinKeySettings settings_;
+    hid::kbm::KbmSettings original_settings_;
+    hid::kbm::KbmSettings settings_;
     bool committed_or_restored_ = false;
     bool save_failed_ = false;
     std::string* binding_capture_target_ = nullptr;
@@ -319,7 +319,7 @@ class EmulatorWindow {
   void GpuClearCaches();
   void ToggleDisplayConfigDialog();
 #if XE_PLATFORM_WIN32
-  void ToggleWinKeyConfigDialog();
+  void ToggleKbmConfigDialog();
 #endif  // XE_PLATFORM_WIN32
   void ToggleControllerVibration();
   void ShowCompatibility();
@@ -364,7 +364,7 @@ class EmulatorWindow {
 
   std::unique_ptr<DisplayConfigDialog> display_config_dialog_;
 #if XE_PLATFORM_WIN32
-  std::unique_ptr<WinKeyConfigDialog> winkey_config_dialog_;
+  std::unique_ptr<KbmConfigDialog> kbm_config_dialog_;
 #endif  // XE_PLATFORM_WIN32
   std::unique_ptr<ConsoleSettingsDialog> console_settings_dialog_;
   std::unique_ptr<ContentListDialog> content_list_dialog_;

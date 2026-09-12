@@ -7,8 +7,8 @@
  ******************************************************************************
  */
 
-#ifndef XENIA_HID_WINKEY_WINKEY_CONFIG_H_
-#define XENIA_HID_WINKEY_WINKEY_CONFIG_H_
+#ifndef XENIA_HID_KBM_KBM_CONFIG_H_
+#define XENIA_HID_KBM_KBM_CONFIG_H_
 
 #include <filesystem>
 #include <string>
@@ -16,11 +16,11 @@
 
 #include "xenia/base/cvar.h"
 
-namespace xe::hid::winkey {
+namespace xe::hid::kbm {
 
 enum class KeyboardMode { Disabled, Enabled, Passthrough };
 
-struct WinKeyChord {
+struct KbmChord {
   uint16_t virtual_key = 0;
   bool shift = false;
   bool ctrl = false;
@@ -28,19 +28,19 @@ struct WinKeyChord {
   bool super = false;
 };
 
-bool ParseWinKeyChord(std::string_view text, WinKeyChord& chord);
-std::string FormatWinKeyChord(const WinKeyChord& chord);
-std::string FormatWinKeyBinding(std::string_view binding);
+bool ParseKbmChord(std::string_view text, KbmChord& chord);
+std::string FormatKbmChord(const KbmChord& chord);
+std::string FormatKbmBinding(std::string_view binding);
 
-struct WinKeySettings {
+struct KbmSettings {
   int32_t keyboard_mode = 1;
   int32_t keyboard_user_index = 0;
 
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   std::string cvar_name = cvar_default_value;
-#include "xenia/hid/winkey/winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
 
   bool raw_mouse = true;
   double raw_mouse_sensitivity = 10.0;
@@ -58,9 +58,9 @@ bool ConfigExists();
 const std::filesystem::path& ConfigPath();
 bool SaveConfig();
 
-WinKeySettings GetSettingsFromCvars();
-void ApplySettingsToCvars(const WinKeySettings& settings);
+KbmSettings GetSettingsFromCvars();
+void ApplySettingsToCvars(const KbmSettings& settings);
 
-}  // namespace xe::hid::winkey
+}  // namespace xe::hid::kbm
 
-#endif  // XENIA_HID_WINKEY_WINKEY_CONFIG_H_
+#endif  // XENIA_HID_KBM_KBM_CONFIG_H_

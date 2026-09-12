@@ -4,11 +4,11 @@
     </a>
 </p>
 
-<h1 align="center">Xenia Canary — WinKey Input</h1>
+<h1 align="center">Xenia Canary — KBM Controller Input</h1>
 
 This is a Windows-focused experimental fork of
 [Xenia Canary](https://github.com/xenia-canary/xenia-canary). It adds an
-opt-in WinKey backend that maps keyboard and Windows Raw Input mouse movement
+opt-in KBM Controller backend that maps keyboard and Windows Raw Input mouse movement
 to an emulated Xbox 360 controller.
 
 It is not an official Xenia Canary build or support channel. This repository
@@ -19,7 +19,7 @@ and upstream contribution guidance belong to the
 
 ## What this fork changes
 
-- Separate `winkey.toml` storage for keyboard bindings and Raw Input mouse
+- Separate `kbm.toml` storage for keyboard bindings and Raw Input mouse
   settings.
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
@@ -29,7 +29,7 @@ and upstream contribution guidance belong to the
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 
-See [WinKey Input](docs/winkey_input.md) for setup, tuning, capture behavior,
+See [KBM Controller Input](docs/kbm_input.md) for setup, tuning, capture behavior,
 and known limits.
 
 ## Building

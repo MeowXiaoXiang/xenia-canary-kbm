@@ -7,8 +7,8 @@
  ******************************************************************************
  */
 
-#ifndef XENIA_HID_WINKEY_WINKEY_HID_H_
-#define XENIA_HID_WINKEY_WINKEY_HID_H_
+#ifndef XENIA_HID_KBM_KBM_HID_H_
+#define XENIA_HID_KBM_KBM_HID_H_
 
 #include <memory>
 
@@ -16,13 +16,13 @@
 
 namespace xe {
 namespace hid {
-namespace winkey {
+namespace kbm {
 
 std::unique_ptr<InputDriver> Create(xe::ui::Window* window,
                                     size_t window_z_order);
 
-}  // namespace winkey
+}  // namespace kbm
 }  // namespace hid
 }  // namespace xe
 
-#endif  // XENIA_HID_WINKEY_WINKEY_HID_H_
+#endif  // XENIA_HID_KBM_KBM_HID_H_

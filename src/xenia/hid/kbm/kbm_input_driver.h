@@ -7,8 +7,8 @@
  ******************************************************************************
  */
 
-#ifndef XENIA_HID_WINKEY_WINKEY_INPUT_DRIVER_H_
-#define XENIA_HID_WINKEY_WINKEY_INPUT_DRIVER_H_
+#ifndef XENIA_HID_KBM_KBM_INPUT_DRIVER_H_
+#define XENIA_HID_KBM_KBM_INPUT_DRIVER_H_
 
 #include <atomic>
 #include <chrono>
@@ -17,15 +17,15 @@
 
 #include "xenia/base/mutex.h"
 #include "xenia/hid/input_driver.h"
-#include "xenia/hid/winkey/winkey_config.h"
+#include "xenia/hid/kbm/kbm_config.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window_listener.h"
 
 namespace xe {
 namespace hid {
-namespace winkey {
+namespace kbm {
 
-class WinKeyInputDriver final : public InputDriver {
+class KbmInputDriver final : public InputDriver {
  public:
   enum class BindingCaptureStatus { kNone, kCaptured, kCleared, kCancelled };
 
@@ -47,8 +47,8 @@ class WinKeyInputDriver final : public InputDriver {
   using CaptureStateCallback =
       std::function<void(bool active, const std::string& toggle_binding)>;
 
-  explicit WinKeyInputDriver(xe::ui::Window* window, size_t window_z_order);
-  ~WinKeyInputDriver() override;
+  explicit KbmInputDriver(xe::ui::Window* window, size_t window_z_order);
+  ~KbmInputDriver() override;
 
   X_STATUS Setup() override;
 
@@ -63,8 +63,8 @@ class WinKeyInputDriver final : public InputDriver {
     SetHostInputSuspended(visible);
   }
 
-  WinKeySettings GetSettings() const;
-  void ApplySettings(const WinKeySettings& settings);
+  KbmSettings GetSettings() const;
+  void ApplySettings(const KbmSettings& settings);
   Diagnostics GetDiagnostics() const;
   void SetHostInputSuspended(bool suspended);
   void BeginBindingCapture();
@@ -96,9 +96,9 @@ class WinKeyInputDriver final : public InputDriver {
     bool super = false;
   };
 
-  class WinKeyWindowInputListener final : public ui::WindowInputListener {
+  class KbmWindowInputListener final : public ui::WindowInputListener {
    public:
-    explicit WinKeyWindowInputListener(WinKeyInputDriver& driver)
+    explicit KbmWindowInputListener(KbmInputDriver& driver)
         : driver_(driver) {}
 
     void OnKeyDown(ui::KeyEvent& e) override;
@@ -107,12 +107,12 @@ class WinKeyInputDriver final : public InputDriver {
     void OnRawMouseMove(ui::RawMouseMoveEvent& e) override;
 
    private:
-    WinKeyInputDriver& driver_;
+    KbmInputDriver& driver_;
   };
 
-  class WinKeyWindowListener final : public ui::WindowListener {
+  class KbmWindowListener final : public ui::WindowListener {
    public:
-    explicit WinKeyWindowListener(WinKeyInputDriver& driver)
+    explicit KbmWindowListener(KbmInputDriver& driver)
         : driver_(driver) {}
 
     void OnClosing(ui::UIEvent& e) override;
@@ -121,14 +121,14 @@ class WinKeyInputDriver final : public InputDriver {
     void OnLostFocus(ui::UISetupEvent& e) override;
 
    private:
-    WinKeyInputDriver& driver_;
+    KbmInputDriver& driver_;
   };
 
   void ParseKeyBinding(std::vector<KeyBinding>& bindings,
                        ui::VirtualKey virtual_key,
                        const std::string_view description,
                        const std::string_view binding);
-  void RebuildKeyBindings(const WinKeySettings& settings);
+  void RebuildKeyBindings(const KbmSettings& settings);
 
   void OnKey(ui::KeyEvent& e, bool is_down);
   void OnMouseDown(ui::MouseEvent& e);
@@ -144,8 +144,8 @@ class WinKeyInputDriver final : public InputDriver {
   void UnregisterRawMouse();
   void NotifyCaptureState(bool active);
 
-  WinKeyWindowInputListener window_input_listener_;
-  WinKeyWindowListener window_listener_;
+  KbmWindowInputListener window_input_listener_;
+  KbmWindowListener window_listener_;
 
   xe::global_critical_region global_critical_region_;
   mutable xe::global_critical_region settings_critical_region_;
@@ -153,7 +153,7 @@ class WinKeyInputDriver final : public InputDriver {
   bool binding_capture_active_ = false;
   BindingCaptureResult binding_capture_result_;
   std::vector<KeyBinding> key_bindings_;
-  WinKeySettings settings_;
+  KbmSettings settings_;
   uint8_t key_map_[256];
   uint32_t packet_number_ = 1;
 
@@ -161,7 +161,7 @@ class WinKeyInputDriver final : public InputDriver {
   std::atomic<int64_t> raw_mouse_delta_y_{0};
   std::chrono::steady_clock::time_point raw_mouse_last_sample_time_;
   std::chrono::steady_clock::time_point raw_mouse_last_center_time_;
-  WinKeyChord raw_mouse_capture_toggle_;
+  KbmChord raw_mouse_capture_toggle_;
   ui::Window::CursorVisibility raw_mouse_previous_cursor_visibility_ =
       ui::Window::CursorVisibility::kVisible;
   std::atomic<bool> raw_mouse_registered_{false};
@@ -176,8 +176,8 @@ class WinKeyInputDriver final : public InputDriver {
   std::atomic<int16_t> raw_mouse_thumb_y_{0};
 };
 
-}  // namespace winkey
+}  // namespace kbm
 }  // namespace hid
 }  // namespace xe
 
-#endif  // XENIA_HID_WINKEY_WINKEY_INPUT_DRIVER_H_
+#endif  // XENIA_HID_KBM_KBM_INPUT_DRIVER_H_

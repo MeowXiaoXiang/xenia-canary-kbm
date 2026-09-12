@@ -7,7 +7,7 @@
  ******************************************************************************
  */
 
-#include "xenia/hid/winkey/winkey_input_driver.h"
+#include "xenia/hid/kbm/kbm_input_driver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -22,14 +22,14 @@
 #include "xenia/ui/window_win.h"
 #include "xenia/ui/windowed_app_context.h"
 
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name,        \
+#define XE_HID_KBM_BINDING(button, description, cvar_name,        \
                               cvar_default_value)                    \
   DEFINE_transient_string(cvar_name, cvar_default_value,             \
                           "Keys or chords bound to " description     \
                           ", with alternatives separated by spaces", \
-                          "HID.WinKey")
-#include "winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+                          "HID.Kbm")
+#include "kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
 
 DEFINE_transient_int32(
     keyboard_mode, 1,
@@ -48,53 +48,53 @@ DEFINE_transient_bool(
     raw_mouse, true,
     "Use Windows Raw Input mouse movement for the emulated right "
     "thumbstick. Requires keyboard_mode = 1.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 DEFINE_transient_double(raw_mouse_sensitivity, 10.0,
-                        "Raw mouse sensitivity multiplier.", "HID.WinKey");
+                        "Raw mouse sensitivity multiplier.", "HID.Kbm");
 
 DEFINE_transient_double(
     raw_mouse_full_scale_velocity, 24000.0,
     "Raw Input counts per second that produce full right-stick deflection "
     "before applying the response curve.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 DEFINE_transient_double(
     raw_mouse_response_curve, 1.2,
     "Raw mouse response exponent. 1 is linear, values above 1 add precision "
     "near the center, and values below 1 boost low speeds.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 DEFINE_transient_bool(
     raw_mouse_deadzone_compensation, false,
     "Raise non-zero Raw Input mouse output above a configurable minimum "
     "response. Off preserves the original mouse-to-stick translation.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 DEFINE_transient_double(
     raw_mouse_minimum_response, 0.30,
     "Minimum absolute right-stick response applied only while Raw Input mouse "
     "movement is non-zero and deadzone compensation is enabled.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 DEFINE_transient_bool(raw_mouse_invert_y, false,
-                      "Invert Raw Input mouse Y movement.", "HID.WinKey");
+                      "Invert Raw Input mouse Y movement.", "HID.Kbm");
 
 DEFINE_transient_string(
     raw_mouse_capture_toggle_key, "F8",
     "Key or modifier chord used to toggle Raw Input mouse capture. Leave "
     "empty to disable the hotkey.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 DEFINE_transient_bool(
     raw_mouse_capture_on_start, false,
     "Capture and hide the mouse when Raw Input is initialized. The mouse is "
     "automatically released when Xenia loses focus.",
-    "HID.WinKey");
+    "HID.Kbm");
 
 namespace xe {
 namespace hid {
-namespace winkey {
+namespace kbm {
 
 static uint8_t VirtualKeyToHIDUsage(UINT vk) {
   // Letters: contiguous in both VK and HID space
@@ -215,12 +215,12 @@ static uint8_t VirtualKeyToHIDUsage(UINT vk) {
   return 0x00;
 }
 
-bool static IsPassthroughEnabled(const WinKeySettings& settings) {
+bool static IsPassthroughEnabled(const KbmSettings& settings) {
   return static_cast<KeyboardMode>(settings.keyboard_mode) ==
          KeyboardMode::Passthrough;
 }
 
-bool static IsKeyboardForUserEnabled(const WinKeySettings& settings,
+bool static IsKeyboardForUserEnabled(const KbmSettings& settings,
                                      uint32_t user_index) {
   if (static_cast<KeyboardMode>(settings.keyboard_mode) !=
       KeyboardMode::Enabled) {
@@ -265,7 +265,7 @@ static bool ModifiersMatch(bool required_shift, bool required_ctrl,
 }
 
 static int16_t MouseDeltaToThumb(int64_t delta, double elapsed_seconds,
-                                 const WinKeySettings& settings) {
+                                 const KbmSettings& settings) {
   if (!delta) {
     return 0;
   }
@@ -304,7 +304,7 @@ static int16_t AddThumbWithSaturation(int16_t left, int16_t right) {
                  int32_t(std::numeric_limits<int16_t>::max())));
 }
 
-void WinKeyInputDriver::ParseKeyBinding(std::vector<KeyBinding>& bindings,
+void KbmInputDriver::ParseKeyBinding(std::vector<KeyBinding>& bindings,
                                         ui::VirtualKey output_key,
                                         const std::string_view description,
                                         const std::string_view source_tokens) {
@@ -323,9 +323,9 @@ void WinKeyInputDriver::ParseKeyBinding(std::vector<KeyBinding>& bindings,
       token = token.substr(1);
     }
 
-    WinKeyChord chord;
-    if (!ParseWinKeyChord(token, chord)) {
-      XELOGW("winkey: failed to parse key \"{}\" for {}.", source_token,
+    KbmChord chord;
+    if (!ParseKbmChord(token, chord)) {
+      XELOGW("kbm: failed to parse key \"{}\" for {}.", source_token,
              description);
       continue;
     }
@@ -336,24 +336,24 @@ void WinKeyInputDriver::ParseKeyBinding(std::vector<KeyBinding>& bindings,
     key_binding.super = chord.super;
 
     bindings.push_back(key_binding);
-    XELOGI("winkey: \"{}\" binds key 0x{:X} to controller input {}.",
+    XELOGI("kbm: \"{}\" binds key 0x{:X} to controller input {}.",
            source_token, static_cast<uint16_t>(key_binding.input_key),
            description);
   }
 }
 
-void WinKeyInputDriver::RebuildKeyBindings(const WinKeySettings& settings) {
+void KbmInputDriver::RebuildKeyBindings(const KbmSettings& settings) {
   std::vector<KeyBinding> bindings;
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name,       \
+#define XE_HID_KBM_BINDING(button, description, cvar_name,       \
                               cvar_default_value)                   \
   ParseKeyBinding(bindings, xe::ui::VirtualKey::kXInputPad##button, \
                   description, settings.cvar_name);
-#include "winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+#include "kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
   key_bindings_ = std::move(bindings);
 }
 
-WinKeyInputDriver::WinKeyInputDriver(xe::ui::Window* window,
+KbmInputDriver::KbmInputDriver(xe::ui::Window* window,
                                      size_t window_z_order)
     : InputDriver(window, window_z_order),
       window_input_listener_(*this),
@@ -362,14 +362,14 @@ WinKeyInputDriver::WinKeyInputDriver(xe::ui::Window* window,
       raw_mouse_last_center_time_(std::chrono::steady_clock::now()) {
   settings_ = GetSettingsFromCvars();
   RebuildKeyBindings(settings_);
-  ParseWinKeyChord(settings_.raw_mouse_capture_toggle_key,
+  ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
                    raw_mouse_capture_toggle_);
 
   window->AddListener(&window_listener_);
   window->AddInputListener(&window_input_listener_, window_z_order);
 }
 
-WinKeyInputDriver::~WinKeyInputDriver() {
+KbmInputDriver::~KbmInputDriver() {
   raw_mouse_capture_requested_ = false;
   ReleaseRawMouseCapture();
   UnregisterRawMouse();
@@ -377,8 +377,8 @@ WinKeyInputDriver::~WinKeyInputDriver() {
   window()->RemoveListener(&window_listener_);
 }
 
-X_STATUS WinKeyInputDriver::Setup() {
-  WinKeySettings settings = GetSettings();
+X_STATUS KbmInputDriver::Setup() {
+  KbmSettings settings = GetSettings();
   if (settings.raw_mouse && static_cast<KeyboardMode>(settings.keyboard_mode) ==
                                 KeyboardMode::Enabled) {
     RegisterRawMouse();
@@ -391,7 +391,7 @@ X_STATUS WinKeyInputDriver::Setup() {
   return X_STATUS_SUCCESS;
 }
 
-bool WinKeyInputDriver::RegisterRawMouse(bool exclusive_capture) {
+bool KbmInputDriver::RegisterRawMouse(bool exclusive_capture) {
   const DWORD registration_flags =
       exclusive_capture ? RIDEV_NOLEGACY | RIDEV_CAPTUREMOUSE : 0;
   if (raw_mouse_registered_ &&
@@ -407,7 +407,7 @@ bool WinKeyInputDriver::RegisterRawMouse(bool exclusive_capture) {
   if (!raw_mouse_device.hwndTarget ||
       !RegisterRawInputDevices(&raw_mouse_device, 1,
                                sizeof(raw_mouse_device))) {
-    XELOGE("winkey: failed to register Raw Input mouse, error {}.",
+    XELOGE("kbm: failed to register Raw Input mouse, error {}.",
            GetLastError());
     return false;
   }
@@ -417,12 +417,12 @@ bool WinKeyInputDriver::RegisterRawMouse(bool exclusive_capture) {
   if (!was_registered) {
     raw_mouse_last_sample_time_ = std::chrono::steady_clock::now();
   }
-  XELOGI("winkey: Raw Input mouse registered for right thumbstick ({}).",
+  XELOGI("kbm: Raw Input mouse registered for right thumbstick ({}).",
          exclusive_capture ? "exclusive capture" : "foreground");
   return true;
 }
 
-void WinKeyInputDriver::UnregisterRawMouse() {
+void KbmInputDriver::UnregisterRawMouse() {
   if (!raw_mouse_registered_) {
     return;
   }
@@ -435,7 +435,7 @@ void WinKeyInputDriver::UnregisterRawMouse() {
   raw_mouse_device.hwndTarget = nullptr;
   if (!RegisterRawInputDevices(&raw_mouse_device, 1,
                                sizeof(raw_mouse_device))) {
-    XELOGW("winkey: failed to unregister Raw Input mouse, error {}.",
+    XELOGW("kbm: failed to unregister Raw Input mouse, error {}.",
            GetLastError());
   }
   raw_mouse_registered_ = false;
@@ -446,16 +446,16 @@ void WinKeyInputDriver::UnregisterRawMouse() {
   raw_mouse_counts_per_second_y_ = 0.0;
   raw_mouse_thumb_x_ = 0;
   raw_mouse_thumb_y_ = 0;
-  XELOGI("winkey: Raw Input mouse unregistered.");
+  XELOGI("kbm: Raw Input mouse unregistered.");
 }
 
-WinKeySettings WinKeyInputDriver::GetSettings() const {
+KbmSettings KbmInputDriver::GetSettings() const {
   auto lock = settings_critical_region_.Acquire();
   return settings_;
 }
 
-void WinKeyInputDriver::ApplySettings(const WinKeySettings& source_settings) {
-  WinKeySettings settings = source_settings;
+void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
+  KbmSettings settings = source_settings;
   settings.keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
   settings.keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
   settings.raw_mouse_sensitivity =
@@ -471,11 +471,11 @@ void WinKeyInputDriver::ApplySettings(const WinKeySettings& source_settings) {
     auto lock = settings_critical_region_.Acquire();
     settings_ = settings;
     RebuildKeyBindings(settings_);
-    if (!ParseWinKeyChord(settings_.raw_mouse_capture_toggle_key,
+    if (!ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
                           raw_mouse_capture_toggle_)) {
       raw_mouse_capture_toggle_ = {};
       if (!settings_.raw_mouse_capture_toggle_key.empty()) {
-        XELOGW("winkey: failed to parse Raw Input capture toggle \"{}\".",
+        XELOGW("kbm: failed to parse Raw Input capture toggle \"{}\".",
                settings_.raw_mouse_capture_toggle_key);
       }
     }
@@ -492,7 +492,7 @@ void WinKeyInputDriver::ApplySettings(const WinKeySettings& source_settings) {
   }
 }
 
-WinKeyInputDriver::Diagnostics WinKeyInputDriver::GetDiagnostics() const {
+KbmInputDriver::Diagnostics KbmInputDriver::GetDiagnostics() const {
   Diagnostics diagnostics;
   diagnostics.raw_mouse_registered = raw_mouse_registered_;
   diagnostics.capture_requested = raw_mouse_capture_requested_;
@@ -504,7 +504,7 @@ WinKeyInputDriver::Diagnostics WinKeyInputDriver::GetDiagnostics() const {
   return diagnostics;
 }
 
-void WinKeyInputDriver::SetHostInputSuspended(bool suspended) {
+void KbmInputDriver::SetHostInputSuspended(bool suspended) {
   host_input_suspended_ = suspended;
   if (suspended) {
     ReleaseRawMouseCapture();
@@ -513,34 +513,34 @@ void WinKeyInputDriver::SetHostInputSuspended(bool suspended) {
   }
 }
 
-void WinKeyInputDriver::SetCaptureStateCallback(CaptureStateCallback callback) {
+void KbmInputDriver::SetCaptureStateCallback(CaptureStateCallback callback) {
   capture_state_callback_ = std::move(callback);
   if (capture_state_callback_ && raw_mouse_capture_active_) {
     NotifyCaptureState(true);
   }
 }
 
-void WinKeyInputDriver::BeginBindingCapture() {
+void KbmInputDriver::BeginBindingCapture() {
   auto lock = global_critical_region_.Acquire();
   binding_capture_active_ = true;
   binding_capture_result_ = {};
 }
 
-WinKeyInputDriver::BindingCaptureResult
-WinKeyInputDriver::ConsumeBindingCaptureResult() {
+KbmInputDriver::BindingCaptureResult
+KbmInputDriver::ConsumeBindingCaptureResult() {
   auto lock = global_critical_region_.Acquire();
   BindingCaptureResult result = std::move(binding_capture_result_);
   binding_capture_result_ = {};
   return result;
 }
 
-void WinKeyInputDriver::CancelBindingCapture() {
+void KbmInputDriver::CancelBindingCapture() {
   auto lock = global_critical_region_.Acquire();
   binding_capture_active_ = false;
   binding_capture_result_ = {};
 }
 
-bool WinKeyInputDriver::CompleteBindingCapture(BindingCaptureStatus status,
+bool KbmInputDriver::CompleteBindingCapture(BindingCaptureStatus status,
                                                std::string value) {
   auto lock = global_critical_region_.Acquire();
   if (!binding_capture_active_) {
@@ -552,9 +552,9 @@ bool WinKeyInputDriver::CompleteBindingCapture(BindingCaptureStatus status,
   return true;
 }
 
-X_RESULT WinKeyInputDriver::GetCapabilities(uint32_t user_index, uint32_t flags,
+X_RESULT KbmInputDriver::GetCapabilities(uint32_t user_index, uint32_t flags,
                                             X_INPUT_CAPABILITIES* out_caps) {
-  WinKeySettings settings = GetSettings();
+  KbmSettings settings = GetSettings();
   if (!IsKeyboardForUserEnabled(settings, user_index) &&
       !IsPassthroughEnabled(settings)) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
@@ -581,10 +581,10 @@ X_RESULT WinKeyInputDriver::GetCapabilities(uint32_t user_index, uint32_t flags,
   return X_ERROR_SUCCESS;
 }
 
-X_RESULT WinKeyInputDriver::GetState(uint32_t user_index,
+X_RESULT KbmInputDriver::GetState(uint32_t user_index,
                                      X_INPUT_STATE* out_state) {
   auto settings_lock = settings_critical_region_.Acquire();
-  const WinKeySettings& settings = settings_;
+  const KbmSettings& settings = settings_;
   if (!IsKeyboardForUserEnabled(settings, user_index)) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
@@ -749,9 +749,9 @@ X_RESULT WinKeyInputDriver::GetState(uint32_t user_index,
   return X_ERROR_SUCCESS;
 }
 
-X_RESULT WinKeyInputDriver::SetState(uint32_t user_index,
+X_RESULT KbmInputDriver::SetState(uint32_t user_index,
                                      X_INPUT_VIBRATION* vibration) {
-  WinKeySettings settings = GetSettings();
+  KbmSettings settings = GetSettings();
   if (!IsKeyboardForUserEnabled(settings, user_index) &&
       !IsPassthroughEnabled(settings)) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
@@ -760,10 +760,10 @@ X_RESULT WinKeyInputDriver::SetState(uint32_t user_index,
   return X_ERROR_SUCCESS;
 }
 
-X_RESULT WinKeyInputDriver::GetKeystroke(uint32_t user_index, uint32_t flags,
+X_RESULT KbmInputDriver::GetKeystroke(uint32_t user_index, uint32_t flags,
                                          X_INPUT_KEYSTROKE* out_keystroke) {
   auto settings_lock = settings_critical_region_.Acquire();
-  const WinKeySettings& settings = settings_;
+  const KbmSettings& settings = settings_;
   if (!IsKeyboardForUserEnabled(settings, user_index) &&
       !IsPassthroughEnabled(settings)) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
@@ -855,44 +855,44 @@ X_RESULT WinKeyInputDriver::GetKeystroke(uint32_t user_index, uint32_t flags,
   return result;
 }
 
-void WinKeyInputDriver::WinKeyWindowInputListener::OnKeyDown(ui::KeyEvent& e) {
+void KbmInputDriver::KbmWindowInputListener::OnKeyDown(ui::KeyEvent& e) {
   driver_.OnKey(e, true);
 }
 
-void WinKeyInputDriver::WinKeyWindowInputListener::OnKeyUp(ui::KeyEvent& e) {
+void KbmInputDriver::KbmWindowInputListener::OnKeyUp(ui::KeyEvent& e) {
   driver_.OnKey(e, false);
 }
 
-void WinKeyInputDriver::WinKeyWindowInputListener::OnMouseDown(
+void KbmInputDriver::KbmWindowInputListener::OnMouseDown(
     ui::MouseEvent& e) {
   driver_.OnMouseDown(e);
 }
 
-void WinKeyInputDriver::WinKeyWindowInputListener::OnRawMouseMove(
+void KbmInputDriver::KbmWindowInputListener::OnRawMouseMove(
     ui::RawMouseMoveEvent& e) {
   driver_.OnRawMouseMove(e);
 }
 
-void WinKeyInputDriver::WinKeyWindowListener::OnClosing(ui::UIEvent& e) {
+void KbmInputDriver::KbmWindowListener::OnClosing(ui::UIEvent& e) {
   driver_.raw_mouse_capture_requested_ = false;
   driver_.ReleaseRawMouseCapture();
 }
 
-void WinKeyInputDriver::WinKeyWindowListener::OnResize(ui::UISetupEvent& e) {
+void KbmInputDriver::KbmWindowListener::OnResize(ui::UISetupEvent& e) {
   if (driver_.raw_mouse_capture_active_) {
     driver_.RefreshRawMouseCapture();
   }
 }
 
-void WinKeyInputDriver::WinKeyWindowListener::OnGotFocus(ui::UISetupEvent& e) {
+void KbmInputDriver::KbmWindowListener::OnGotFocus(ui::UISetupEvent& e) {
   driver_.ApplyRawMouseCapture();
 }
 
-void WinKeyInputDriver::WinKeyWindowListener::OnLostFocus(ui::UISetupEvent& e) {
+void KbmInputDriver::KbmWindowListener::OnLostFocus(ui::UISetupEvent& e) {
   driver_.ReleaseRawMouseCapture();
 }
 
-void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
+void KbmInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
   const bool is_modifier = IsModifierVirtualKey(e.virtual_key());
   if (is_down && !e.prev_state() && !is_modifier) {
     if (e.virtual_key() == ui::VirtualKey::kEscape) {
@@ -901,30 +901,30 @@ void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
         return;
       }
     } else {
-      WinKeyChord chord;
+      KbmChord chord;
       chord.virtual_key = static_cast<uint16_t>(e.virtual_key());
       chord.shift = e.is_shift_pressed();
       chord.ctrl = e.is_ctrl_pressed();
       chord.alt = e.is_alt_pressed();
       chord.super = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
       if (CompleteBindingCapture(BindingCaptureStatus::kCaptured,
-                                 FormatWinKeyChord(chord))) {
+                                 FormatKbmChord(chord))) {
         e.set_handled(true);
         return;
       }
     }
   } else if (!is_down && is_modifier) {
-    WinKeyChord chord;
+    KbmChord chord;
     chord.virtual_key = static_cast<uint16_t>(e.virtual_key());
     if (CompleteBindingCapture(BindingCaptureStatus::kCaptured,
-                               FormatWinKeyChord(chord))) {
+                               FormatKbmChord(chord))) {
       e.set_handled(true);
       return;
     }
   }
 
-  WinKeySettings settings;
-  WinKeyChord capture_toggle;
+  KbmSettings settings;
+  KbmChord capture_toggle;
   {
     auto lock = settings_critical_region_.Acquire();
     settings = settings_;
@@ -971,7 +971,7 @@ void WinKeyInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
   key_events_.push(key);
 }
 
-void WinKeyInputDriver::OnMouseDown(ui::MouseEvent& e) {
+void KbmInputDriver::OnMouseDown(ui::MouseEvent& e) {
   uint16_t virtual_key = 0;
   switch (e.button()) {
     case ui::MouseEvent::Button::kLeft:
@@ -993,20 +993,20 @@ void WinKeyInputDriver::OnMouseDown(ui::MouseEvent& e) {
       return;
   }
 
-  WinKeyChord chord;
+  KbmChord chord;
   chord.virtual_key = virtual_key;
   chord.shift = IsKeyDown(VK_SHIFT);
   chord.ctrl = IsKeyDown(VK_CONTROL);
   chord.alt = IsKeyDown(VK_MENU);
   chord.super = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
   if (CompleteBindingCapture(BindingCaptureStatus::kCaptured,
-                             FormatWinKeyChord(chord))) {
+                             FormatKbmChord(chord))) {
     e.set_handled(true);
   }
 }
 
-void WinKeyInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
-  WinKeySettings settings = GetSettings();
+void KbmInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
+  KbmSettings settings = GetSettings();
   if (!settings.raw_mouse || !raw_mouse_registered_ ||
       static_cast<KeyboardMode>(settings.keyboard_mode) !=
           KeyboardMode::Enabled ||
@@ -1027,7 +1027,7 @@ void WinKeyInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
   }
 }
 
-void WinKeyInputDriver::ToggleRawMouseCapture() {
+void KbmInputDriver::ToggleRawMouseCapture() {
   raw_mouse_capture_requested_ = !raw_mouse_capture_requested_;
   if (raw_mouse_capture_requested_) {
     ApplyRawMouseCapture();
@@ -1036,7 +1036,7 @@ void WinKeyInputDriver::ToggleRawMouseCapture() {
   }
 }
 
-void WinKeyInputDriver::ApplyRawMouseCapture() {
+void KbmInputDriver::ApplyRawMouseCapture() {
   if (!raw_mouse_capture_requested_ || raw_mouse_capture_active_ ||
       !raw_mouse_registered_ || host_input_suspended_ ||
       !window()->HasFocus()) {
@@ -1053,7 +1053,7 @@ void WinKeyInputDriver::ApplyRawMouseCapture() {
   // ReleaseRawMouseCapture so the host UI works normally when released.
   if (!RegisterRawMouse(true)) {
     XELOGW(
-        "winkey: exclusive Raw Input registration failed; mouse capture "
+        "kbm: exclusive Raw Input registration failed; mouse capture "
         "was not activated.");
     return;
   }
@@ -1065,17 +1065,17 @@ void WinKeyInputDriver::ApplyRawMouseCapture() {
     window()->SetCursorVisibility(raw_mouse_previous_cursor_visibility_);
     window()->ReleaseMouse();
     RegisterRawMouse(false);
-    XELOGW("winkey: Raw Input mouse capture was not activated.");
+    XELOGW("kbm: Raw Input mouse capture was not activated.");
     return;
   }
 
   raw_mouse_last_center_time_ = std::chrono::steady_clock::now();
   raw_mouse_capture_active_ = true;
-  XELOGI("winkey: Raw Input mouse captured.");
+  XELOGI("kbm: Raw Input mouse captured.");
   NotifyCaptureState(true);
 }
 
-void WinKeyInputDriver::ReleaseRawMouseCapture() {
+void KbmInputDriver::ReleaseRawMouseCapture() {
   if (!raw_mouse_capture_active_) {
     return;
   }
@@ -1085,11 +1085,11 @@ void WinKeyInputDriver::ReleaseRawMouseCapture() {
   window()->ReleaseMouse();
   raw_mouse_capture_active_ = false;
   RegisterRawMouse(false);
-  XELOGI("winkey: Raw Input mouse released.");
+  XELOGI("kbm: Raw Input mouse released.");
   NotifyCaptureState(false);
 }
 
-void WinKeyInputDriver::RefreshRawMouseCapture() {
+void KbmInputDriver::RefreshRawMouseCapture() {
   if (!raw_mouse_capture_requested_) {
     return;
   }
@@ -1112,7 +1112,7 @@ void WinKeyInputDriver::RefreshRawMouseCapture() {
   if (GetCapture() != hwnd) {
     SetCapture(hwnd);
     if (GetCapture() != hwnd) {
-      XELOGW("winkey: failed to restore Win32 mouse capture, error {}.",
+      XELOGW("kbm: failed to restore Win32 mouse capture, error {}.",
              GetLastError());
       return;
     }
@@ -1125,23 +1125,23 @@ void WinKeyInputDriver::RefreshRawMouseCapture() {
     return;
   }
   if (repaired_native_capture) {
-    XELOGI("winkey: restored Win32 mouse capture after a host window change.");
+    XELOGI("kbm: restored Win32 mouse capture after a host window change.");
   }
 }
 
-void WinKeyInputDriver::NotifyCaptureState(bool active) {
+void KbmInputDriver::NotifyCaptureState(bool active) {
   if (capture_state_callback_) {
     capture_state_callback_(active, GetSettings().raw_mouse_capture_toggle_key);
   }
 }
 
-bool WinKeyInputDriver::UpdateRawMouseClipRectangle() {
+bool KbmInputDriver::UpdateRawMouseClipRectangle() {
   auto* win32_window = static_cast<ui::Win32Window*>(window());
   HWND hwnd = win32_window->hwnd();
   RECT client_rect;
   if (!hwnd || !GetClientRect(hwnd, &client_rect)) {
     XELOGW(
-        "winkey: failed to get the window rectangle for mouse capture, "
+        "kbm: failed to get the window rectangle for mouse capture, "
         "error {}.",
         GetLastError());
     return false;
@@ -1156,7 +1156,7 @@ bool WinKeyInputDriver::UpdateRawMouseClipRectangle() {
   if (!MapWindowPoints(hwnd, nullptr, corners, 2)) {
     const DWORD error = GetLastError();
     if (error) {
-      XELOGW("winkey: failed to map the mouse capture rectangle, error {}.",
+      XELOGW("kbm: failed to map the mouse capture rectangle, error {}.",
              error);
       return false;
     }
@@ -1164,14 +1164,14 @@ bool WinKeyInputDriver::UpdateRawMouseClipRectangle() {
 
   RECT clip_rect = {corners[0].x, corners[0].y, corners[1].x, corners[1].y};
   if (!ClipCursor(&clip_rect)) {
-    XELOGW("winkey: failed to clip the mouse cursor, error {}.",
+    XELOGW("kbm: failed to clip the mouse cursor, error {}.",
            GetLastError());
     return false;
   }
   return CenterRawMouseCursor();
 }
 
-bool WinKeyInputDriver::CenterRawMouseCursor() {
+bool KbmInputDriver::CenterRawMouseCursor() {
   auto* win32_window = static_cast<ui::Win32Window*>(window());
   HWND hwnd = win32_window->hwnd();
   RECT client_rect;
@@ -1182,15 +1182,15 @@ bool WinKeyInputDriver::CenterRawMouseCursor() {
   POINT center = {(client_rect.left + client_rect.right) / 2,
                   (client_rect.top + client_rect.bottom) / 2};
   if (!ClientToScreen(hwnd, &center) || !SetCursorPos(center.x, center.y)) {
-    XELOGW("winkey: failed to center the captured mouse cursor, error {}.",
+    XELOGW("kbm: failed to center the captured mouse cursor, error {}.",
            GetLastError());
     return false;
   }
   return true;
 }
 
-InputType WinKeyInputDriver::GetInputType() const {
-  WinKeySettings settings = GetSettings();
+InputType KbmInputDriver::GetInputType() const {
+  KbmSettings settings = GetSettings();
   switch (static_cast<KeyboardMode>(settings.keyboard_mode)) {
     case KeyboardMode::Disabled:
       return InputType::None;
@@ -1204,6 +1204,6 @@ InputType WinKeyInputDriver::GetInputType() const {
   return InputType::Controller;
 }
 
-}  // namespace winkey
+}  // namespace kbm
 }  // namespace hid
 }  // namespace xe

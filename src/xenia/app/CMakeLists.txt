@@ -109,7 +109,7 @@ if(WIN32)
   target_link_libraries(xenia-app PRIVATE
     xenia-apu-xaudio2
     xenia-gpu-d3d12
-    xenia-hid-winkey
+    xenia-hid-kbm
     xenia-hid-xinput
     xenia-ui-d3d12
   )

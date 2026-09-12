@@ -1,8 +1,8 @@
-# WinKey keyboard and Raw Input mouse input
+# KBM Controller keyboard and Raw Input mouse input
 
 ## Scope
 
-WinKey is a Windows-only, experimental input backend. It maps keyboard keys
+KBM Controller is a Windows-only, experimental input backend. It maps keyboard keys
 and mouse buttons to an emulated Xbox 360 controller, and translates Windows
 Raw Input mouse movement into the emulated right stick. It is deliberately a
 generic controller-input feature: it contains no game-specific memory hooks,
@@ -26,15 +26,15 @@ revision.
 
 ## Enable and configure
 
-1. Start Xenia with the WinKey input backend selected, for example
-   `--hid=winkey`.
-2. Open **WinKey Settings** from the host menu. The menu appears when WinKey is
-   selected, or after a `winkey.toml` file already exists.
+1. Start Xenia with the KBM Controller input backend selected, for example
+   `--hid=kbm`.
+2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
+   selected, or after a `kbm.toml` file already exists.
 3. Select a keyboard mode and controller slot, configure bindings, then choose
    **Save**.
 
-When WinKey is selected for the first time, the backend creates
-`winkey.toml` in Xenia's storage root. This file intentionally remains
+When KBM Controller is selected for the first time, the backend creates
+`kbm.toml` in Xenia's storage root. This file intentionally remains
 separate from `xenia-canary.config.toml`. Existing values from the main
 configuration are imported once when the separate file is created.
 
@@ -70,16 +70,16 @@ deadzone behavior.
   near-center feel.
 
 Start from the defaults, adjust the game's own controller sensitivity, and
-then make small changes to the WinKey controls. DPI alone cannot predict the
+then make small changes to the KBM Controller controls. DPI alone cannot predict the
 final turning distance because games map an analog stick differently.
 
 ## Mouse capture
 
 The default capture hotkey is **F8**, configurable as a key or modifier chord.
-When capture is active, WinKey hides and clips the cursor, requests exclusive
+When capture is active, KBM Controller hides and clips the cursor, requests exclusive
 Raw Input, and sends a status notification. Press the hotkey again to release
 it. Losing focus releases capture; returning focus can restore a requested
-capture. Opening host UI temporarily suspends WinKey input so its controls
+capture. Opening host UI temporarily suspends KBM Controller input so its controls
 remain usable.
 
 Overlays and focus changes are controlled by Windows and may interrupt capture.

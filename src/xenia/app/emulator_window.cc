@@ -197,7 +197,7 @@ EmulatorWindow::EmulatorWindow(Emulator* emulator,
                 "PR#" XE_BUILD_PR_NUMBER
                 " - "
 #endif
-                "WinKey Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
+                "KBM Controller Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
                 " | upstream " XE_BUILD_UPSTREAM_COMMIT_SHORT
                 " on " XE_BUILD_DATE ")";
 
@@ -220,7 +220,7 @@ EmulatorWindow::~EmulatorWindow() {
 #if XE_PLATFORM_WIN32
   if (auto* input_system = emulator_->input_system()) {
     if (auto* driver =
-            input_system->GetDriver<hid::winkey::WinKeyInputDriver>()) {
+            input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
       driver->SetCaptureStateCallback({});
     }
   }
@@ -274,12 +274,12 @@ void EmulatorWindow::OnEmulatorInitialized() {
 #if XE_PLATFORM_WIN32
   if (auto* input_system = emulator_->input_system()) {
     if (auto* driver =
-            input_system->GetDriver<hid::winkey::WinKeyInputDriver>()) {
+            input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
       driver->SetCaptureStateCallback(
           [this](bool active, const std::string& toggle_binding) {
             using localization::StringId;
             const std::string display_binding =
-                hid::winkey::FormatWinKeyBinding(toggle_binding);
+                hid::kbm::FormatKbmBinding(toggle_binding);
             const std::string description =
                 active
                     ? fmt::format(
@@ -296,9 +296,9 @@ void EmulatorWindow::OnEmulatorInitialized() {
                 description, 0);
           });
 
-      // With hid = "any", the WinKey backend is only known after input
+      // With hid = "any", the Kbm backend is only known after input
       // initialization. Rebuild the initially-created menu so its settings
-      // page is available only when auto-selection actually chose WinKey.
+      // page is available only when auto-selection actually chose Kbm.
       BuildMainMenu();
     }
   }
@@ -630,48 +630,48 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
 }
 
 #if XE_PLATFORM_WIN32
-EmulatorWindow::WinKeyConfigDialog::WinKeyConfigDialog(
+EmulatorWindow::KbmConfigDialog::KbmConfigDialog(
     ui::ImGuiDrawer* imgui_drawer, EmulatorWindow& emulator_window)
     : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
-  settings_ = hid::winkey::GetSettingsFromCvars();
+  settings_ = hid::kbm::GetSettingsFromCvars();
   original_settings_ = settings_;
 }
 
-EmulatorWindow::WinKeyConfigDialog::~WinKeyConfigDialog() {
+EmulatorWindow::KbmConfigDialog::~KbmConfigDialog() {
   CancelBindingCapture();
   if (!committed_or_restored_) {
     RestoreOriginal();
   }
 }
 
-hid::winkey::WinKeyInputDriver* EmulatorWindow::WinKeyConfigDialog::GetDriver()
+hid::kbm::KbmInputDriver* EmulatorWindow::KbmConfigDialog::GetDriver()
     const {
   hid::InputSystem* input_system = emulator_window_.emulator_->input_system();
   return input_system
-             ? input_system->GetDriver<hid::winkey::WinKeyInputDriver>()
+             ? input_system->GetDriver<hid::kbm::KbmInputDriver>()
              : nullptr;
 }
 
-void EmulatorWindow::WinKeyConfigDialog::ApplyDraft() {
+void EmulatorWindow::KbmConfigDialog::ApplyDraft() {
   committed_or_restored_ = false;
   if (auto* driver = GetDriver()) {
     driver->ApplySettings(settings_);
   } else {
-    hid::winkey::ApplySettingsToCvars(settings_);
+    hid::kbm::ApplySettingsToCvars(settings_);
   }
 }
 
-void EmulatorWindow::WinKeyConfigDialog::RestoreOriginal() {
+void EmulatorWindow::KbmConfigDialog::RestoreOriginal() {
   settings_ = original_settings_;
   if (auto* driver = GetDriver()) {
     driver->ApplySettings(settings_);
   } else {
-    hid::winkey::ApplySettingsToCvars(settings_);
+    hid::kbm::ApplySettingsToCvars(settings_);
   }
   committed_or_restored_ = true;
 }
 
-void EmulatorWindow::WinKeyConfigDialog::StartBindingCapture(
+void EmulatorWindow::KbmConfigDialog::StartBindingCapture(
     std::string* target, bool append) {
   binding_capture_target_ = target;
   binding_capture_append_ = append;
@@ -680,7 +680,7 @@ void EmulatorWindow::WinKeyConfigDialog::StartBindingCapture(
   }
 }
 
-void EmulatorWindow::WinKeyConfigDialog::CancelBindingCapture() {
+void EmulatorWindow::KbmConfigDialog::CancelBindingCapture() {
   if (auto* driver = GetDriver()) {
     driver->CancelBindingCapture();
   }
@@ -688,13 +688,13 @@ void EmulatorWindow::WinKeyConfigDialog::CancelBindingCapture() {
   binding_capture_append_ = false;
 }
 
-bool EmulatorWindow::WinKeyConfigDialog::HandleBindingCaptureResult() {
+bool EmulatorWindow::KbmConfigDialog::HandleBindingCaptureResult() {
   auto* driver = GetDriver();
   if (!driver || !binding_capture_target_) {
     return false;
   }
   const auto result = driver->ConsumeBindingCaptureResult();
-  using Status = hid::winkey::WinKeyInputDriver::BindingCaptureStatus;
+  using Status = hid::kbm::KbmInputDriver::BindingCaptureStatus;
   switch (result.status) {
     case Status::kCaptured:
       if (binding_capture_append_ && !binding_capture_target_->empty()) {
@@ -719,7 +719,7 @@ bool EmulatorWindow::WinKeyConfigDialog::HandleBindingCaptureResult() {
   }
 }
 
-void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
+void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   using localization::StringId;
   const auto tr = [](StringId id) { return localization::Get(id); };
 
@@ -729,14 +729,14 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
 
   bool dialog_open = true;
   const std::string title =
-      fmt::format("{}###WinKeySettings", tr(StringId::kWinKeyTitle));
+      fmt::format("{}###KbmSettings", tr(StringId::kKbmTitle));
   if (!ImGui::Begin(title.c_str(), &dialog_open, ImGuiWindowFlags_NoCollapse)) {
     ImGui::End();
     return;
   }
 
   if (!GetDriver()) {
-    ImGui::TextWrapped("%s", tr(StringId::kWinKeyBackendInactive));
+    ImGui::TextWrapped("%s", tr(StringId::kKbmBackendInactive));
     ImGui::Spacing();
   }
 
@@ -746,8 +746,8 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::PushID(id);
     const bool capturing = binding_capture_target_ == &binding;
     const std::string label = capturing
-                                  ? tr(StringId::kWinKeyPressBinding)
-                                  : hid::winkey::FormatWinKeyBinding(binding);
+                                  ? tr(StringId::kKbmPressBinding)
+                                  : hid::kbm::FormatKbmBinding(binding);
     const float action_width = allow_alternatives ? 52.0f : 28.0f;
     ImGui::BeginDisabled(GetDriver() == nullptr);
     if (ImGui::Button(label.c_str(),
@@ -757,7 +757,7 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
       StartBindingCapture(&binding, false);
     }
     if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", tr(StringId::kWinKeyBindingTooltip));
+      ImGui::SetTooltip("%s", tr(StringId::kKbmBindingTooltip));
     }
     if (allow_alternatives) {
       ImGui::SameLine();
@@ -765,7 +765,7 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
         StartBindingCapture(&binding, true);
       }
       if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", tr(StringId::kWinKeyAddAlternativeBinding));
+        ImGui::SetTooltip("%s", tr(StringId::kKbmAddAlternativeBinding));
       }
     }
     ImGui::EndDisabled();
@@ -778,18 +778,18 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
       changed = true;
     }
     if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", tr(StringId::kWinKeyClearBinding));
+      ImGui::SetTooltip("%s", tr(StringId::kKbmClearBinding));
     }
     ImGui::PopID();
   };
   if (ImGui::TreeNodeEx(
-          tr(StringId::kWinKeyKeyboard),
+          tr(StringId::kKbmKeyboard),
           ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    const char* keyboard_mode_names[] = {tr(StringId::kWinKeyModeDisabled),
-                                         tr(StringId::kWinKeyModeController),
-                                         tr(StringId::kWinKeyModePassthrough)};
+    const char* keyboard_mode_names[] = {tr(StringId::kKbmModeDisabled),
+                                         tr(StringId::kKbmModeController),
+                                         tr(StringId::kKbmModePassthrough)};
     int keyboard_mode = std::clamp(settings_.keyboard_mode, 0, 2);
-    if (ImGui::BeginCombo(tr(StringId::kWinKeyKeyboardMode),
+    if (ImGui::BeginCombo(tr(StringId::kKbmKeyboardMode),
                           keyboard_mode_names[keyboard_mode])) {
       for (int i = 0; i < 3; ++i) {
         if (ImGui::Selectable(keyboard_mode_names[i], keyboard_mode == i)) {
@@ -800,12 +800,12 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
       ImGui::EndCombo();
     }
 
-    if (settings_.keyboard_mode == int(hid::winkey::KeyboardMode::Enabled)) {
+    if (settings_.keyboard_mode == int(hid::kbm::KeyboardMode::Enabled)) {
       int controller_slot = std::clamp(settings_.keyboard_user_index, 0, 3);
       const char* controller_slot_names[] = {
-          tr(StringId::kWinKeyPlayer1), tr(StringId::kWinKeyPlayer2),
-          tr(StringId::kWinKeyPlayer3), tr(StringId::kWinKeyPlayer4)};
-      if (ImGui::BeginCombo(tr(StringId::kWinKeyControllerSlot),
+          tr(StringId::kKbmPlayer1), tr(StringId::kKbmPlayer2),
+          tr(StringId::kKbmPlayer3), tr(StringId::kKbmPlayer4)};
+      if (ImGui::BeginCombo(tr(StringId::kKbmControllerSlot),
                             controller_slot_names[controller_slot])) {
         for (int i = 0; i < 4; ++i) {
           if (ImGui::Selectable(controller_slot_names[i],
@@ -817,51 +817,51 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
         ImGui::EndCombo();
       }
 
-      ImGui::TextWrapped("%s", tr(StringId::kWinKeyBindingHelp));
-      if (ImGui::BeginTable("WinKeyBindings", 2,
+      ImGui::TextWrapped("%s", tr(StringId::kKbmBindingHelp));
+      if (ImGui::BeginTable("KbmBindings", 2,
                             ImGuiTableFlags_BordersInnerV |
                                 ImGuiTableFlags_RowBg |
                                 ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn(tr(StringId::kWinKeyXboxInput),
+        ImGui::TableSetupColumn(tr(StringId::kKbmXboxInput),
                                 ImGuiTableColumnFlags_WidthFixed, 165.0f);
-        ImGui::TableSetupColumn(tr(StringId::kWinKeyKeyboardMouse));
+        ImGui::TableSetupColumn(tr(StringId::kKbmKeyboardMouse));
         ImGui::TableHeadersRow();
-#define XE_HID_WINKEY_BINDING(button, description, cvar_name, \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, \
                               cvar_default_value)             \
   ImGui::TableNextRow();                                      \
   ImGui::TableSetColumnIndex(0);                              \
   ImGui::TextUnformatted(description);                        \
   ImGui::TableSetColumnIndex(1);                              \
   draw_binding(#cvar_name, settings_.cvar_name);
-#include "xenia/hid/winkey/winkey_binding_table.inc"
-#undef XE_HID_WINKEY_BINDING
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
         ImGui::EndTable();
       }
     } else if (settings_.keyboard_mode ==
-               int(hid::winkey::KeyboardMode::Passthrough)) {
-      ImGui::TextWrapped("%s", tr(StringId::kWinKeyPassthroughHelp));
+               int(hid::kbm::KeyboardMode::Passthrough)) {
+      ImGui::TextWrapped("%s", tr(StringId::kKbmPassthroughHelp));
     }
     ImGui::TreePop();
   }
 
   if (ImGui::TreeNodeEx(
-          tr(StringId::kWinKeyMouse),
+          tr(StringId::kKbmMouse),
           ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
     const bool mouse_controls_available =
-        settings_.keyboard_mode == int(hid::winkey::KeyboardMode::Enabled);
+        settings_.keyboard_mode == int(hid::kbm::KeyboardMode::Enabled);
     ImGui::BeginDisabled(!mouse_controls_available);
-    if (ImGui::Checkbox(tr(StringId::kWinKeyEnableRawMouse),
+    if (ImGui::Checkbox(tr(StringId::kKbmEnableRawMouse),
                         &settings_.raw_mouse)) {
       changed = true;
     }
     ImGui::EndDisabled();
     if (!mouse_controls_available) {
-      ImGui::TextWrapped("%s", tr(StringId::kWinKeyRawMouseRequiresController));
+      ImGui::TextWrapped("%s", tr(StringId::kKbmRawMouseRequiresController));
     }
 
     ImGui::BeginDisabled(!mouse_controls_available);
     ImGui::Spacing();
-    ImGui::TextUnformatted(tr(StringId::kWinKeySensitivity));
+    ImGui::TextUnformatted(tr(StringId::kKbmSensitivity));
     float sensitivity = float(settings_.raw_mouse_sensitivity);
     ImGui::SetNextItemWidth(300.0f);
     if (ImGui::SliderFloat(
@@ -886,14 +886,14 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
       settings_.raw_mouse_sensitivity = 10.0;
       changed = true;
     }
-    ImGui::TextWrapped("%s", tr(StringId::kWinKeySensitivityGuide));
+    ImGui::TextWrapped("%s", tr(StringId::kKbmSensitivityGuide));
 
-    if (ImGui::Checkbox(tr(StringId::kWinKeyCompensateGameDeadzone),
+    if (ImGui::Checkbox(tr(StringId::kKbmCompensateGameDeadzone),
                         &settings_.raw_mouse_deadzone_compensation)) {
       changed = true;
     }
     if (settings_.raw_mouse_deadzone_compensation) {
-      ImGui::TextUnformatted(tr(StringId::kWinKeyMinimumResponse));
+      ImGui::TextUnformatted(tr(StringId::kKbmMinimumResponse));
       float minimum_response = float(settings_.raw_mouse_minimum_response);
       ImGui::SetNextItemWidth(300.0f);
       if (ImGui::SliderFloat("##MinimumResponse", &minimum_response, 0.0f, 0.5f,
@@ -910,24 +910,24 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
             std::clamp(settings_.raw_mouse_minimum_response, 0.0, 0.5);
         changed = true;
       }
-      ImGui::TextDisabled("%s", tr(StringId::kWinKeyMinimumResponseHelp));
+      ImGui::TextDisabled("%s", tr(StringId::kKbmMinimumResponseHelp));
     }
 
-    if (ImGui::Checkbox(tr(StringId::kWinKeyInvertVertical),
+    if (ImGui::Checkbox(tr(StringId::kKbmInvertVertical),
                         &settings_.raw_mouse_invert_y)) {
       changed = true;
     }
-    if (ImGui::Checkbox(tr(StringId::kWinKeyCaptureOnStart),
+    if (ImGui::Checkbox(tr(StringId::kKbmCaptureOnStart),
                         &settings_.raw_mouse_capture_on_start)) {
       changed = true;
     }
-    ImGui::TextUnformatted(tr(StringId::kWinKeyCaptureToggle));
+    ImGui::TextUnformatted(tr(StringId::kKbmCaptureToggle));
     draw_binding("CaptureToggle", settings_.raw_mouse_capture_toggle_key,
                  false);
 
-    if (ImGui::TreeNodeEx(tr(StringId::kWinKeyFineTuning),
+    if (ImGui::TreeNodeEx(tr(StringId::kKbmFineTuning),
                           ImGuiTreeNodeFlags_Framed)) {
-      ImGui::TextUnformatted(tr(StringId::kWinKeyAimCurve));
+      ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
       float curve = float(settings_.raw_mouse_response_curve);
       ImGui::SetNextItemWidth(300.0f);
       if (ImGui::SliderFloat(
@@ -945,9 +945,9 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
             std::clamp(settings_.raw_mouse_response_curve, 0.1, 4.0);
         changed = true;
       }
-      ImGui::TextDisabled("%s", tr(StringId::kWinKeyAimCurveHelp));
+      ImGui::TextDisabled("%s", tr(StringId::kKbmAimCurveHelp));
 
-      ImGui::TextUnformatted(tr(StringId::kWinKeyFullStickThreshold));
+      ImGui::TextUnformatted(tr(StringId::kKbmFullStickThreshold));
       ImGui::SetNextItemWidth(220.0f);
       if (ImGui::InputDouble(
               "##FullScaleVelocity", &settings_.raw_mouse_full_scale_velocity,
@@ -956,7 +956,7 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
             std::clamp(settings_.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
         changed = true;
       }
-      ImGui::TextDisabled(tr(StringId::kWinKeyFullStickHelp),
+      ImGui::TextDisabled(tr(StringId::kKbmFullStickHelp),
                           settings_.raw_mouse_sensitivity,
                           settings_.raw_mouse_full_scale_velocity /
                               std::max(settings_.raw_mouse_sensitivity, 0.01));
@@ -964,7 +964,7 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
     }
     ImGui::EndDisabled();
 
-    if (ImGui::TreeNodeEx(tr(StringId::kWinKeyDiagnostics),
+    if (ImGui::TreeNodeEx(tr(StringId::kKbmDiagnostics),
                           ImGuiTreeNodeFlags_Framed)) {
       if (auto* driver = GetDriver()) {
         const auto diagnostics = driver->GetDiagnostics();
@@ -972,24 +972,24 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
             std::max(std::abs(float(diagnostics.thumb_x)) / 32767.0f,
                      std::abs(float(diagnostics.thumb_y)) / 32767.0f);
         const std::string stick_label = fmt::format(
-            fmt::runtime(tr(StringId::kWinKeyLastStickOutput)),
+            fmt::runtime(tr(StringId::kKbmLastStickOutput)),
             stick_output * 100.0f,
-            stick_output >= 0.999f ? tr(StringId::kWinKeyMaximum) : "");
+            stick_output >= 0.999f ? tr(StringId::kKbmMaximum) : "");
         ImGui::ProgressBar(stick_output, ImVec2(-1.0f, 0.0f),
                            stick_label.c_str());
-        ImGui::TextWrapped(tr(StringId::kWinKeyRawSpeed),
+        ImGui::TextWrapped(tr(StringId::kKbmRawSpeed),
                            diagnostics.raw_counts_per_second_x,
                            diagnostics.raw_counts_per_second_y,
                            diagnostics.thumb_x, diagnostics.thumb_y);
-        ImGui::Text(tr(StringId::kWinKeyRawInputCapture),
+        ImGui::Text(tr(StringId::kKbmRawInputCapture),
                     diagnostics.raw_mouse_registered
-                        ? tr(StringId::kWinKeyReady)
-                        : tr(StringId::kWinKeyOff),
-                    diagnostics.capture_active ? tr(StringId::kWinKeyActive)
-                                               : tr(StringId::kWinKeyReleased));
-        ImGui::TextDisabled("%s", tr(StringId::kWinKeyInputPaused));
+                        ? tr(StringId::kKbmReady)
+                        : tr(StringId::kKbmOff),
+                    diagnostics.capture_active ? tr(StringId::kKbmActive)
+                                               : tr(StringId::kKbmReleased));
+        ImGui::TextDisabled("%s", tr(StringId::kKbmInputPaused));
       } else {
-        ImGui::TextDisabled("%s", tr(StringId::kWinKeyDiagnosticsUnavailable));
+        ImGui::TextDisabled("%s", tr(StringId::kKbmDiagnosticsUnavailable));
       }
       ImGui::TreePop();
     }
@@ -1001,10 +1001,10 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
   }
 
   ImGui::Separator();
-  if (ImGui::Button(tr(StringId::kWinKeySave))) {
+  if (ImGui::Button(tr(StringId::kKbmSave))) {
     CancelBindingCapture();
     ApplyDraft();
-    if (hid::winkey::SaveConfig()) {
+    if (hid::kbm::SaveConfig()) {
       original_settings_ = settings_;
       committed_or_restored_ = true;
       save_failed_ = false;
@@ -1013,25 +1013,25 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
     }
   }
   ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kWinKeyCancel))) {
+  if (ImGui::Button(tr(StringId::kKbmCancel))) {
     CancelBindingCapture();
     RestoreOriginal();
     Close();
     ImGui::End();
-    emulator_window_.ToggleWinKeyConfigDialog();
+    emulator_window_.ToggleKbmConfigDialog();
     return;
   }
   ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kWinKeyResetAll))) {
+  if (ImGui::Button(tr(StringId::kKbmResetAll))) {
     CancelBindingCapture();
-    settings_ = hid::winkey::WinKeySettings();
+    settings_ = hid::kbm::KbmSettings();
     ApplyDraft();
   }
   ImGui::SameLine();
-  ImGui::TextDisabled("%s", tr(StringId::kWinKeySettingsFile));
+  ImGui::TextDisabled("%s", tr(StringId::kKbmSettingsFile));
   if (save_failed_) {
     ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
-                       tr(StringId::kWinKeySaveFailed));
+                       tr(StringId::kKbmSaveFailed));
   }
 
   ImGui::End();
@@ -1039,7 +1039,7 @@ void EmulatorWindow::WinKeyConfigDialog::OnDraw(ImGuiIO& io) {
     CancelBindingCapture();
     RestoreOriginal();
     Close();
-    emulator_window_.ToggleWinKeyConfigDialog();
+    emulator_window_.ToggleKbmConfigDialog();
   }
 }
 #endif  // XE_PLATFORM_WIN32
@@ -1338,20 +1338,20 @@ void EmulatorWindow::BuildMainMenu() {
   main_menu->AddChild(std::move(display_menu));
 
 #if XE_PLATFORM_WIN32
-  bool show_winkey_menu = cvars::hid == "winkey" || hid::winkey::ConfigExists();
-  if (!show_winkey_menu) {
+  bool show_kbm_menu = cvars::hid == "kbm" || hid::kbm::ConfigExists();
+  if (!show_kbm_menu) {
     if (auto* input_system = emulator_->input_system()) {
-      show_winkey_menu =
-          input_system->GetDriver<hid::winkey::WinKeyInputDriver>() != nullptr;
+      show_kbm_menu =
+          input_system->GetDriver<hid::kbm::KbmInputDriver>() != nullptr;
     }
   }
-  if (show_winkey_menu) {
-    auto winkey_menu =
-        MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuWinKey));
-    winkey_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, tr(StringId::kMenuWinKeySettings), "",
-        std::bind(&EmulatorWindow::ToggleWinKeyConfigDialog, this)));
-    main_menu->AddChild(std::move(winkey_menu));
+  if (show_kbm_menu) {
+    auto kbm_menu =
+        MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuKbm));
+    kbm_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuKbmSettings), "",
+        std::bind(&EmulatorWindow::ToggleKbmConfigDialog, this)));
+    main_menu->AddChild(std::move(kbm_menu));
   }
 #endif  // XE_PLATFORM_WIN32
 
@@ -1435,7 +1435,7 @@ void EmulatorWindow::BuildMainMenu() {
         MenuItem::Type::kString, tr(StringId::kMenuRecentChanges), []() {
           LaunchWebBrowser(
               "https://github.com/MeowXiaoXiang/"
-              "xenia-canary-winkey-input/compare/" XE_BUILD_UPSTREAM_COMMIT
+              "xenia-canary-kbm/compare/" XE_BUILD_UPSTREAM_COMMIT
               "..." XE_BUILD_COMMIT);
         }));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
@@ -2152,7 +2152,7 @@ void EmulatorWindow::SetFullscreen(bool fullscreen_) {
 #if XE_PLATFORM_WIN32
   if (auto* input_system = emulator_->input_system()) {
     if (auto* driver =
-            input_system->GetDriver<hid::winkey::WinKeyInputDriver>()) {
+            input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
       driver->RefreshRawMouseCapture();
     }
   }
@@ -2177,14 +2177,14 @@ void EmulatorWindow::ToggleDisplayConfigDialog() {
 }
 
 #if XE_PLATFORM_WIN32
-void EmulatorWindow::ToggleWinKeyConfigDialog() {
-  if (!winkey_config_dialog_) {
-    winkey_config_dialog_ =
-        std::make_unique<WinKeyConfigDialog>(imgui_drawer_.get(), *this);
-  } else if (winkey_config_dialog_->IsClosing()) {
-    winkey_config_dialog_.release();
+void EmulatorWindow::ToggleKbmConfigDialog() {
+  if (!kbm_config_dialog_) {
+    kbm_config_dialog_ =
+        std::make_unique<KbmConfigDialog>(imgui_drawer_.get(), *this);
+  } else if (kbm_config_dialog_->IsClosing()) {
+    kbm_config_dialog_.release();
   } else {
-    winkey_config_dialog_.reset();
+    kbm_config_dialog_.reset();
   }
 }
 #endif  // XE_PLATFORM_WIN32
@@ -2289,11 +2289,11 @@ void EmulatorWindow::ShowFAQ() {
 void EmulatorWindow::ShowForkBuildCommit() {
 #ifdef XE_BUILD_IS_PR
   LaunchWebBrowser(
-      "https://github.com/MeowXiaoXiang/xenia-canary-winkey-input/"
+      "https://github.com/MeowXiaoXiang/xenia-canary-kbm/"
       "pull/" XE_BUILD_PR_NUMBER);
 #else
   LaunchWebBrowser(
-      "https://github.com/MeowXiaoXiang/xenia-canary-winkey-input/"
+      "https://github.com/MeowXiaoXiang/xenia-canary-kbm/"
       "commit/" XE_BUILD_COMMIT);
 #endif
 }
@@ -2879,8 +2879,8 @@ xe::X_STATUS EmulatorWindow::RunTitle(
   }
 
 #if XE_PLATFORM_WIN32
-  if (winkey_config_dialog_) {
-    winkey_config_dialog_.reset();
+  if (kbm_config_dialog_) {
+    kbm_config_dialog_.reset();
   }
 #endif  // XE_PLATFORM_WIN32
   ClearDialogs();
