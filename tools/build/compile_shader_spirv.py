@@ -12,6 +12,7 @@ Pipeline:
 """
 
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -34,17 +35,22 @@ XESL_WRAPPER = (
 def find_vulkan_tools():
     """Find Vulkan SDK tools via VULKAN_SDK env or PATH."""
     vulkan_sdk = os.environ.get("VULKAN_SDK")
+    tool_names = ("glslangValidator", "spirv-opt", "spirv-dis")
     if vulkan_sdk:
         bin_dir = os.path.join(vulkan_sdk, "bin")
         if os.path.isdir(bin_dir):
-            return (
-                os.path.join(bin_dir, "glslangValidator"),
-                os.path.join(bin_dir, "spirv-opt"),
-                os.path.join(bin_dir, "spirv-dis"),
+            # Some Linux Vulkan SDK archives do not include glslangValidator.
+            # Prefer each tool from the SDK when present, then fall back to a
+            # valid system installation instead of returning a dead path.
+            return tuple(
+                shutil.which(name, path=bin_dir)
+                or shutil.which(name)
+                or name
+                for name in tool_names
             )
 
-    # Fall back to PATH
-    return ("glslangValidator", "spirv-opt", "spirv-dis")
+    # Fall back to PATH.
+    return tuple(shutil.which(name) or name for name in tool_names)
 
 
 def parse_stage(filename):

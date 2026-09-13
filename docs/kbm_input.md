@@ -66,7 +66,9 @@ to the keyboard driver and do not control KBM. Earlier experimental KBM builds
 shared those names incorrectly; re-save your KBM bindings after updating.
 
 If input is inactive, check that the main configuration selects `hid = "kbm"`.
-An existing `hid = "winkey"` or `hid = "any"` overrides the Windows default.
+An explicit `hid = "any"` selects general hardware backends and does not enable
+KBM. Use `hid = "keyboard"` for upstream keyboard passthrough. The old
+`winkey` selector is no longer supported.
 Close host dialogs and focus the emulator before pressing F8. The log records
 capture hotkey events, host UI suspension, and Raw Input capture transitions.
 
