@@ -12,6 +12,7 @@ on:
       - '*.md'
       - 'docs/**'
       - 'LICENSE'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,13 +42,19 @@ jobs:
   build-windows:
     name: Windows (x86-64)
     needs: [lint, commit-message]
-    if: ${{ !failure() && !cancelled() }}
+    if: >-
+      ${{ always() &&
+      needs.lint.result == 'success' &&
+      (needs.commit-message.result == 'success' || needs.commit-message.result == 'skipped') }}
     uses: ./.github/workflows/Windows_x86.yml
 
   build-linux:
     name: Linux (x86-64)
     needs: [lint, commit-message]
-    if: ${{ !failure() && !cancelled() }}
+    if: >-
+      ${{ always() &&
+      needs.lint.result == 'success' &&
+      (needs.commit-message.result == 'success' || needs.commit-message.result == 'skipped') }}
     uses: ./.github/workflows/Linux_x86.yml
     with:
       runs-on: ${{ needs.lint.outputs.runs-on }}
