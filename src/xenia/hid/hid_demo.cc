@@ -44,8 +44,8 @@
 #include "xenia/hid/linux/linux_hid.h"
 #endif
 #if XE_PLATFORM_WIN32
-#include "xenia/hid/keyboard/keyboard_hid.h"
 #include "xenia/hid/kbm/kbm_hid.h"
+#include "xenia/hid/keyboard/keyboard_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
 
