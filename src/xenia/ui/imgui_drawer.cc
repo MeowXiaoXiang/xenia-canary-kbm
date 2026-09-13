@@ -531,6 +531,8 @@ bool ImGuiDrawer::LoadTraditionalChineseFont(ImGuiIO& io, float font_size) {
   // cost of the complete CJK range. Keep this list in sync with
   // xenia/app/localization.cc.
   static constexpr char kUiGlyphs[] =
+      "導覽方向左右上下搖桿按鈕扳機返回開始肩"
+      "儲存並關閉尚未變更設定已綁取消擷取上次遊戲輸入樣本此視窗開啟時非即更新"
       "檔案最近開啟項目封裝安內容建立解壓縮關閉顯示目錄結束設定玩家"
       "時間倍率重設切換暫停繼續中斷並主機客體清除執行階段快取後製"
       "處理全螢幕擷取畫面鍵盤滑鼠控制器震動快捷說明常見問題遊戲相"

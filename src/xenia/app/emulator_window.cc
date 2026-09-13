@@ -650,6 +650,8 @@ hid::kbm::KbmInputDriver* EmulatorWindow::KbmConfigDialog::GetDriver() const {
 
 void EmulatorWindow::KbmConfigDialog::ApplyDraft() {
   committed_or_restored_ = false;
+  dirty_ = true;
+  saved_ = false;
   if (auto* driver = GetDriver()) {
     driver->ApplySettings(settings_);
   } else {
@@ -737,13 +739,23 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   }
 
   bool changed = HandleBindingCaptureResult();
+  ImGui::TextWrapped("%s", tr(StringId::kKbmInputPaused));
+  ImGui::Text("%s %s", tr(StringId::kKbmCaptureToggle),
+              hid::kbm::FormatKbmBinding(settings_.raw_mouse_capture_toggle_key)
+                  .c_str());
+  ImGui::BeginChild("KbmSettingsBody",
+                    ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3), false);
   auto draw_binding = [&](const char* id, std::string& binding,
                           bool allow_alternatives = true) {
     ImGui::PushID(id);
     const bool capturing = binding_capture_target_ == &binding;
     const std::string label = capturing ? tr(StringId::kKbmPressBinding)
-                                        : hid::kbm::FormatKbmBinding(binding);
-    const float action_width = allow_alternatives ? 52.0f : 28.0f;
+                              : binding.empty()
+                                  ? tr(StringId::kKbmUnbound)
+                                  : hid::kbm::FormatKbmBinding(binding);
+    const float action_width = ImGui::CalcTextSize("Esc").x +
+                               ImGui::GetStyle().FramePadding.x * 2 +
+                               (allow_alternatives ? 64.0f : 40.0f);
     ImGui::BeginDisabled(GetDriver() == nullptr);
     if (ImGui::Button(label.c_str(),
                       ImVec2(std::max(80.0f, ImGui::GetContentRegionAvail().x -
@@ -764,6 +776,15 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
       }
     }
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Esc")) {
+      CancelBindingCapture();
+      binding = "Esc";
+      changed = true;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("%s", tr(StringId::kKbmBindEscape));
+    }
     ImGui::SameLine();
     if (ImGui::SmallButton("x")) {
       if (capturing) {
@@ -814,7 +835,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
 #define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
   ImGui::TableNextRow();                                                       \
   ImGui::TableSetColumnIndex(0);                                               \
-  ImGui::TextUnformatted(description);                                         \
+  ImGui::TextUnformatted(tr(StringId::kKbmBind##button));                      \
   ImGui::TableSetColumnIndex(1);                                               \
   draw_binding(#cvar_name, settings_.cvar_name);
 #include "xenia/hid/kbm/kbm_binding_table.inc"
@@ -843,7 +864,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::Spacing();
     ImGui::TextUnformatted(tr(StringId::kKbmSensitivity));
     float sensitivity = float(settings_.raw_mouse_sensitivity);
-    ImGui::SetNextItemWidth(300.0f);
+    ImGui::SetNextItemWidth(
+        std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
     if (ImGui::SliderFloat(
             "##MouseSensitivitySlider", &sensitivity, 0.01f, 256.0f, "%.3f x",
             ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
@@ -875,7 +897,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     if (settings_.raw_mouse_deadzone_compensation) {
       ImGui::TextUnformatted(tr(StringId::kKbmMinimumResponse));
       float minimum_response = float(settings_.raw_mouse_minimum_response);
-      ImGui::SetNextItemWidth(300.0f);
+      ImGui::SetNextItemWidth(
+          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
       if (ImGui::SliderFloat("##MinimumResponse", &minimum_response, 0.0f, 0.5f,
                              "%.3f", ImGuiSliderFlags_AlwaysClamp)) {
         settings_.raw_mouse_minimum_response = minimum_response;
@@ -909,7 +932,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                           ImGuiTreeNodeFlags_Framed)) {
       ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
       float curve = float(settings_.raw_mouse_response_curve);
-      ImGui::SetNextItemWidth(300.0f);
+      ImGui::SetNextItemWidth(
+          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
       if (ImGui::SliderFloat(
               "##MouseCurve", &curve, 0.1f, 4.0f, "%.3f",
               ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
@@ -966,7 +990,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                                                      : tr(StringId::kKbmOff),
                     diagnostics.capture_active ? tr(StringId::kKbmActive)
                                                : tr(StringId::kKbmReleased));
-        ImGui::TextDisabled("%s", tr(StringId::kKbmInputPaused));
+        ImGui::TextWrapped("%s", tr(StringId::kKbmSnapshot));
       } else {
         ImGui::TextDisabled("%s", tr(StringId::kKbmDiagnosticsUnavailable));
       }
@@ -975,18 +999,34 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::TreePop();
   }
 
+  ImGui::EndChild();
   if (changed) {
     ApplyDraft();
   }
 
   ImGui::Separator();
-  if (ImGui::Button(tr(StringId::kKbmSave))) {
+  if (dirty_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmDirty));
+  } else if (saved_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmSaved));
+  }
+  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
+  ImGui::SameLine();
+  if (ImGui::Button(tr(StringId::kKbmSave)) || save_and_close) {
     CancelBindingCapture();
     ApplyDraft();
     if (hid::kbm::SaveConfig()) {
       original_settings_ = settings_;
       committed_or_restored_ = true;
       save_failed_ = false;
+      dirty_ = false;
+      saved_ = true;
+      if (save_and_close) {
+        Close();
+        ImGui::End();
+        emulator_window_.ToggleKbmConfigDialog();
+        return;
+      }
     } else {
       save_failed_ = true;
     }

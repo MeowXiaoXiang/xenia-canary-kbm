@@ -51,6 +51,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   ~KbmInputDriver() override;
 
   X_STATUS Setup() override;
+  X_RESULT GetKeystroke(uint32_t user_index, uint32_t flags,
+                        X_INPUT_KEYSTROKE* out_keystroke) override;
 
   void OnHostUIVisibilityChanged(bool visible) override {
     SetHostInputSuspended(visible);
@@ -76,6 +78,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
     bool ctrl = false;
     bool alt = false;
     bool super = false;
+    bool pressed = false;
   };
 
   class KbmWindowListener final : public ui::WindowListener {
@@ -96,6 +99,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
                        const std::string_view description,
                        const std::string_view binding);
   void RebuildKeyBindings(const KbmSettings& settings);
+  void UpdateControllerKeystrokes(ui::KeyEvent* event = nullptr,
+                                  bool is_down = false);
 
   void OnKey(ui::KeyEvent& e, bool is_down) override;
   void OnMouseDown(ui::MouseEvent& e) override;
@@ -122,6 +127,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool binding_capture_active_ = false;
   BindingCaptureResult binding_capture_result_;
   std::vector<KeyBinding> key_bindings_;
+  std::deque<X_INPUT_KEYSTROKE> controller_keystrokes_;
   KbmSettings settings_;
   std::atomic<int64_t> raw_mouse_delta_x_{0};
   std::atomic<int64_t> raw_mouse_delta_y_{0};

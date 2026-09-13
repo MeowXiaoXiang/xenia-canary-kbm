@@ -13,6 +13,7 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -28,7 +29,7 @@ DECLARE_bool(kbm_enabled);
 DECLARE_int32(kbm_user_index);
 
 #define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
-  DECLARE_string(cvar_name);
+  DECLARE_string(kbm_##cvar_name);
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
 
@@ -330,7 +331,9 @@ bool SaveConfig() {
   });
 
   xe::filesystem::CreateParentFolder(config_path);
-  FILE* file = xe::filesystem::OpenFile(config_path, "wb");
+  auto temporary_path = config_path;
+  temporary_path += ".tmp";
+  FILE* file = xe::filesystem::OpenFile(temporary_path, "wb");
   if (!file) {
     XELOGE("kbm: failed to open '{}' for writing.", config_path);
     return false;
@@ -354,8 +357,12 @@ bool SaveConfig() {
 
   const bool written =
       fwrite(output.data(), 1, output.size(), file) == output.size();
-  fclose(file);
-  if (!written) {
+  const bool closed = fclose(file) == 0;
+  if (!written || !closed ||
+      !MoveFileExW(temporary_path.c_str(), config_path.c_str(),
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    std::error_code ignored;
+    std::filesystem::remove(temporary_path, ignored);
     XELOGE("kbm: failed to write '{}'.", config_path);
     return false;
   }
@@ -363,12 +370,34 @@ bool SaveConfig() {
   return true;
 }
 
+KbmSettings NormalizeSettings(KbmSettings settings) {
+  const KbmSettings defaults;
+  auto finite_clamp = [](double value, double fallback, double low,
+                         double high) {
+    return std::clamp(std::isfinite(value) ? value : fallback, low, high);
+  };
+  settings.user_index = std::clamp(settings.user_index, 0, 3);
+  settings.raw_mouse_sensitivity =
+      finite_clamp(settings.raw_mouse_sensitivity,
+                   defaults.raw_mouse_sensitivity, 0.01, 256.0);
+  settings.raw_mouse_full_scale_velocity =
+      finite_clamp(settings.raw_mouse_full_scale_velocity,
+                   defaults.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
+  settings.raw_mouse_response_curve =
+      finite_clamp(settings.raw_mouse_response_curve,
+                   defaults.raw_mouse_response_curve, 0.1, 4.0);
+  settings.raw_mouse_minimum_response =
+      finite_clamp(settings.raw_mouse_minimum_response,
+                   defaults.raw_mouse_minimum_response, 0.0, 0.5);
+  return settings;
+}
+
 KbmSettings GetSettingsFromCvars() {
   KbmSettings settings;
   settings.enabled = cvars::kbm_enabled;
   settings.user_index = cvars::kbm_user_index;
 #define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
-  settings.cvar_name = cvars::cvar_name;
+  settings.cvar_name = cvars::kbm_##cvar_name;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   settings.raw_mouse = cvars::raw_mouse;
@@ -381,14 +410,15 @@ KbmSettings GetSettingsFromCvars() {
   settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
   settings.raw_mouse_capture_toggle_key = cvars::raw_mouse_capture_toggle_key;
   settings.raw_mouse_capture_on_start = cvars::raw_mouse_capture_on_start;
-  return settings;
+  return NormalizeSettings(settings);
 }
 
-void ApplySettingsToCvars(const KbmSettings& settings) {
+void ApplySettingsToCvars(const KbmSettings& source_settings) {
+  const KbmSettings settings = NormalizeSettings(source_settings);
   cvars::kbm_enabled = settings.enabled;
   cvars::kbm_user_index = std::clamp(settings.user_index, 0, 3);
 #define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
-  cvars::cvar_name = settings.cvar_name;
+  cvars::kbm_##cvar_name = settings.cvar_name;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   cvars::raw_mouse = settings.raw_mouse;

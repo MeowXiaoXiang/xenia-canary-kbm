@@ -56,6 +56,7 @@ const std::filesystem::path& ConfigPath();
 bool SaveConfig();
 
 KbmSettings GetSettingsFromCvars();
+KbmSettings NormalizeSettings(KbmSettings settings);
 void ApplySettingsToCvars(const KbmSettings& settings);
 
 }  // namespace xe::hid::kbm

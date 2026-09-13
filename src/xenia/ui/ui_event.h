@@ -163,8 +163,14 @@ class MouseEvent : public UIEvent {
 
 class RawMouseMoveEvent : public UIEvent {
  public:
-  explicit RawMouseMoveEvent(Window* target, int32_t delta_x, int32_t delta_y)
-      : UIEvent(target), delta_x_(delta_x), delta_y_(delta_y) {}
+  // Button transitions use two bits per button (down, up), in the order
+  // left, right, middle, auxiliary 1, auxiliary 2.
+  explicit RawMouseMoveEvent(Window* target, int32_t delta_x, int32_t delta_y,
+                             uint16_t button_transitions = 0)
+      : UIEvent(target),
+        delta_x_(delta_x),
+        delta_y_(delta_y),
+        button_transitions_(button_transitions) {}
   ~RawMouseMoveEvent() override = default;
 
   bool is_handled() const { return handled_; }
@@ -172,11 +178,13 @@ class RawMouseMoveEvent : public UIEvent {
 
   int32_t delta_x() const { return delta_x_; }
   int32_t delta_y() const { return delta_y_; }
+  uint16_t button_transitions() const { return button_transitions_; }
 
  private:
   bool handled_ = false;
   int32_t delta_x_ = 0;
   int32_t delta_y_ = 0;
+  uint16_t button_transitions_ = 0;
 };
 
 class TouchEvent : public UIEvent {

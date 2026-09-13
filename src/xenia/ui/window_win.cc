@@ -915,10 +915,10 @@ bool Win32Window::HandleMouse(UINT message, WPARAM wParam, LPARAM lParam,
 bool Win32Window::HandleKeyboard(
     UINT message, WPARAM wParam, LPARAM lParam,
     WindowDestructionReceiver& destruction_receiver) {
-  KeyEvent e(this, VirtualKey(wParam), lParam & 0xFFFF,
-             !!(lParam & (LPARAM(1) << 30)), !!(GetKeyState(VK_SHIFT) & 0x1),
-             !!(GetKeyState(VK_CONTROL) & 0x1), !!(GetKeyState(VK_MENU) & 0x1),
-             !!(GetKeyState(VK_CAPITAL) & 0x1));
+  KeyEvent e(
+      this, VirtualKey(wParam), lParam & 0xFFFF, !!(lParam & (LPARAM(1) << 30)),
+      !!(GetKeyState(VK_SHIFT) & 0x8000), !!(GetKeyState(VK_CONTROL) & 0x8000),
+      !!(GetKeyState(VK_MENU) & 0x8000), !!(GetKeyState(VK_CAPITAL) & 0x1));
   switch (message) {
     case WM_KEYDOWN:
       OnKeyDown(e, destruction_receiver);
@@ -1027,8 +1027,9 @@ LRESULT Win32Window::WndProc(HWND hWnd, UINT message, WPARAM wParam,
           !(raw_input.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
         const int32_t delta_x = raw_input.data.mouse.lLastX;
         const int32_t delta_y = raw_input.data.mouse.lLastY;
-        if (delta_x || delta_y) {
-          RawMouseMoveEvent e(this, delta_x, delta_y);
+        const uint16_t buttons = raw_input.data.mouse.usButtonFlags & 0x03FF;
+        if (delta_x || delta_y || buttons) {
+          RawMouseMoveEvent e(this, delta_x, delta_y, buttons);
           WindowDestructionReceiver destruction_receiver(this);
           OnRawMouseMove(e, destruction_receiver);
           if (destruction_receiver.IsWindowDestroyedOrClosed()) {

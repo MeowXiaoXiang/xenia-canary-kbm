@@ -41,6 +41,35 @@ Settings dialog.
 
 ## Keyboard bindings
 
+The settings window keeps its save controls visible while the content scrolls.
+Use **Save and close** to return to gameplay, or **Save** to keep editing.
+Unsaved edits are discarded on close. The diagnostics show the last gameplay
+sample, not live input while the settings window pauses the controller.
+
+Press Escape to cancel binding capture. Use the **Esc** button next to a binding
+to assign Escape itself. Multiple alternative keys for a stick direction count
+as one direction even when held together. Bindings allow additional modifiers:
+`K` and `Ctrl+K` may both activate while Ctrl+K is held.
+
+Configuration saves write a temporary file before replacing `kbm.toml`, so a
+failed write does not truncate the previously saved configuration.
+
+Controller state and keystrokes use the same evaluated bindings. Modifier
+chords work in either press order, and captured Raw Input mouse button
+transitions are retained even between polls. Settings loaded from disk and
+settings applied from the UI share range validation; non-finite sensitivity
+and curve values revert to defaults.
+
+KBM bindings are stored as `kbm_keybind_*` under `[HID.KBM]` in
+`kbm.toml`. The upstream `keybind_*` settings in the main configuration belong
+to the keyboard driver and do not control KBM. Earlier experimental KBM builds
+shared those names incorrectly; re-save your KBM bindings after updating.
+
+If input is inactive, check that the main configuration selects `hid = "kbm"`.
+An existing `hid = "winkey"` or `hid = "any"` overrides the Windows default.
+Close host dialogs and focus the emulator before pressing F8. The log records
+capture hotkey events, host UI suspension, and Raw Input capture transitions.
+
 KBM Controller maps host input to the selected virtual Xbox 360 controller
 slot. Click a binding field and press the desired key, mouse button, or
 modifier chord. Use **+** to add an alternative binding and **x** to clear one.

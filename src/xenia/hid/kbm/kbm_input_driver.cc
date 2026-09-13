@@ -10,6 +10,7 @@
 #include "xenia/hid/kbm/kbm_input_driver.h"
 
 #include <algorithm>
+#include <bitset>
 #include <cmath>
 #include <limits>
 
@@ -23,7 +24,7 @@
 #include "xenia/ui/windowed_app_context.h"
 
 #define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
-  DEFINE_transient_string(cvar_name, cvar_default_value,                       \
+  DEFINE_transient_string(kbm_##cvar_name, cvar_default_value,                 \
                           "Keys or chords bound to " description               \
                           ", with alternatives separated by spaces",           \
                           "HID.KBM")
@@ -311,7 +312,7 @@ KbmSettings KbmInputDriver::GetSettings() const {
 }
 
 void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
-  KbmSettings settings = source_settings;
+  KbmSettings settings = NormalizeSettings(source_settings);
   settings.user_index = std::clamp(settings.user_index, 0, 3);
   settings.raw_mouse_sensitivity =
       std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0);
@@ -358,8 +359,18 @@ KbmInputDriver::Diagnostics KbmInputDriver::GetDiagnostics() const {
 }
 
 void KbmInputDriver::SetHostInputSuspended(bool suspended) {
-  host_input_suspended_ = suspended;
+  if (host_input_suspended_.exchange(suspended) != suspended) {
+    XELOGI("kbm: host UI input suspended = {}.", suspended);
+  }
   if (suspended) {
+    {
+      auto settings_lock = settings_critical_region_.Acquire();
+      auto lock = global_critical_region_.Acquire();
+      controller_keystrokes_.clear();
+      for (auto& binding : key_bindings_) {
+        binding.pressed = false;
+      }
+    }
     ReleaseRawMouseCapture();
   } else {
     ApplyRawMouseCapture();
@@ -409,7 +420,27 @@ bool KbmInputDriver::IsControllerForUserEnabled(uint32_t user_index) const {
   return IsKbmForUserEnabled(GetSettings(), user_index);
 }
 
+X_RESULT KbmInputDriver::GetKeystroke(uint32_t user_index, uint32_t,
+                                      X_INPUT_KEYSTROKE* out_keystroke) {
+  UpdateControllerKeystrokes();
+  auto settings_lock = settings_critical_region_.Acquire();
+  if (!IsKbmForUserEnabled(settings_, user_index)) {
+    return X_ERROR_DEVICE_NOT_CONNECTED;
+  }
+  auto lock = global_critical_region_.Acquire();
+  if (host_input_suspended_ || !window()->HasFocus()) {
+    controller_keystrokes_.clear();
+  }
+  if (controller_keystrokes_.empty()) {
+    return X_ERROR_EMPTY;
+  }
+  *out_keystroke = controller_keystrokes_.front();
+  controller_keystrokes_.pop_front();
+  return X_ERROR_SUCCESS;
+}
+
 void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
+  UpdateControllerKeystrokes();
   auto settings_lock = settings_critical_region_.Acquire();
   const KbmSettings& settings = settings_;
 
@@ -422,22 +453,16 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
   int16_t thumb_ry = 0;
 
   if (window()->HasFocus() && !host_input_suspended_) {
-    const bool shift = IsKeyDown(VK_SHIFT);
-    const bool ctrl = IsKeyDown(VK_CONTROL);
-    const bool alt = IsKeyDown(VK_MENU);
-    const bool super = IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN);
-    const bool capital = IsKeyToggled(VK_CAPITAL) || shift;
     const bool mouse_buttons_enabled =
         raw_mouse_capture_active_ && !host_input_suspended_;
+    std::bitset<256> applied_outputs;
     for (const KeyBinding& b : key_bindings_) {
       if (IsMouseVirtualKey(b.input_key) && !mouse_buttons_enabled) {
         continue;
       }
-      if (((b.lowercase == b.uppercase) || (b.lowercase && !capital) ||
-           (b.uppercase && capital)) &&
-          ModifiersMatch(b.shift, b.ctrl, b.alt, b.super, shift, ctrl, alt,
-                         super) &&
-          IsKeyDown(b.input_key)) {
+      if (b.pressed &&
+          !applied_outputs.test(static_cast<uint16_t>(b.output_key) & 255)) {
+        applied_outputs.set(static_cast<uint16_t>(b.output_key) & 255);
         switch (b.output_key) {
           case ui::VirtualKey::kXInputPadA:
             buttons |= X_INPUT_GAMEPAD_A;
@@ -580,6 +605,14 @@ void KbmInputDriver::KbmWindowListener::OnGotFocus(ui::UISetupEvent& e) {
 }
 
 void KbmInputDriver::KbmWindowListener::OnLostFocus(ui::UISetupEvent& e) {
+  {
+    auto settings_lock = driver_.settings_critical_region_.Acquire();
+    auto lock = driver_.global_critical_region_.Acquire();
+    driver_.controller_keystrokes_.clear();
+    for (auto& binding : driver_.key_bindings_) {
+      binding.pressed = false;
+    }
+  }
   driver_.ReleaseRawMouseCapture();
 }
 
@@ -621,6 +654,15 @@ void KbmInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
     settings = settings_;
     capture_toggle = raw_mouse_capture_toggle_;
   }
+  if (is_down && !e.prev_state() && capture_toggle.virtual_key &&
+      static_cast<uint16_t>(e.virtual_key()) == capture_toggle.virtual_key) {
+    XELOGI(
+        "kbm: capture hotkey received; enabled={}, registered={}, "
+        "UI suspended={}, shift={}, ctrl={}, alt={}.",
+        settings.enabled, raw_mouse_registered_.load(),
+        host_input_suspended_.load(), e.is_shift_pressed(), e.is_ctrl_pressed(),
+        e.is_alt_pressed());
+  }
   if (settings.raw_mouse && raw_mouse_registered_ && !host_input_suspended_ &&
       capture_toggle.virtual_key &&
       e.virtual_key() ==
@@ -643,6 +685,63 @@ void KbmInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
 
   if (!settings.enabled || host_input_suspended_) {
     return;
+  }
+  UpdateControllerKeystrokes(&e, is_down);
+}
+
+void KbmInputDriver::UpdateControllerKeystrokes(ui::KeyEvent* event,
+                                                bool is_down) {
+  auto settings_lock = settings_critical_region_.Acquire();
+  auto lock = global_critical_region_.Acquire();
+  const bool shift = event ? event->is_shift_pressed() : IsKeyDown(VK_SHIFT);
+  const bool ctrl = event ? event->is_ctrl_pressed() : IsKeyDown(VK_CONTROL);
+  const bool alt = event ? event->is_alt_pressed() : IsKeyDown(VK_MENU);
+  const bool active =
+      settings_.enabled && !host_input_suspended_ && window()->HasFocus();
+  const bool capital = IsKeyToggled(VK_CAPITAL) || shift;
+  std::bitset<256> before, after, repeats;
+  for (const auto& binding : key_bindings_) {
+    if (binding.pressed) {
+      before.set(static_cast<uint16_t>(binding.output_key) & 255);
+    }
+  }
+  for (KeyBinding& binding : key_bindings_) {
+    const bool modifiers_match = ModifiersMatch(
+        binding.shift, binding.ctrl, binding.alt, binding.super, shift, ctrl,
+        alt, IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN));
+    const bool key_down = event && binding.input_key == event->virtual_key()
+                              ? is_down
+                              : IsKeyDown(binding.input_key);
+    binding.pressed =
+        active && key_down && modifiers_match &&
+        (!IsMouseVirtualKey(binding.input_key) || raw_mouse_capture_active_) &&
+        ((binding.lowercase == binding.uppercase) ||
+         (binding.lowercase && !capital) || (binding.uppercase && capital));
+    const auto output = static_cast<uint16_t>(binding.output_key) & 255;
+    if (binding.pressed) {
+      after.set(output);
+    }
+    if (binding.pressed && event && is_down && event->prev_state() &&
+        binding.input_key == event->virtual_key()) {
+      repeats.set(output);
+    }
+  }
+  for (size_t output = 0; output < before.size(); ++output) {
+    if (before[output] == after[output] &&
+        !(after[output] && repeats[output])) {
+      continue;
+    }
+    X_INPUT_KEYSTROKE stroke = {};
+    stroke.virtual_key = uint16_t(0x5800 + output);
+    stroke.user_index = uint8_t(settings_.user_index);
+    stroke.flags = !after[output] ? X_INPUT_KEYSTROKE_KEYUP
+                   : before[output]
+                       ? X_INPUT_KEYSTROKE_KEYDOWN | X_INPUT_KEYSTROKE_REPEAT
+                       : X_INPUT_KEYSTROKE_KEYDOWN;
+    if (controller_keystrokes_.size() >= 256) {
+      controller_keystrokes_.pop_front();
+    }
+    controller_keystrokes_.push_back(stroke);
   }
 }
 
@@ -681,6 +780,23 @@ void KbmInputDriver::OnMouseDown(ui::MouseEvent& e) {
 }
 
 void KbmInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
+  if (raw_mouse_capture_active_ && !host_input_suspended_) {
+    const ui::VirtualKey buttons[] = {
+        ui::VirtualKey::kLButton, ui::VirtualKey::kRButton,
+        ui::VirtualKey::kMButton, ui::VirtualKey::kXButton1,
+        ui::VirtualKey::kXButton2};
+    for (size_t i = 0; i < 5; ++i) {
+      for (size_t up = 0; up < 2; ++up) {
+        if (e.button_transitions() & (1u << (i * 2 + up))) {
+          ui::KeyEvent button_event(window(), buttons[i], 1, up != 0,
+                                    IsKeyDown(VK_SHIFT), IsKeyDown(VK_CONTROL),
+                                    IsKeyDown(VK_MENU),
+                                    IsKeyToggled(VK_CAPITAL));
+          UpdateControllerKeystrokes(&button_event, up == 0);
+        }
+      }
+    }
+  }
   KbmSettings settings = GetSettings();
   if (!settings.raw_mouse || !settings.enabled || !raw_mouse_registered_ ||
       !raw_mouse_capture_active_ || host_input_suspended_ ||
