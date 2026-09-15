@@ -1201,11 +1201,13 @@ void EmulatorWindow::ContentInstallDialog::OnDraw(ImGuiIO& io) {
 }
 
 void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
+  using localization::StringId;
+
   ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(20, 20), ImGuiCond_FirstUseEver);
 
   bool dialog_open = true;
-  if (!ImGui::Begin("Audio Player Menu", &dialog_open,
+  if (!ImGui::Begin(localization::Get(StringId::kXmpTitle), &dialog_open,
                     ImGuiWindowFlags_NoCollapse |
                         ImGuiWindowFlags_AlwaysAutoResize |
                         ImGuiWindowFlags_HorizontalScrollbar)) {
@@ -1217,28 +1219,28 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
   auto audio_player = emulator_window_.emulator_->audio_media_player();
   using xmp_state = kernel::xam::apps::XmpApp::State;
   if (audio_player) {
-    ImGui::Text("Audio player status:");
+    ImGui::TextUnformatted(localization::Get(StringId::kXmpStatus));
     ImGui::SameLine();
     switch (audio_player->GetState()) {
       case xmp_state::kIdle:
-        ImGui::Text("Idle");
+        ImGui::TextUnformatted(localization::Get(StringId::kXmpIdle));
         break;
       case xmp_state::kPaused:
-        ImGui::Text("Paused");
+        ImGui::TextUnformatted(localization::Get(StringId::kXmpPaused));
         break;
       case xmp_state::kPlaying:
-        ImGui::Text("Playing");
+        ImGui::TextUnformatted(localization::Get(StringId::kXmpPlaying));
         break;
       default:
         break;
     }
 
     if (audio_player->IsPlaying()) {
-      if (ImGui::Button("Pause")) {
+      if (ImGui::Button(localization::Get(StringId::kXmpPause))) {
         audio_player->Pause();
       }
     } else if (audio_player->IsPaused()) {
-      if (ImGui::Button("Resume")) {
+      if (ImGui::Button(localization::Get(StringId::kXmpResume))) {
         audio_player->Continue();
       }
     }
@@ -1246,7 +1248,8 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
     volume_ =
         emulator_window_.emulator_->audio_media_player()->GetVolume()->load();
 
-    if (ImGui::SliderFloat("Audio player volume", &volume_, 0.0f, 1.0f,
+    if (ImGui::SliderFloat(localization::Get(StringId::kXmpVolume), &volume_,
+                           0.0f, 1.0f,
                            "%.2f")) {
       audio_player->SetVolume(volume_);
     }
@@ -1316,16 +1319,17 @@ void EmulatorWindow::BuildMainMenu() {
   main_menu->AddChild(std::move(profile_menu));
 
   // Content Menu
-  auto content_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Content");
+  auto content_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuContent));
   {
-    content_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Install Content",
-                         std::bind(&EmulatorWindow::InstallContent, this)));
-    content_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Extract Content",
-                         std::bind(&EmulatorWindow::ExtractContent, this, "")));
     content_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Show Installed Content",
+        MenuItem::Type::kString, tr(StringId::kContentInstall),
+        std::bind(&EmulatorWindow::InstallContent, this)));
+    content_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kContentExtract),
+        std::bind(&EmulatorWindow::ExtractContent, this, "")));
+    content_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kContentShowInstalled),
         std::bind(&EmulatorWindow::ToggleContentListDialog, this)));
   }
   main_menu->AddChild(std::move(content_menu));
