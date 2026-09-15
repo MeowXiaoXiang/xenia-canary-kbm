@@ -7,6 +7,8 @@ and mouse buttons to an emulated Xbox 360 controller, and translates Windows
 Raw Input mouse movement into the emulated right stick. It is deliberately a
 generic controller-input feature: it contains no game-specific memory hooks,
 patches, or per-title profiles.
+Linux builds are maintained for source and build compatibility only; they do
+not expose a KBM Controller backend.
 
 ## Build provenance and upstream updates
 

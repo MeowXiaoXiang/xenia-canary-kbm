@@ -214,8 +214,11 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {" (maximum)", "（最大值）"},
         {"Raw Input speed X %.0f / Y %.0f counts/s | Stick X %d / Y %d",
          "Raw Input 速度 X %.0f / Y %.0f counts/s｜Stick X %d / Y %d"},
-        {"Raw Input: %s | Mouse capture: %s", "Raw Input：%s｜滑鼠鎖定：%s"},
+        {"Raw Input requested: %s | registered: %s | Mouse capture requested: "
+         "%s | active: %s",
+         "Raw Input：要求 %s｜註冊 %s｜滑鼠擷取要求 %s｜目前狀態 %s"},
         {"registered", "已註冊"},
+        {"on", "啟用"},
         {"off", "關閉"},
         {"active", "已啟用"},
         {"released", "已解除"},

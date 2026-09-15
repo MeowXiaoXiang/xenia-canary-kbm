@@ -348,6 +348,8 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
 
 KbmInputDriver::Diagnostics KbmInputDriver::GetDiagnostics() const {
   Diagnostics diagnostics;
+  const KbmSettings settings = GetSettings();
+  diagnostics.raw_mouse_requested = settings.enabled && settings.raw_mouse;
   diagnostics.raw_mouse_registered = raw_mouse_registered_;
   diagnostics.capture_requested = raw_mouse_capture_requested_;
   diagnostics.capture_active = raw_mouse_capture_active_;

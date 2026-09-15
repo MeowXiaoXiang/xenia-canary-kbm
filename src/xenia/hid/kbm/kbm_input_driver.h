@@ -35,6 +35,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   };
 
   struct Diagnostics {
+    bool raw_mouse_requested = false;
     bool raw_mouse_registered = false;
     bool capture_requested = false;
     bool capture_active = false;

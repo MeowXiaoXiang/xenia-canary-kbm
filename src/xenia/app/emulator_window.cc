@@ -985,9 +985,13 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                            diagnostics.raw_counts_per_second_x,
                            diagnostics.raw_counts_per_second_y,
                            diagnostics.thumb_x, diagnostics.thumb_y);
-        ImGui::Text(tr(StringId::kKbmRawInputCapture),
+        ImGui::Text(tr(StringId::kKbmRawInputStatus),
+                    diagnostics.raw_mouse_requested ? tr(StringId::kKbmOn)
+                                                    : tr(StringId::kKbmOff),
                     diagnostics.raw_mouse_registered ? tr(StringId::kKbmReady)
                                                      : tr(StringId::kKbmOff),
+                    diagnostics.capture_requested ? tr(StringId::kKbmOn)
+                                                  : tr(StringId::kKbmOff),
                     diagnostics.capture_active ? tr(StringId::kKbmActive)
                                                : tr(StringId::kKbmReleased));
         ImGui::TextWrapped("%s", tr(StringId::kKbmSnapshot));

@@ -11,6 +11,9 @@ This is a Windows-focused experimental fork of
 Controller backend that maps keyboard and Windows Raw Input mouse movement to
 an emulated Xbox 360 controller.
 
+Linux source builds remain supported for build compatibility, but the KBM
+Controller backend itself is not available outside Windows.
+
 On Windows, KBM Controller is the default HID backend. Use `--hid=any` to
 restore general hardware backend selection, or `--hid=keyboard` for explicit
 keyboard passthrough. It is not an official Xenia Canary build or support channel.
