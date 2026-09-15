@@ -12,7 +12,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <functional>
+#include <vector>
 
 #include "xenia/base/mutex.h"
 #include "xenia/hid/kbm/kbm_config.h"
@@ -45,6 +47,15 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
     int16_t thumb_y = 0;
   };
 
+  struct InputSamplingStatus {
+    bool active = false;
+    bool report_write_failed = false;
+    double seconds_remaining = 0.0;
+    size_t sample_count = 0;
+    size_t dropped_sample_count = 0;
+    std::string report_path;
+  };
+
   using CaptureStateCallback =
       std::function<void(bool active, const std::string& toggle_binding)>;
 
@@ -68,6 +79,10 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void CancelBindingCapture();
   void SetCaptureStateCallback(CaptureStateCallback callback);
   void RefreshRawMouseCapture();
+  void StartInputSampling();
+  bool StopInputSampling();
+  void CancelInputSampling();
+  InputSamplingStatus GetInputSamplingStatus() const;
 
  protected:
   struct KeyBinding {
@@ -119,7 +134,32 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool CenterRawMouseCursor();
   bool RegisterRawMouse(bool exclusive_capture = false);
   void UnregisterRawMouse();
+  void DiscardPendingRawMouseMotion();
   void NotifyCaptureState(bool active);
+
+  struct InputSample {
+    std::chrono::steady_clock::time_point time;
+    double elapsed_seconds = 0.0;
+    int64_t raw_delta_x = 0;
+    int64_t raw_delta_y = 0;
+    double filtered_velocity_x = 0.0;
+    double filtered_velocity_y = 0.0;
+    int16_t thumb_x = 0;
+    int16_t thumb_y = 0;
+    bool input_active = false;
+    bool capture_active = false;
+    bool input_suspended = false;
+    bool reset_sample = false;
+    bool stale_sample = false;
+  };
+
+  void RecordInputSample(const InputSample& sample);
+  bool FinishInputSampling();
+  bool WriteInputSamplingReport(const std::vector<InputSample>& samples,
+                                const KbmSettings& settings,
+                                std::chrono::steady_clock::time_point started,
+                                size_t dropped_sample_count,
+                                std::filesystem::path* report_path) const;
 
   KbmWindowListener window_listener_;
 
@@ -132,6 +172,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   KbmSettings settings_;
   std::atomic<int64_t> raw_mouse_delta_x_{0};
   std::atomic<int64_t> raw_mouse_delta_y_{0};
+  std::atomic<bool> raw_mouse_sample_reset_requested_{true};
   std::chrono::steady_clock::time_point raw_mouse_last_sample_time_;
   std::chrono::steady_clock::time_point raw_mouse_last_center_time_;
   KbmChord raw_mouse_capture_toggle_;
@@ -147,6 +188,18 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   std::atomic<double> raw_mouse_counts_per_second_y_{0.0};
   std::atomic<int16_t> raw_mouse_thumb_x_{0};
   std::atomic<int16_t> raw_mouse_thumb_y_{0};
+  std::atomic<double> raw_mouse_filtered_velocity_x_{0.0};
+  std::atomic<double> raw_mouse_filtered_velocity_y_{0.0};
+
+  mutable xe::global_critical_region input_sampling_critical_region_;
+  bool input_sampling_active_ = false;
+  bool input_sampling_report_write_failed_ = false;
+  std::chrono::steady_clock::time_point input_sampling_started_;
+  std::chrono::steady_clock::time_point input_sampling_deadline_;
+  KbmSettings input_sampling_settings_;
+  std::vector<InputSample> input_samples_;
+  size_t input_sampling_dropped_sample_count_ = 0;
+  std::string input_sampling_report_path_;
 };
 
 }  // namespace kbm

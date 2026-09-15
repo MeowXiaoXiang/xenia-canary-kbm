@@ -37,6 +37,7 @@ DECLARE_bool(raw_mouse);
 DECLARE_double(raw_mouse_sensitivity);
 DECLARE_double(raw_mouse_full_scale_velocity);
 DECLARE_double(raw_mouse_response_curve);
+DECLARE_double(raw_mouse_smoothing_time_ms);
 DECLARE_bool(raw_mouse_deadzone_compensation);
 DECLARE_double(raw_mouse_minimum_response);
 DECLARE_bool(raw_mouse_invert_y);
@@ -386,6 +387,9 @@ KbmSettings NormalizeSettings(KbmSettings settings) {
   settings.raw_mouse_response_curve =
       finite_clamp(settings.raw_mouse_response_curve,
                    defaults.raw_mouse_response_curve, 0.1, 4.0);
+  settings.raw_mouse_smoothing_time_ms =
+      finite_clamp(settings.raw_mouse_smoothing_time_ms,
+                   defaults.raw_mouse_smoothing_time_ms, 0.0, 20.0);
   settings.raw_mouse_minimum_response =
       finite_clamp(settings.raw_mouse_minimum_response,
                    defaults.raw_mouse_minimum_response, 0.0, 0.5);
@@ -404,6 +408,7 @@ KbmSettings GetSettingsFromCvars() {
   settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
   settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
   settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
+  settings.raw_mouse_smoothing_time_ms = cvars::raw_mouse_smoothing_time_ms;
   settings.raw_mouse_deadzone_compensation =
       cvars::raw_mouse_deadzone_compensation;
   settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
@@ -428,6 +433,8 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
       std::clamp(settings.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
   cvars::raw_mouse_response_curve =
       std::clamp(settings.raw_mouse_response_curve, 0.1, 4.0);
+  cvars::raw_mouse_smoothing_time_ms =
+      std::clamp(settings.raw_mouse_smoothing_time_ms, 0.0, 20.0);
   cvars::raw_mouse_deadzone_compensation =
       settings.raw_mouse_deadzone_compensation;
   cvars::raw_mouse_minimum_response =

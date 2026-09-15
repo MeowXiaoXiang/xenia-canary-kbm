@@ -553,6 +553,9 @@ bool ImGuiDrawer::LoadTraditionalChineseFont(ImGuiIO& io, float font_size) {
       "伸僅像升及對彩抖拉搖晰曲桿樣檔準滿濾瞄色記通鋸門檻雙頻齒"
       "償實應止生產絕補零靜非驗"
       "冊由考是校送參這插註傳槽熱游基底"
+      "輸入取樣開始秒停止並儲存報告取消關閉此視窗後正常遊玩完成重新開啟頁查看正在剩餘筆本已無法請檢查記錄尚未產生"
+      "滑鼠速度依時間通常改善微調數值越高延遲明顯"
+      "內容安裝解壓顯示已音訊播放器選單狀態閒置暫停播放中繼續量"
       "（），。：；！？／［］、｜";
 
   static ImVector<ImWchar> glyph_ranges;

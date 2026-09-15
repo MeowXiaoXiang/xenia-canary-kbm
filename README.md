@@ -30,8 +30,8 @@ and upstream contribution guidance belong to the
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
 - Raw Input mouse-to-right-stick translation with configurable sensitivity,
-  response curve, full-stick threshold, capture, and optional minimum-output
-  compensation.
+  response curve, time-based smoothing, full-stick threshold, capture, and
+  optional minimum-output compensation.
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 

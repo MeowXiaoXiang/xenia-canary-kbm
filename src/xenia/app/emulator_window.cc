@@ -951,6 +951,18 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
       }
       ImGui::TextDisabled("%s", tr(StringId::kKbmAimCurveHelp));
 
+      ImGui::TextUnformatted(tr(StringId::kKbmMouseSmoothing));
+      float smoothing_time_ms = float(settings_.raw_mouse_smoothing_time_ms);
+      ImGui::SetNextItemWidth(
+          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
+      if (ImGui::SliderFloat("##MouseSmoothing", &smoothing_time_ms, 0.0f,
+                             20.0f, "%.1f ms",
+                             ImGuiSliderFlags_AlwaysClamp)) {
+        settings_.raw_mouse_smoothing_time_ms = smoothing_time_ms;
+        changed = true;
+      }
+      ImGui::TextDisabled("%s", tr(StringId::kKbmMouseSmoothingHelp));
+
       ImGui::TextUnformatted(tr(StringId::kKbmFullStickThreshold));
       ImGui::SetNextItemWidth(220.0f);
       if (ImGui::InputDouble(
@@ -995,6 +1007,36 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                     diagnostics.capture_active ? tr(StringId::kKbmActive)
                                                : tr(StringId::kKbmReleased));
         ImGui::TextWrapped("%s", tr(StringId::kKbmSnapshot));
+
+        ImGui::Separator();
+        ImGui::TextUnformatted(tr(StringId::kKbmInputSampling));
+        const auto sampling = driver->GetInputSamplingStatus();
+        if (sampling.active) {
+          ImGui::Text(tr(StringId::kKbmInputSamplingProgress),
+                      sampling.seconds_remaining, sampling.sample_count);
+          if (ImGui::Button(tr(StringId::kKbmStopAndSaveInputSampling))) {
+            driver->StopInputSampling();
+          }
+          ImGui::SameLine();
+          if (ImGui::Button(tr(StringId::kKbmCancelInputSampling))) {
+            driver->CancelInputSampling();
+          }
+        } else {
+          if (ImGui::Button(tr(StringId::kKbmStartInputSampling))) {
+            driver->StartInputSampling();
+          }
+          ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingHelp));
+          if (!sampling.report_path.empty()) {
+            ImGui::TextWrapped(tr(StringId::kKbmInputSamplingReportSaved),
+                               sampling.report_path.c_str());
+          } else if (sampling.report_write_failed) {
+            ImGui::TextDisabled("%s",
+                                tr(StringId::kKbmInputSamplingReportFailed));
+          } else {
+            ImGui::TextDisabled("%s",
+                                tr(StringId::kKbmInputSamplingNoReport));
+          }
+        }
       } else {
         ImGui::TextDisabled("%s", tr(StringId::kKbmDiagnosticsUnavailable));
       }

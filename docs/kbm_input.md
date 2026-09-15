@@ -88,10 +88,10 @@ virtual controller with Raw Input mouse-to-right-stick support; use
 
 ## Raw Input mouse tuning
 
-Raw Input deltas are sampled as counts per second, multiplied by
-**Sensitivity**, shaped by **Aim curve**, and converted to the right-stick
-range. The game still applies its own controller sensitivity, turn-speed, and
-deadzone behavior.
+Raw Input deltas are sampled as counts per second, optionally smoothed with a
+time-based velocity filter, multiplied by **Sensitivity**, shaped by **Aim
+curve**, and converted to the right-stick range. The game still applies its own
+controller sensitivity, turn-speed, and deadzone behavior.
 
 - **Sensitivity** is a multiplier. The UI reset value, **10x**, is an editable
   initial reference for a 3600 DPI mouse, not a universal recommendation.
@@ -101,6 +101,9 @@ deadzone behavior.
   more room for fine movement.
 - **Aim curve** of 1.0 is linear. Values above 1.0 slow very small movements;
   values below 1.0 boost them.
+- **Mouse smoothing** defaults to **8 ms**. It smooths low-speed Raw Input
+  count quantization without relying on a fixed game polling rate. Set it to
+  **0 ms** for direct translation; 4–12 ms is the usual useful range.
 - **Minimum stick output** is optional. Enable it only if the game's analog
   deadzone swallows small Raw Input output; it intentionally changes the
   near-center feel.
@@ -108,6 +111,18 @@ deadzone behavior.
 Start from the defaults, adjust the game's own controller sensitivity, and
 then make small changes to the KBM Controller controls. DPI alone cannot predict the
 final turning distance because games map an analog stick differently.
+
+## Input sampling diagnostics
+
+The **Diagnostics** section can record a 60-second gameplay sample. Start the
+capture, close the settings window so guest input resumes, play normally, and
+open the settings again to see the saved report path. The CSV is stored beside
+`kbm.toml` as `kbm-input-report-<timestamp>.csv`.
+
+Each report includes the Raw Input delta, filtered velocity, final right-stick
+output, game input polling interval, capture state, and a summary of reset,
+stale, or dropped samples. The report is written only when capture finishes,
+so recording does not add per-sample disk I/O.
 
 ## Mouse capture
 
