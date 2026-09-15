@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>xenia_canary</id>
+  <id>io.github.meowxiaoxiang.XeniaCanaryKBM</id>
   <name>Xenia Canary</name>
   <summary>Xbox 360 emulator research project with KBM Controller input</summary>
   <metadata_license>CC0-1.0</metadata_license>
