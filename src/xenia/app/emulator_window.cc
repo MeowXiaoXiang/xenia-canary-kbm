@@ -956,8 +956,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
       ImGui::SetNextItemWidth(
           std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
       if (ImGui::SliderFloat("##MouseSmoothing", &smoothing_time_ms, 0.0f,
-                             20.0f, "%.1f ms",
-                             ImGuiSliderFlags_AlwaysClamp)) {
+                             20.0f, "%.1f ms", ImGuiSliderFlags_AlwaysClamp)) {
         settings_.raw_mouse_smoothing_time_ms = smoothing_time_ms;
         changed = true;
       }
@@ -1033,8 +1032,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             ImGui::TextDisabled("%s",
                                 tr(StringId::kKbmInputSamplingReportFailed));
           } else {
-            ImGui::TextDisabled("%s",
-                                tr(StringId::kKbmInputSamplingNoReport));
+            ImGui::TextDisabled("%s", tr(StringId::kKbmInputSamplingNoReport));
           }
         }
       } else {
@@ -1249,8 +1247,7 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
         emulator_window_.emulator_->audio_media_player()->GetVolume()->load();
 
     if (ImGui::SliderFloat(localization::Get(StringId::kXmpVolume), &volume_,
-                           0.0f, 1.0f,
-                           "%.2f")) {
+                           0.0f, 1.0f, "%.2f")) {
       audio_player->SetVolume(volume_);
     }
   }
@@ -1322,12 +1319,12 @@ void EmulatorWindow::BuildMainMenu() {
   auto content_menu =
       MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuContent));
   {
-    content_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, tr(StringId::kContentInstall),
-        std::bind(&EmulatorWindow::InstallContent, this)));
-    content_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, tr(StringId::kContentExtract),
-        std::bind(&EmulatorWindow::ExtractContent, this, "")));
+    content_menu->AddChild(
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kContentInstall),
+                         std::bind(&EmulatorWindow::InstallContent, this)));
+    content_menu->AddChild(
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kContentExtract),
+                         std::bind(&EmulatorWindow::ExtractContent, this, "")));
     content_menu->AddChild(MenuItem::Create(
         MenuItem::Type::kString, tr(StringId::kContentShowInstalled),
         std::bind(&EmulatorWindow::ToggleContentListDialog, this)));

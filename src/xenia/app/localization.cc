@@ -261,7 +261,8 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
         {"Start 60-second capture", "開始 60 秒取樣"},
         {"Stop and save report", "停止並儲存報告"},
         {"Cancel sampling", "取消取樣"},
-        {"Close this window, play normally, then reopen it to review the report.",
+        {"Close this window, play normally, then reopen it to review the "
+         "report.",
          "關閉此視窗後正常遊玩，完成後重新開啟此頁查看報告。"},
         {"Recording: %.0f s remaining | %zu samples",
          "正在取樣：剩餘 %.0f 秒｜%zu 筆樣本"},

@@ -401,10 +401,10 @@ void KbmInputDriver::StartInputSampling() {
   input_samples_.reserve(kInputSamplingCapacity);
   input_sampling_dropped_sample_count_ = 0;
   input_sampling_report_path_.clear();
-  XELOGI("kbm: started a {} second input sampling session.",
-         std::chrono::duration_cast<std::chrono::seconds>(
-             kInputSamplingDuration)
-             .count());
+  XELOGI(
+      "kbm: started a {} second input sampling session.",
+      std::chrono::duration_cast<std::chrono::seconds>(kInputSamplingDuration)
+          .count());
 }
 
 bool KbmInputDriver::StopInputSampling() { return FinishInputSampling(); }
@@ -420,8 +420,8 @@ void KbmInputDriver::CancelInputSampling() {
   XELOGI("kbm: cancelled the input sampling session.");
 }
 
-KbmInputDriver::InputSamplingStatus
-KbmInputDriver::GetInputSamplingStatus() const {
+KbmInputDriver::InputSamplingStatus KbmInputDriver::GetInputSamplingStatus()
+    const {
   InputSamplingStatus status;
   auto lock = input_sampling_critical_region_.Acquire();
   status.active = input_sampling_active_;
@@ -432,7 +432,7 @@ KbmInputDriver::GetInputSamplingStatus() const {
   if (status.active) {
     status.seconds_remaining = std::max(
         0.0, std::chrono::duration<double>(input_sampling_deadline_ -
-                                             std::chrono::steady_clock::now())
+                                           std::chrono::steady_clock::now())
                  .count());
   }
   return status;
@@ -475,9 +475,8 @@ bool KbmInputDriver::FinishInputSampling() {
   }
 
   std::filesystem::path report_path;
-  const bool written =
-      WriteInputSamplingReport(samples, settings, started, dropped_sample_count,
-                               &report_path);
+  const bool written = WriteInputSamplingReport(
+      samples, settings, started, dropped_sample_count, &report_path);
   {
     auto lock = input_sampling_critical_region_.Acquire();
     input_sampling_report_write_failed_ = !written;
@@ -491,17 +490,16 @@ bool KbmInputDriver::FinishInputSampling() {
 
 bool KbmInputDriver::WriteInputSamplingReport(
     const std::vector<InputSample>& samples, const KbmSettings& settings,
-    std::chrono::steady_clock::time_point started,
-    size_t dropped_sample_count,
+    std::chrono::steady_clock::time_point started, size_t dropped_sample_count,
     std::filesystem::path* report_path) const {
   if (ConfigPath().empty() || !report_path) {
     return false;
   }
 
-  const auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             std::chrono::system_clock::now()
-                                 .time_since_epoch())
-                             .count();
+  const auto timestamp =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count();
   *report_path = ConfigPath().parent_path() /
                  fmt::format("kbm-input-report-{}.csv", timestamp);
 
@@ -528,34 +526,34 @@ bool KbmInputDriver::WriteInputSamplingReport(
   std::string output;
   output.reserve(1024 + samples.size() * 110);
   output += "# KBM Controller Raw Input sampling report\n";
-  output += fmt::format("# samples={}, dropped_samples={}, active_samples={}, "
-                        "moved_samples={}, moved_with_zero_output={}, "
-                        "reset_samples={}, stale_samples={}\n",
-                        samples.size(), dropped_sample_count, active_samples,
-                        moved_samples, zero_output_samples, reset_samples,
-                        stale_samples);
-  output += fmt::format("# average_interval_ms={:.3f}, "
-                        "longest_interval_ms={:.3f}\n",
-                        samples.empty() ? 0.0
-                                        : total_interval_seconds * 1000.0 /
-                                              samples.size(),
-                        longest_interval_seconds * 1000.0);
-  output += fmt::format("# sensitivity={}, full_scale_velocity={}, "
-                        "response_curve={}, smoothing_time_ms={}, "
-                        "deadzone_compensation={}, minimum_response={}\n",
-                        settings.raw_mouse_sensitivity,
-                        settings.raw_mouse_full_scale_velocity,
-                        settings.raw_mouse_response_curve,
-                        settings.raw_mouse_smoothing_time_ms,
-                        settings.raw_mouse_deadzone_compensation,
-                        settings.raw_mouse_minimum_response);
-  output += "elapsed_ms,interval_ms,input_active,capture_active,input_suspended,"
-            "raw_delta_x,raw_delta_y,filtered_velocity_x,filtered_velocity_y,"
-            "thumb_x,thumb_y,reset_sample,stale_sample\n";
+  output += fmt::format(
+      "# samples={}, dropped_samples={}, active_samples={}, "
+      "moved_samples={}, moved_with_zero_output={}, "
+      "reset_samples={}, stale_samples={}\n",
+      samples.size(), dropped_sample_count, active_samples, moved_samples,
+      zero_output_samples, reset_samples, stale_samples);
+  output += fmt::format(
+      "# average_interval_ms={:.3f}, "
+      "longest_interval_ms={:.3f}\n",
+      samples.empty() ? 0.0 : total_interval_seconds * 1000.0 / samples.size(),
+      longest_interval_seconds * 1000.0);
+  output += fmt::format(
+      "# sensitivity={}, full_scale_velocity={}, "
+      "response_curve={}, smoothing_time_ms={}, "
+      "deadzone_compensation={}, minimum_response={}\n",
+      settings.raw_mouse_sensitivity, settings.raw_mouse_full_scale_velocity,
+      settings.raw_mouse_response_curve, settings.raw_mouse_smoothing_time_ms,
+      settings.raw_mouse_deadzone_compensation,
+      settings.raw_mouse_minimum_response);
+  output +=
+      "elapsed_ms,interval_ms,input_active,capture_active,input_suspended,"
+      "raw_delta_x,raw_delta_y,filtered_velocity_x,filtered_velocity_y,"
+      "thumb_x,thumb_y,reset_sample,stale_sample\n";
   for (const auto& sample : samples) {
     output += fmt::format(
         "{:.3f},{:.3f},{},{},{},{},{},{:.3f},{:.3f},{},{},{},{}\n",
-        std::chrono::duration<double, std::milli>(sample.time - started).count(),
+        std::chrono::duration<double, std::milli>(sample.time - started)
+            .count(),
         sample.elapsed_seconds * 1000.0, sample.input_active,
         sample.capture_active, sample.input_suspended, sample.raw_delta_x,
         sample.raw_delta_y, sample.filtered_velocity_x,
@@ -809,12 +807,10 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
     if (raw_mouse_input_active && !reset_sample && !stale_sample) {
       filtered_velocity_x = FilterRawMouseVelocity(
           instant_velocity_x, elapsed_seconds,
-          settings.raw_mouse_smoothing_time_ms,
-          raw_mouse_filtered_velocity_x_);
+          settings.raw_mouse_smoothing_time_ms, raw_mouse_filtered_velocity_x_);
       filtered_velocity_y = FilterRawMouseVelocity(
           instant_velocity_y, elapsed_seconds,
-          settings.raw_mouse_smoothing_time_ms,
-          raw_mouse_filtered_velocity_y_);
+          settings.raw_mouse_smoothing_time_ms, raw_mouse_filtered_velocity_y_);
     }
     raw_mouse_filtered_velocity_x_ = filtered_velocity_x;
     raw_mouse_filtered_velocity_y_ = filtered_velocity_y;
