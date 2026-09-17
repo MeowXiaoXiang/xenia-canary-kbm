@@ -12,6 +12,7 @@ on:
       - '*.md'
       - 'docs/**'
       - 'LICENSE'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,18 +42,11 @@ jobs:
   build-windows:
     name: Windows (x86-64)
     needs: [lint, commit-message]
-    if: ${{ !failure() && !cancelled() }}
+    if: >-
+      ${{ always() &&
+      needs.lint.result == 'success' &&
+      (needs.commit-message.result == 'success' || needs.commit-message.result == 'skipped') }}
     uses: ./.github/workflows/Windows_x86.yml
-
-  build-linux:
-    name: Linux (x86-64)
-    needs: [lint, commit-message]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/Linux_x86.yml
-    with:
-      runs-on: ${{ needs.lint.outputs.runs-on }}
-      llvm_version: ${{ needs.lint.outputs.llvm_version }}
-      ubuntu_base: ${{ needs.lint.outputs.ubuntu_base }}
 
   # Uncomment when platform support is ready:
   # build-windows-arm64:
@@ -74,23 +68,3 @@ jobs:
   #   name: Android
   #   needs: [lint]
   #   uses: ./.github/workflows/build-android.yml
-
-  # ===========================================================================
-  # Stage 3: Release
-  # ===========================================================================
-  release:
-    name: Create Release
-    needs: [build-windows, build-linux]
-    if: |-
-      always() &&
-      github.repository == 'xenia-canary/xenia-canary' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/canary_experimental' &&
-      (needs.build-windows.result == 'success' && needs.build-linux.result == 'success')
-    uses: ./.github/workflows/Create_release.yml
-    permissions:
-      contents: write
-    secrets: inherit
-    with:
-      tag: ${{ github.sha }}
-      branch: ${{ github.ref_name }}

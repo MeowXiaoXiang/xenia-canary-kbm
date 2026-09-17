@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.meowxiaoxiang.XeniaCanaryKBM</id>
+  <name>Xenia Canary</name>
+  <summary>Xbox 360 emulator research project with KBM Controller input</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>BSD-3-Clause</project_license>
+  <url type="homepage">https://github.com/MeowXiaoXiang/xenia-canary-kbm</url>
+  <launchable type="desktop-id">xenia_canary.desktop</launchable>
+  <provides>
+    <binary>xenia_canary</binary>
+  </provides>
+  <description>
+    <p>
+      Xenia Canary is an open-source research emulator for Xbox 360 software.
+      This fork adds an optional KBM Controller backend for keyboard bindings
+      and Raw Input mouse control.
+    </p>
+  </description>
+</component>

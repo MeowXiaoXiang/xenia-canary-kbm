@@ -64,9 +64,9 @@
 #include "xenia/hid/sdl/sdl_hid.h"
 #endif  // !XE_PLATFORM_ANDROID
 #if XE_PLATFORM_WIN32
-#include "xenia/hid/keyboard/keyboard_hid.h"
 #include "xenia/hid/kbm/kbm_config.h"
 #include "xenia/hid/kbm/kbm_hid.h"
+#include "xenia/hid/keyboard/keyboard_hid.h"
 #include "xenia/hid/xinput/xinput_hid.h"
 #endif  // XE_PLATFORM_WIN32
 
@@ -84,9 +84,17 @@
 #define HID_OPTIONS "[any, nop, sdl]"
 #endif
 
+#if XE_PLATFORM_WIN32
+#define HID_DEFAULT "kbm"
+#else
+#define HID_DEFAULT "any"
+#endif
+
 DEFINE_string(apu, "any", "Audio system. Use: " APU_OPTIONS, "APU");
 DEFINE_string(gpu, "any", "Graphics system. Use: " GPU_OPTIONS, "GPU");
-DEFINE_string(hid, "any", "Input system. Use: " HID_OPTIONS, "HID");
+DEFINE_string(hid, HID_DEFAULT, "Input system. Use: " HID_OPTIONS, "HID");
+
+#undef HID_DEFAULT
 
 DEFINE_path(
     storage_root, "",
@@ -221,8 +229,9 @@ class EmulatorApp final : public xe::ui::WindowedApp {
             continue;
           }
 
-          // Skip physical XInput and opt-in KBM for "any".
+          // Skip physical XInput, keyboard passthrough, and KBM for "any".
           if (creator.name.compare("xinput") == 0 ||
+              creator.name.compare("keyboard") == 0 ||
               creator.name.compare("kbm") == 0) {
             continue;
           }
@@ -235,7 +244,7 @@ class EmulatorApp final : public xe::ui::WindowedApp {
         return instances;
       }
 
-      // "Specified" path. Keyboard is always added for passthrough.
+      // "Specified" path.
       if (name != "keyboard") {
         auto it = std::find_if(
             creators_.cbegin(), creators_.cend(),
@@ -247,9 +256,11 @@ class EmulatorApp final : public xe::ui::WindowedApp {
             instances.emplace_back(std::move(instance));
           }
         }
+        return instances;
       }
 
-      // Always add keyboard for passthrough.
+      // Keyboard passthrough is available only through the explicit keyboard
+      // selector.
       auto it = std::find_if(
           creators_.cbegin(), creators_.cend(),
           [&name](const auto& f) { return f.name.compare("keyboard") == 0; });
@@ -464,7 +475,7 @@ std::vector<std::unique_ptr<hid::InputDriver>> EmulatorApp::CreateInputDrivers(
     factory.Add("keyboard", xe::hid::keyboard::Create);
 #endif
 #if XE_PLATFORM_WIN32
-    // Keyboard and Kbm are added after physical controller drivers.
+    // Keyboard and KBM are added after physical controller drivers.
     factory.Add("keyboard", xe::hid::keyboard::Create);
     factory.Add("kbm", xe::hid::kbm::Create);
 #endif  // XE_PLATFORM_WIN32

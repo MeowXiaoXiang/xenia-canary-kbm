@@ -17,6 +17,13 @@ jobs:
         run: |-
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
+          UPSTREAM_REF="upstream/canary_experimental"
+
+          # Imported upstream commits retain their original subjects. Fetch the
+          # tracked history so this check continues to enforce fork commit
+          # style without requiring a rewrite of upstream history.
+          git remote add upstream https://github.com/xenia-canary/xenia-canary.git
+          git fetch --no-tags upstream canary_experimental
 
           COMMITS=$(git log --format='%H %s' "${BASE}..$HEAD" --)
 
@@ -29,6 +36,17 @@ jobs:
             SHA="${LINE%% *}"
             MSG="${LINE#* }"
             SHORT="${SHA::7}"
+
+            if git merge-base --is-ancestor "$SHA" "$UPSTREAM_REF"; then
+              echo "✅ ${SHORT}: imported upstream commit"
+              continue
+            fi
+
+            if git rev-parse "$SHA^2" >/dev/null 2>&1 && \
+              git merge-base --is-ancestor "$SHA^2" "$UPSTREAM_REF"; then
+              echo "✅ ${SHORT}: upstream integration merge"
+              continue
+            fi
 
             if echo "$MSG" | grep -qP '^\[.+?\]'; then
               echo "✅ ${SHORT}: $MSG"

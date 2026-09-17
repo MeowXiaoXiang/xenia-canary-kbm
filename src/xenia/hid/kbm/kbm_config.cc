@@ -13,6 +13,7 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -24,12 +25,11 @@
 #include "xenia/base/string.h"
 
 DECLARE_string(hid);
-DECLARE_int32(keyboard_mode);
-DECLARE_int32(keyboard_user_index);
+DECLARE_bool(kbm_enabled);
+DECLARE_int32(kbm_user_index);
 
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
-  DECLARE_string(cvar_name);
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  DECLARE_string(kbm_##cvar_name);
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
 
@@ -37,6 +37,7 @@ DECLARE_bool(raw_mouse);
 DECLARE_double(raw_mouse_sensitivity);
 DECLARE_double(raw_mouse_full_scale_velocity);
 DECLARE_double(raw_mouse_response_curve);
+DECLARE_double(raw_mouse_smoothing_time_ms);
 DECLARE_bool(raw_mouse_deadzone_compensation);
 DECLARE_double(raw_mouse_minimum_response);
 DECLARE_bool(raw_mouse_invert_y);
@@ -222,12 +223,7 @@ std::string FormatChord(const KbmChord& chord, bool display) {
 std::filesystem::path config_path;
 
 bool IsKbmConfigVar(const cvar::IConfigVar& config_var) {
-  if (config_var.category() == "HID.Kbm") {
-    return true;
-  }
-  return config_var.category() == "HID" &&
-         (config_var.name() == "keyboard_mode" ||
-          config_var.name() == "keyboard_user_index");
+  return config_var.category() == "HID.KBM";
 }
 
 void LoadConfig() {
@@ -309,8 +305,6 @@ void SetupConfig(const std::filesystem::path& storage_root) {
   if (std::filesystem::exists(config_path)) {
     LoadConfig();
   } else if (cvars::hid == "kbm") {
-    // This also preserves values imported from the old main config before the
-    // HID.Kbm cvars became transient.
     SaveConfig();
   }
 }
@@ -338,14 +332,16 @@ bool SaveConfig() {
   });
 
   xe::filesystem::CreateParentFolder(config_path);
-  FILE* file = xe::filesystem::OpenFile(config_path, "wb");
+  auto temporary_path = config_path;
+  temporary_path += ".tmp";
+  FILE* file = xe::filesystem::OpenFile(temporary_path, "wb");
   if (!file) {
     XELOGE("kbm: failed to open '{}' for writing.", config_path);
     return false;
   }
 
   std::string output =
-      "# Kbm keyboard and Raw Input mouse settings.\n"
+      "# KBM Controller keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n";
   std::string category;
   for (const auto* config_var : vars) {
@@ -362,8 +358,12 @@ bool SaveConfig() {
 
   const bool written =
       fwrite(output.data(), 1, output.size(), file) == output.size();
-  fclose(file);
-  if (!written) {
+  const bool closed = fclose(file) == 0;
+  if (!written || !closed ||
+      !MoveFileExW(temporary_path.c_str(), config_path.c_str(),
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    std::error_code ignored;
+    std::filesystem::remove(temporary_path, ignored);
     XELOGE("kbm: failed to write '{}'.", config_path);
     return false;
   }
@@ -371,34 +371,59 @@ bool SaveConfig() {
   return true;
 }
 
+KbmSettings NormalizeSettings(KbmSettings settings) {
+  const KbmSettings defaults;
+  auto finite_clamp = [](double value, double fallback, double low,
+                         double high) {
+    return std::clamp(std::isfinite(value) ? value : fallback, low, high);
+  };
+  settings.user_index = std::clamp(settings.user_index, 0, 3);
+  settings.raw_mouse_sensitivity =
+      finite_clamp(settings.raw_mouse_sensitivity,
+                   defaults.raw_mouse_sensitivity, 0.01, 256.0);
+  settings.raw_mouse_full_scale_velocity =
+      finite_clamp(settings.raw_mouse_full_scale_velocity,
+                   defaults.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
+  settings.raw_mouse_response_curve =
+      finite_clamp(settings.raw_mouse_response_curve,
+                   defaults.raw_mouse_response_curve, 0.1, 4.0);
+  settings.raw_mouse_smoothing_time_ms =
+      finite_clamp(settings.raw_mouse_smoothing_time_ms,
+                   defaults.raw_mouse_smoothing_time_ms, 0.0, 20.0);
+  settings.raw_mouse_minimum_response =
+      finite_clamp(settings.raw_mouse_minimum_response,
+                   defaults.raw_mouse_minimum_response, 0.0, 0.5);
+  return settings;
+}
+
 KbmSettings GetSettingsFromCvars() {
   KbmSettings settings;
-  settings.keyboard_mode = cvars::keyboard_mode;
-  settings.keyboard_user_index = cvars::keyboard_user_index;
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
-  settings.cvar_name = cvars::cvar_name;
+  settings.enabled = cvars::kbm_enabled;
+  settings.user_index = cvars::kbm_user_index;
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  settings.cvar_name = cvars::kbm_##cvar_name;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   settings.raw_mouse = cvars::raw_mouse;
   settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
   settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
   settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
+  settings.raw_mouse_smoothing_time_ms = cvars::raw_mouse_smoothing_time_ms;
   settings.raw_mouse_deadzone_compensation =
       cvars::raw_mouse_deadzone_compensation;
   settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
   settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
   settings.raw_mouse_capture_toggle_key = cvars::raw_mouse_capture_toggle_key;
   settings.raw_mouse_capture_on_start = cvars::raw_mouse_capture_on_start;
-  return settings;
+  return NormalizeSettings(settings);
 }
 
-void ApplySettingsToCvars(const KbmSettings& settings) {
-  cvars::keyboard_mode = std::clamp(settings.keyboard_mode, 0, 2);
-  cvars::keyboard_user_index = std::clamp(settings.keyboard_user_index, 0, 3);
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
-  cvars::cvar_name = settings.cvar_name;
+void ApplySettingsToCvars(const KbmSettings& source_settings) {
+  const KbmSettings settings = NormalizeSettings(source_settings);
+  cvars::kbm_enabled = settings.enabled;
+  cvars::kbm_user_index = std::clamp(settings.user_index, 0, 3);
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  cvars::kbm_##cvar_name = settings.cvar_name;
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   cvars::raw_mouse = settings.raw_mouse;
@@ -408,6 +433,8 @@ void ApplySettingsToCvars(const KbmSettings& settings) {
       std::clamp(settings.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
   cvars::raw_mouse_response_curve =
       std::clamp(settings.raw_mouse_response_curve, 0.1, 4.0);
+  cvars::raw_mouse_smoothing_time_ms =
+      std::clamp(settings.raw_mouse_smoothing_time_ms, 0.0, 20.0);
   cvars::raw_mouse_deadzone_compensation =
       settings.raw_mouse_deadzone_compensation;
   cvars::raw_mouse_minimum_response =

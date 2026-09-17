@@ -232,7 +232,7 @@ class EmulatorWindow {
   class KbmConfigDialog final : public ui::ImGuiDialog {
    public:
     KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
-                       EmulatorWindow& emulator_window);
+                    EmulatorWindow& emulator_window);
     ~KbmConfigDialog() override;
 
    protected:
@@ -251,6 +251,8 @@ class EmulatorWindow {
     hid::kbm::KbmSettings settings_;
     bool committed_or_restored_ = false;
     bool save_failed_ = false;
+    bool dirty_ = false;
+    bool saved_ = false;
     std::string* binding_capture_target_ = nullptr;
     bool binding_capture_append_ = false;
   };

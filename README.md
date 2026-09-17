@@ -6,15 +6,21 @@
 
 <h1 align="center">Xenia Canary — KBM Controller Input</h1>
 
-This is a Windows-focused experimental fork of
-[Xenia Canary](https://github.com/xenia-canary/xenia-canary). It adds an
-opt-in KBM Controller backend that maps keyboard and Windows Raw Input mouse movement
-to an emulated Xbox 360 controller.
+This is a Windows-only experimental fork of
+[Xenia Canary](https://github.com/xenia-canary/xenia-canary). It adds a KBM
+Controller backend that maps keyboard and Windows Raw Input mouse movement to
+an emulated Xbox 360 controller.
 
-It is not an official Xenia Canary build or support channel. This repository
-does not publish releases; build it locally when you want to try the
-experimental input path. General emulator information, compatibility reports,
-and upstream contribution guidance belong to the
+KBM Controller is built and available only on Windows. Continuous integration
+uses Linux only for the upstream-compatible formatting check; its only build
+output is a short-lived Windows artifact for validation.
+
+On Windows, KBM Controller is the default HID backend. Use `--hid=any` to
+restore general hardware backend selection, or `--hid=keyboard` for explicit
+keyboard passthrough. It is not an official Xenia Canary build or support channel.
+This repository does not publish releases; build it locally when you want to
+try the experimental input path. General emulator information, compatibility
+reports, and upstream contribution guidance belong to the
 [Xenia Canary project](https://github.com/xenia-canary/xenia-canary).
 
 ## What this fork changes
@@ -24,8 +30,8 @@ and upstream contribution guidance belong to the
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
 - Raw Input mouse-to-right-stick translation with configurable sensitivity,
-  response curve, full-stick threshold, capture, and optional minimum-output
-  compensation.
+  response curve, time-based smoothing, full-stick threshold, capture, and
+  optional minimum-output compensation.
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 
@@ -34,9 +40,10 @@ and known limits.
 
 ## Building
 
-Use the upstream [building guide](docs/building.md) and run the standard
-`xb.bat setup` then `xb.bat build --config=release` commands from a Windows
-developer environment. The expected executable is
+Use the Windows prerequisites in the included upstream
+[building guide](docs/building.md), then run `xb.bat setup` and
+`xb.bat build --config=release` from a Windows developer environment.
+`xb.ps1` provides the same commands for PowerShell. The expected executable is
 `build\\bin\\Windows\\Release\\xenia_canary.exe`.
 
 ## Scope and privacy

@@ -4,6 +4,10 @@ You must have a 64-bit machine for building and running the project. Always
 run your system updater before building and make sure you have the latest
 drivers.
 
+This repository is a Windows-only KBM Controller fork. The Linux material is
+retained below as upstream reference for synchronization only; it is not a
+supported build or runtime path for this fork.
+
 ## Setup
 
 ### Windows
@@ -12,31 +16,27 @@ drivers.
 * [Visual Studio 2022 or later](https://www.visualstudio.com/downloads/)
 * CMake 3.10+ (or C++ CMake tools for Windows)
 * Windows 11 SDK version 10.0.22000.0 (for Visual Studio 2022, this or any newer version)
-* [Python 3.6+ 64-bit](https://www.python.org/downloads/)
+* [Python 3.10+ 64-bit](https://www.python.org/downloads/)
   * Ensure Python is in PATH.
 * [Vulkan SDK](https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe)
   * The build script will automatically detect it if installed at `C:\VulkanSDK`
 
 ```
-git clone https://github.com/xenia-canary/xenia-canary.git
-cd xenia-canary
-xb setup
+git clone https://github.com/MeowXiaoXiang/xenia-canary-kbm.git
+cd xenia-canary-kbm
+.\xb.bat setup
 
-# Build on command line (add --config=release for release):
-xb build
-
-
-# Pull latest changes, rebase, update submodules, and run premake:
-xb pull
+# Build a Release executable:
+.\xb.bat build --config=release
 
 # Run premake and open Visual Studio (run the 'xenia-app' project):
-xb devenv
+.\xb.bat devenv
 
 # Run premake to update the sln/vcproj's:
-xb premake
+.\xb.bat premake
 
 # Format code to the style guide:
-xb format
+.\xb.bat format
 ```
 <!--
 # Remove intermediate files and build outputs (doesn't work on Linux):
@@ -87,7 +87,7 @@ If running under Visual Studio and you want to look at the JIT'ed code
 (available around 0xA0000000) you should pass `--emit_source_annotations` to
 get helpful spacers/movs in the disassembly.
 
-### Linux
+### Linux (upstream reference; not supported by this fork)
 
 Linux support is extremely experimental and presently incomplete.
 
@@ -108,7 +108,7 @@ Clang-19 or newer should be available from system repositories on all up to date
 You will also need some development libraries. To get them on an Ubuntu system:
 
 ```sh
-sudo apt-get install build-essential mesa-vulkan-drivers valgrind libc++-dev libc++abi-dev libgtk-3-dev liblz4-dev libsdl2-dev libvulkan-dev libx11-xcb-dev clang-19 llvm-19 ninja-build
+sudo apt-get install build-essential mesa-vulkan-drivers valgrind libc++-dev libc++abi-dev libgtk-3-dev liblz4-dev libsdl2-dev libvulkan-dev libx11-xcb-dev spirv-tools glslang-tools clang-19 llvm-19 ninja-build
 ```
 
 In addition, you will need up to date Vulkan libraries and drivers for your hardware, which most distributions have in their standard repositories nowadays.

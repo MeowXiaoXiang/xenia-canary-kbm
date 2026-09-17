@@ -130,7 +130,7 @@ int InitializeWin32App(const std::string_view app_name) {
       "PR#" XE_BUILD_PR_NUMBER
       " - "
 #endif
-      "WinKey Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
+      "KBM Controller Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
       " | upstream " XE_BUILD_UPSTREAM_COMMIT_SHORT " on " XE_BUILD_DATE);
 
   // Request high-performance timing and scheduling.

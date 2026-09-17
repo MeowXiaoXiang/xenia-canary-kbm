@@ -184,22 +184,22 @@ EmulatorWindow::EmulatorWindow(Emulator* emulator,
           std::make_unique<ui::ImGuiDrawer>(window_.get(), kZOrderImGui)),
       display_config_game_config_load_callback_(
           new DisplayConfigGameConfigLoadCallback(*emulator, *this)) {
-  base_title_ = std::string(kBaseTitle) +
+  base_title_ =
+      std::string(kBaseTitle) +
 #ifdef DEBUG
 #if _NO_DEBUG_HEAP == 1
-                " DEBUG"
+      " DEBUG"
 #else
-                " CHECKED"
+      " CHECKED"
 #endif
 #endif
-                " ("
+      " ("
 #ifdef XE_BUILD_IS_PR
-                "PR#" XE_BUILD_PR_NUMBER
-                " - "
+      "PR#" XE_BUILD_PR_NUMBER
+      " - "
 #endif
-                "KBM Controller Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
-                " | upstream " XE_BUILD_UPSTREAM_COMMIT_SHORT
-                " on " XE_BUILD_DATE ")";
+      "KBM Controller Input | fork " XE_BUILD_BRANCH "@" XE_BUILD_COMMIT_SHORT
+      " | upstream " XE_BUILD_UPSTREAM_COMMIT_SHORT " on " XE_BUILD_DATE ")";
 
   LoadRecentlyLaunchedTitles();
 }
@@ -219,8 +219,7 @@ std::unique_ptr<EmulatorWindow> EmulatorWindow::Create(
 EmulatorWindow::~EmulatorWindow() {
 #if XE_PLATFORM_WIN32
   if (auto* input_system = emulator_->input_system()) {
-    if (auto* driver =
-            input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
+    if (auto* driver = input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
       driver->SetCaptureStateCallback({});
     }
   }
@@ -273,8 +272,7 @@ void EmulatorWindow::ShutdownGraphicsSystemPresenterPainting() {
 void EmulatorWindow::OnEmulatorInitialized() {
 #if XE_PLATFORM_WIN32
   if (auto* input_system = emulator_->input_system()) {
-    if (auto* driver =
-            input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
+    if (auto* driver = input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
       driver->SetCaptureStateCallback(
           [this](bool active, const std::string& toggle_binding) {
             using localization::StringId;
@@ -644,16 +642,16 @@ EmulatorWindow::KbmConfigDialog::~KbmConfigDialog() {
   }
 }
 
-hid::kbm::KbmInputDriver* EmulatorWindow::KbmConfigDialog::GetDriver()
-    const {
+hid::kbm::KbmInputDriver* EmulatorWindow::KbmConfigDialog::GetDriver() const {
   hid::InputSystem* input_system = emulator_window_.emulator_->input_system();
-  return input_system
-             ? input_system->GetDriver<hid::kbm::KbmInputDriver>()
-             : nullptr;
+  return input_system ? input_system->GetDriver<hid::kbm::KbmInputDriver>()
+                      : nullptr;
 }
 
 void EmulatorWindow::KbmConfigDialog::ApplyDraft() {
   committed_or_restored_ = false;
+  dirty_ = true;
+  saved_ = false;
   if (auto* driver = GetDriver()) {
     driver->ApplySettings(settings_);
   } else {
@@ -671,8 +669,8 @@ void EmulatorWindow::KbmConfigDialog::RestoreOriginal() {
   committed_or_restored_ = true;
 }
 
-void EmulatorWindow::KbmConfigDialog::StartBindingCapture(
-    std::string* target, bool append) {
+void EmulatorWindow::KbmConfigDialog::StartBindingCapture(std::string* target,
+                                                          bool append) {
   binding_capture_target_ = target;
   binding_capture_append_ = append;
   if (auto* driver = GetDriver()) {
@@ -741,14 +739,23 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   }
 
   bool changed = HandleBindingCaptureResult();
+  ImGui::TextWrapped("%s", tr(StringId::kKbmInputPaused));
+  ImGui::Text("%s %s", tr(StringId::kKbmCaptureToggle),
+              hid::kbm::FormatKbmBinding(settings_.raw_mouse_capture_toggle_key)
+                  .c_str());
+  ImGui::BeginChild("KbmSettingsBody",
+                    ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3), false);
   auto draw_binding = [&](const char* id, std::string& binding,
                           bool allow_alternatives = true) {
     ImGui::PushID(id);
     const bool capturing = binding_capture_target_ == &binding;
-    const std::string label = capturing
-                                  ? tr(StringId::kKbmPressBinding)
+    const std::string label = capturing ? tr(StringId::kKbmPressBinding)
+                              : binding.empty()
+                                  ? tr(StringId::kKbmUnbound)
                                   : hid::kbm::FormatKbmBinding(binding);
-    const float action_width = allow_alternatives ? 52.0f : 28.0f;
+    const float action_width = ImGui::CalcTextSize("Esc").x +
+                               ImGui::GetStyle().FramePadding.x * 2 +
+                               (allow_alternatives ? 64.0f : 40.0f);
     ImGui::BeginDisabled(GetDriver() == nullptr);
     if (ImGui::Button(label.c_str(),
                       ImVec2(std::max(80.0f, ImGui::GetContentRegionAvail().x -
@@ -770,6 +777,15 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
+    if (ImGui::SmallButton("Esc")) {
+      CancelBindingCapture();
+      binding = "Esc";
+      changed = true;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("%s", tr(StringId::kKbmBindEscape));
+    }
+    ImGui::SameLine();
     if (ImGui::SmallButton("x")) {
       if (capturing) {
         CancelBindingCapture();
@@ -785,23 +801,13 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   if (ImGui::TreeNodeEx(
           tr(StringId::kKbmKeyboard),
           ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    const char* keyboard_mode_names[] = {tr(StringId::kKbmModeDisabled),
-                                         tr(StringId::kKbmModeController),
-                                         tr(StringId::kKbmModePassthrough)};
-    int keyboard_mode = std::clamp(settings_.keyboard_mode, 0, 2);
-    if (ImGui::BeginCombo(tr(StringId::kKbmKeyboardMode),
-                          keyboard_mode_names[keyboard_mode])) {
-      for (int i = 0; i < 3; ++i) {
-        if (ImGui::Selectable(keyboard_mode_names[i], keyboard_mode == i)) {
-          settings_.keyboard_mode = i;
-          changed = true;
-        }
-      }
-      ImGui::EndCombo();
+    if (ImGui::Checkbox(tr(StringId::kKbmEnableController),
+                        &settings_.enabled)) {
+      changed = true;
     }
 
-    if (settings_.keyboard_mode == int(hid::kbm::KeyboardMode::Enabled)) {
-      int controller_slot = std::clamp(settings_.keyboard_user_index, 0, 3);
+    if (settings_.enabled) {
+      int controller_slot = std::clamp(settings_.user_index, 0, 3);
       const char* controller_slot_names[] = {
           tr(StringId::kKbmPlayer1), tr(StringId::kKbmPlayer2),
           tr(StringId::kKbmPlayer3), tr(StringId::kKbmPlayer4)};
@@ -810,7 +816,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
         for (int i = 0; i < 4; ++i) {
           if (ImGui::Selectable(controller_slot_names[i],
                                 controller_slot == i)) {
-            settings_.keyboard_user_index = i;
+            settings_.user_index = i;
             changed = true;
           }
         }
@@ -826,20 +832,16 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                                 ImGuiTableColumnFlags_WidthFixed, 165.0f);
         ImGui::TableSetupColumn(tr(StringId::kKbmKeyboardMouse));
         ImGui::TableHeadersRow();
-#define XE_HID_KBM_BINDING(button, description, cvar_name, \
-                              cvar_default_value)             \
-  ImGui::TableNextRow();                                      \
-  ImGui::TableSetColumnIndex(0);                              \
-  ImGui::TextUnformatted(description);                        \
-  ImGui::TableSetColumnIndex(1);                              \
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  ImGui::TableNextRow();                                                       \
+  ImGui::TableSetColumnIndex(0);                                               \
+  ImGui::TextUnformatted(tr(StringId::kKbmBind##button));                      \
+  ImGui::TableSetColumnIndex(1);                                               \
   draw_binding(#cvar_name, settings_.cvar_name);
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
         ImGui::EndTable();
       }
-    } else if (settings_.keyboard_mode ==
-               int(hid::kbm::KeyboardMode::Passthrough)) {
-      ImGui::TextWrapped("%s", tr(StringId::kKbmPassthroughHelp));
     }
     ImGui::TreePop();
   }
@@ -847,8 +849,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   if (ImGui::TreeNodeEx(
           tr(StringId::kKbmMouse),
           ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    const bool mouse_controls_available =
-        settings_.keyboard_mode == int(hid::kbm::KeyboardMode::Enabled);
+    const bool mouse_controls_available = settings_.enabled;
     ImGui::BeginDisabled(!mouse_controls_available);
     if (ImGui::Checkbox(tr(StringId::kKbmEnableRawMouse),
                         &settings_.raw_mouse)) {
@@ -863,7 +864,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::Spacing();
     ImGui::TextUnformatted(tr(StringId::kKbmSensitivity));
     float sensitivity = float(settings_.raw_mouse_sensitivity);
-    ImGui::SetNextItemWidth(300.0f);
+    ImGui::SetNextItemWidth(
+        std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
     if (ImGui::SliderFloat(
             "##MouseSensitivitySlider", &sensitivity, 0.01f, 256.0f, "%.3f x",
             ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
@@ -895,7 +897,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     if (settings_.raw_mouse_deadzone_compensation) {
       ImGui::TextUnformatted(tr(StringId::kKbmMinimumResponse));
       float minimum_response = float(settings_.raw_mouse_minimum_response);
-      ImGui::SetNextItemWidth(300.0f);
+      ImGui::SetNextItemWidth(
+          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
       if (ImGui::SliderFloat("##MinimumResponse", &minimum_response, 0.0f, 0.5f,
                              "%.3f", ImGuiSliderFlags_AlwaysClamp)) {
         settings_.raw_mouse_minimum_response = minimum_response;
@@ -929,7 +932,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                           ImGuiTreeNodeFlags_Framed)) {
       ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
       float curve = float(settings_.raw_mouse_response_curve);
-      ImGui::SetNextItemWidth(300.0f);
+      ImGui::SetNextItemWidth(
+          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
       if (ImGui::SliderFloat(
               "##MouseCurve", &curve, 0.1f, 4.0f, "%.3f",
               ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
@@ -946,6 +950,17 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
         changed = true;
       }
       ImGui::TextDisabled("%s", tr(StringId::kKbmAimCurveHelp));
+
+      ImGui::TextUnformatted(tr(StringId::kKbmMouseSmoothing));
+      float smoothing_time_ms = float(settings_.raw_mouse_smoothing_time_ms);
+      ImGui::SetNextItemWidth(
+          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
+      if (ImGui::SliderFloat("##MouseSmoothing", &smoothing_time_ms, 0.0f,
+                             20.0f, "%.1f ms", ImGuiSliderFlags_AlwaysClamp)) {
+        settings_.raw_mouse_smoothing_time_ms = smoothing_time_ms;
+        changed = true;
+      }
+      ImGui::TextDisabled("%s", tr(StringId::kKbmMouseSmoothingHelp));
 
       ImGui::TextUnformatted(tr(StringId::kKbmFullStickThreshold));
       ImGui::SetNextItemWidth(220.0f);
@@ -981,13 +996,45 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                            diagnostics.raw_counts_per_second_x,
                            diagnostics.raw_counts_per_second_y,
                            diagnostics.thumb_x, diagnostics.thumb_y);
-        ImGui::Text(tr(StringId::kKbmRawInputCapture),
-                    diagnostics.raw_mouse_registered
-                        ? tr(StringId::kKbmReady)
-                        : tr(StringId::kKbmOff),
+        ImGui::Text(tr(StringId::kKbmRawInputStatus),
+                    diagnostics.raw_mouse_requested ? tr(StringId::kKbmOn)
+                                                    : tr(StringId::kKbmOff),
+                    diagnostics.raw_mouse_registered ? tr(StringId::kKbmReady)
+                                                     : tr(StringId::kKbmOff),
+                    diagnostics.capture_requested ? tr(StringId::kKbmOn)
+                                                  : tr(StringId::kKbmOff),
                     diagnostics.capture_active ? tr(StringId::kKbmActive)
                                                : tr(StringId::kKbmReleased));
-        ImGui::TextDisabled("%s", tr(StringId::kKbmInputPaused));
+        ImGui::TextWrapped("%s", tr(StringId::kKbmSnapshot));
+
+        ImGui::Separator();
+        ImGui::TextUnformatted(tr(StringId::kKbmInputSampling));
+        const auto sampling = driver->GetInputSamplingStatus();
+        if (sampling.active) {
+          ImGui::Text(tr(StringId::kKbmInputSamplingProgress),
+                      sampling.seconds_remaining, sampling.sample_count);
+          if (ImGui::Button(tr(StringId::kKbmStopAndSaveInputSampling))) {
+            driver->StopInputSampling();
+          }
+          ImGui::SameLine();
+          if (ImGui::Button(tr(StringId::kKbmCancelInputSampling))) {
+            driver->CancelInputSampling();
+          }
+        } else {
+          if (ImGui::Button(tr(StringId::kKbmStartInputSampling))) {
+            driver->StartInputSampling();
+          }
+          ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingHelp));
+          if (!sampling.report_path.empty()) {
+            ImGui::TextWrapped(tr(StringId::kKbmInputSamplingReportSaved),
+                               sampling.report_path.c_str());
+          } else if (sampling.report_write_failed) {
+            ImGui::TextDisabled("%s",
+                                tr(StringId::kKbmInputSamplingReportFailed));
+          } else {
+            ImGui::TextDisabled("%s", tr(StringId::kKbmInputSamplingNoReport));
+          }
+        }
       } else {
         ImGui::TextDisabled("%s", tr(StringId::kKbmDiagnosticsUnavailable));
       }
@@ -996,18 +1043,34 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::TreePop();
   }
 
+  ImGui::EndChild();
   if (changed) {
     ApplyDraft();
   }
 
   ImGui::Separator();
-  if (ImGui::Button(tr(StringId::kKbmSave))) {
+  if (dirty_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmDirty));
+  } else if (saved_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmSaved));
+  }
+  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
+  ImGui::SameLine();
+  if (ImGui::Button(tr(StringId::kKbmSave)) || save_and_close) {
     CancelBindingCapture();
     ApplyDraft();
     if (hid::kbm::SaveConfig()) {
       original_settings_ = settings_;
       committed_or_restored_ = true;
       save_failed_ = false;
+      dirty_ = false;
+      saved_ = true;
+      if (save_and_close) {
+        Close();
+        ImGui::End();
+        emulator_window_.ToggleKbmConfigDialog();
+        return;
+      }
     } else {
       save_failed_ = true;
     }
@@ -1136,11 +1199,13 @@ void EmulatorWindow::ContentInstallDialog::OnDraw(ImGuiIO& io) {
 }
 
 void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
+  using localization::StringId;
+
   ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(20, 20), ImGuiCond_FirstUseEver);
 
   bool dialog_open = true;
-  if (!ImGui::Begin("Audio Player Menu", &dialog_open,
+  if (!ImGui::Begin(localization::Get(StringId::kXmpTitle), &dialog_open,
                     ImGuiWindowFlags_NoCollapse |
                         ImGuiWindowFlags_AlwaysAutoResize |
                         ImGuiWindowFlags_HorizontalScrollbar)) {
@@ -1152,28 +1217,28 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
   auto audio_player = emulator_window_.emulator_->audio_media_player();
   using xmp_state = kernel::xam::apps::XmpApp::State;
   if (audio_player) {
-    ImGui::Text("Audio player status:");
+    ImGui::TextUnformatted(localization::Get(StringId::kXmpStatus));
     ImGui::SameLine();
     switch (audio_player->GetState()) {
       case xmp_state::kIdle:
-        ImGui::Text("Idle");
+        ImGui::TextUnformatted(localization::Get(StringId::kXmpIdle));
         break;
       case xmp_state::kPaused:
-        ImGui::Text("Paused");
+        ImGui::TextUnformatted(localization::Get(StringId::kXmpPaused));
         break;
       case xmp_state::kPlaying:
-        ImGui::Text("Playing");
+        ImGui::TextUnformatted(localization::Get(StringId::kXmpPlaying));
         break;
       default:
         break;
     }
 
     if (audio_player->IsPlaying()) {
-      if (ImGui::Button("Pause")) {
+      if (ImGui::Button(localization::Get(StringId::kXmpPause))) {
         audio_player->Pause();
       }
     } else if (audio_player->IsPaused()) {
-      if (ImGui::Button("Resume")) {
+      if (ImGui::Button(localization::Get(StringId::kXmpResume))) {
         audio_player->Continue();
       }
     }
@@ -1181,8 +1246,8 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
     volume_ =
         emulator_window_.emulator_->audio_media_player()->GetVolume()->load();
 
-    if (ImGui::SliderFloat("Audio player volume", &volume_, 0.0f, 1.0f,
-                           "%.2f")) {
+    if (ImGui::SliderFloat(localization::Get(StringId::kXmpVolume), &volume_,
+                           0.0f, 1.0f, "%.2f")) {
       audio_player->SetVolume(volume_);
     }
   }
@@ -1251,16 +1316,17 @@ void EmulatorWindow::BuildMainMenu() {
   main_menu->AddChild(std::move(profile_menu));
 
   // Content Menu
-  auto content_menu = MenuItem::Create(MenuItem::Type::kPopup, "&Content");
+  auto content_menu =
+      MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuContent));
   {
     content_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Install Content",
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kContentInstall),
                          std::bind(&EmulatorWindow::InstallContent, this)));
     content_menu->AddChild(
-        MenuItem::Create(MenuItem::Type::kString, "Extract Content",
+        MenuItem::Create(MenuItem::Type::kString, tr(StringId::kContentExtract),
                          std::bind(&EmulatorWindow::ExtractContent, this, "")));
     content_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "Show Installed Content",
+        MenuItem::Type::kString, tr(StringId::kContentShowInstalled),
         std::bind(&EmulatorWindow::ToggleContentListDialog, this)));
   }
   main_menu->AddChild(std::move(content_menu));
@@ -2151,8 +2217,7 @@ void EmulatorWindow::SetFullscreen(bool fullscreen_) {
                                    : ui::Window::CursorVisibility::kVisible);
 #if XE_PLATFORM_WIN32
   if (auto* input_system = emulator_->input_system()) {
-    if (auto* driver =
-            input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
+    if (auto* driver = input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
       driver->RefreshRawMouseCapture();
     }
   }

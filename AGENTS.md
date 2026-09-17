@@ -1,7 +1,8 @@
-# Xenia Canary - WinKey Input
+# Xenia Canary - KBM Controller Input
 
 This is a public, Windows-focused fork of Xenia Canary. It adds the optional
-WinKey backend for keyboard bindings and Raw Input mouse-to-controller input.
+KBM Controller backend for keyboard bindings and Raw Input mouse-to-controller
+input.
 It is a research and source repository; it does not publish prebuilt releases.
 
 ## Upstream and branch policy
@@ -18,14 +19,17 @@ It is a research and source repository; it does not publish prebuilt releases.
 
 ## Scope
 
-- Keep WinKey changes Windows-specific, opt-in, and generic. Do not add
+- Keep KBM changes Windows-specific and generic. Do not add
   game-specific memory hooks, game patches, or title profiles.
+- Keep `--hid=keyboard` as the explicit upstream keyboard passthrough backend.
+  On Windows, `--hid=kbm` is the default virtual controller backend and
+  `--hid=any` remains available for general hardware backend selection.
 - Do not add game ISOs, title content, saves, shader caches, logs, captures,
   or any proprietary Xbox files to Git.
 - Keep user-facing strings in `src/xenia/app/localization.cc` synchronized
   between English and Traditional Chinese. When adding Chinese text, update
   the explicit glyph list in `src/xenia/ui/imgui_drawer.cc` as well.
-- Keep public documentation focused on `README.md` and `docs/winkey_input.md`.
+- Keep public documentation focused on `README.md` and `docs/kbm_input.md`.
   Do not expose private installation paths, personal test data, or unreleased
   local experiments.
 
