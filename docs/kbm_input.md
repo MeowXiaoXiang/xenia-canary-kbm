@@ -7,8 +7,9 @@ and mouse buttons to an emulated Xbox 360 controller, and translates Windows
 Raw Input mouse movement into the emulated right stick. It is deliberately a
 generic controller-input feature: it contains no game-specific memory hooks,
 patches, or per-title profiles.
-Linux builds are maintained for source and build compatibility only; they do
-not expose a KBM Controller backend.
+Windows is this fork's supported build and runtime target. Linux is used in
+continuous integration only for the upstream-compatible formatting check; it
+does not build or expose a KBM Controller backend.
 
 ## Build provenance and upstream updates
 
@@ -40,6 +41,10 @@ When KBM Controller is selected for the first time, the backend creates
 separate from `xenia-canary.config.toml`. It does not import or migrate a
 previous `winkey.toml`; save the desired bindings again in the KBM Controller
 Settings dialog.
+
+New configurations and **Reset all** use the current KBM defaults, including
+the 0.8 aim curve. Existing `kbm.toml` files keep their saved values; set the
+desired value in the dialog and choose **Save** to update them.
 
 ## Keyboard bindings
 
@@ -124,6 +129,10 @@ output, game input polling interval, capture state, and a summary of reset,
 stale, or dropped samples. The report is written only when capture finishes,
 so recording does not add per-sample disk I/O.
 
+The first four lines are `#` metadata comments containing the sample summary
+and the settings used for that capture. The CSV column header follows them, so
+spreadsheet imports may need to skip those four lines.
+
 ## Mouse capture
 
 The default capture hotkey is **F8**, configurable as a key or modifier chord.
@@ -148,13 +157,15 @@ hotkey, focus the Xenia window, and enable it again.
 
 ## Build
 
-Follow [the upstream build guide](building.md). On a Windows development
-environment, the normal verification commands are:
+Use the Windows section of [the included upstream build guide](building.md).
+On a Windows development environment, the normal verification commands are:
 
 ```powershell
 .\xb.bat setup
 .\xb.bat build --config=release
 ```
+
+`xb.ps1` provides the same commands for PowerShell.
 
 The release executable is
 `build\bin\Windows\Release\xenia_canary.exe`.

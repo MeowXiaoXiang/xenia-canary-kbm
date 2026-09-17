@@ -17,6 +17,14 @@ the compatibility baseline.
 - Kept upstream keyboard passthrough under the explicit `--hid=keyboard`
   selector and made KBM Controller the default Windows HID backend, while
   retaining `--hid=any` for general hardware backend selection.
+- Changed the default Raw Input aim curve from 1.2 to 0.8 for more responsive
+  fine aiming and recoil control. Existing `kbm.toml` files keep their saved
+  curve until changed or reset in KBM Controller Settings.
+
+### Added
+
+- Added a 60-second Raw Input sampling report with input, filtering,
+  right-stick, capture, and polling diagnostics for tuning KBM Controller.
 
 ### Breaking changes
 
