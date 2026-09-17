@@ -42,7 +42,7 @@ struct KbmSettings {
   bool raw_mouse = true;
   double raw_mouse_sensitivity = 10.0;
   double raw_mouse_full_scale_velocity = 24000.0;
-  double raw_mouse_response_curve = 1.2;
+  double raw_mouse_response_curve = 0.8;
   double raw_mouse_smoothing_time_ms = 8.0;
   bool raw_mouse_deadzone_compensation = false;
   double raw_mouse_minimum_response = 0.30;

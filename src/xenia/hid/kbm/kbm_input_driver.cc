@@ -55,7 +55,7 @@ DEFINE_transient_double(
     "HID.KBM");
 
 DEFINE_transient_double(
-    raw_mouse_response_curve, 1.2,
+    raw_mouse_response_curve, 0.8,
     "Raw mouse response exponent. 1 is linear, values above 1 add precision "
     "near the center, and values below 1 boost low speeds.",
     "HID.KBM");

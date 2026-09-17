@@ -99,8 +99,8 @@ controller sensitivity, turn-speed, and deadzone behavior.
   emulated stick reaches full deflection. The default is **24000 counts/s**.
   Lowering it reaches the game's maximum turn speed sooner; raising it leaves
   more room for fine movement.
-- **Aim curve** of 1.0 is linear. Values above 1.0 slow very small movements;
-  values below 1.0 boost them.
+- **Aim curve** defaults to **0.8** to boost fine aim and recoil control.
+  A value of 1.0 is linear; values above 1.0 slow very small movements.
 - **Mouse smoothing** defaults to **8 ms**. It smooths low-speed Raw Input
   count quantization without relying on a fixed game polling rate. Set it to
   **0 ms** for direct translation; 4–12 ms is the usual useful range.
