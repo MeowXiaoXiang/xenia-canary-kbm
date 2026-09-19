@@ -34,7 +34,7 @@ revision.
 2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
    selected, or after a `kbm.toml` file already exists.
 3. Enable **KBM Controller**, select its controller slot, configure bindings,
-   then choose **Save**.
+   then choose **Save settings**.
 
 When KBM Controller is selected for the first time, the backend creates
 `kbm.toml` in Xenia's storage root. This file intentionally remains
@@ -42,16 +42,20 @@ separate from `xenia-canary.config.toml`. It does not import or migrate a
 previous `winkey.toml`; save the desired bindings again in the KBM Controller
 Settings dialog.
 
-New configurations and **Reset all** use the current KBM defaults, including
-the 0.8 aim curve. Existing `kbm.toml` files keep their saved values; set the
-desired value in the dialog and choose **Save** to update them.
+New configurations use `schema_version = 2` and the current KBM defaults,
+including the 0.8 aim curve. Earlier `kbm.toml` files are intentionally not
+loaded or migrated: the settings page warns about them and leaves the file
+untouched until you choose **Restore defaults** and then **Save settings**.
 
 ## Keyboard bindings
 
 The settings window keeps its save controls visible while the content scrolls.
-Use **Save and close** to return to gameplay, or **Save** to keep editing.
-Unsaved edits are discarded on close. The diagnostics show the last gameplay
-sample, not live input while the settings window pauses the controller.
+Edits apply immediately for testing, but only **Save settings** writes them to
+`kbm.toml`. Use **Save settings and close** to return to gameplay, or
+close the window to restore the settings that were active when the page opened.
+The status line distinguishes applied-but-unsaved changes, saved changes, and
+a save failure that left the file unchanged. **Restore defaults** applies the
+current KBM v2 defaults for testing; save explicitly if you want to keep them.
 
 Press Escape to cancel binding capture. Use the **Esc** button next to a binding
 to assign Escape itself. Multiple alternative keys for a stick direction count
@@ -95,8 +99,10 @@ virtual controller with Raw Input mouse-to-right-stick support; use
 
 Raw Input deltas are sampled as counts per second, optionally smoothed with a
 time-based velocity filter, multiplied by **Sensitivity**, shaped by **Aim
-curve**, and converted to the right-stick range. The game still applies its own
-controller sensitivity, turn-speed, and deadzone behavior.
+curve** once over their combined X/Y speed, and converted to the right-stick
+range. This radial mapping preserves mouse direction and limits mouse output
+to a circle. The game still applies its own controller sensitivity, turn-speed,
+and deadzone behavior.
 
 - **Sensitivity** is a multiplier. The UI reset value, **10x**, is an editable
   initial reference for a 3600 DPI mouse, not a universal recommendation.
@@ -117,11 +123,8 @@ controller sensitivity, turn-speed, and deadzone behavior.
   motion (observed at the next controller query), or earlier once the filtered
   speed is below 2% and motion has been quiet for 12 ms. These are experimental
   tuning values, not a measurement of the game's deadzone.
-- **Preserve mouse direction** is an experimental, default-off radial mapper
-  in Advanced tuning. It applies the response curve to total speed instead of
-  independently to X and Y. Mouse output is limited to a circle; keyboard stick
-  bindings still combine with it using per-axis saturation. First compare this
-  option with the same sensitivity and curve, then separately try a 1.0 curve.
+- Raw Mouse always uses radial mapping. Keyboard stick bindings still combine
+  with mouse output using per-axis saturation.
 
 The velocity filter uses the actual elapsed controller-query time, including
 intervals below 1 ms. It does not detect or synchronize with a game's tick.
@@ -139,8 +142,9 @@ open the settings again to see the saved report path. The CSV is stored beside
 
 Each report includes the Raw Input delta, filtered velocity, mouse right-stick
 output, game input polling interval, capture state, and a summary of reset,
-stale, or dropped samples. The report is written only when capture finishes,
-so recording does not add per-sample disk I/O.
+stale, or dropped samples. New reports identify the fixed `mapper=radial` in
+their metadata. The report is written only when capture finishes, so recording
+does not add per-sample disk I/O.
 
 Schema 2 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
 accepted Raw Input events, reset markers, and the initial filter/bucket state.

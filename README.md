@@ -30,8 +30,10 @@ reports, and upstream contribution guidance belong to the
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
 - Raw Input mouse-to-right-stick translation with configurable sensitivity,
-  response curve, time-based smoothing, full-stick threshold, capture, and
-  optional minimum-output compensation.
+  radial response curve, time-based smoothing, full-stick threshold, capture,
+  and optional minimum-output compensation.
+- Versioned `kbm.toml` storage that intentionally rejects obsolete KBM
+  settings rather than silently mixing old mapping behavior with new input.
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 
