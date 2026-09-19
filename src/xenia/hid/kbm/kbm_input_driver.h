@@ -138,6 +138,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void NotifyCaptureState(bool active);
 
   struct InputSample {
+    uint64_t event_sequence = 0;
     std::chrono::steady_clock::time_point time;
     double elapsed_seconds = 0.0;
     int64_t raw_delta_x = 0;
@@ -153,9 +154,29 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
     bool stale_sample = false;
   };
 
+  struct RawInputSample {
+    uint64_t sequence = 0;
+    bool reset_pending = false;
+    std::chrono::steady_clock::time_point time;
+    int64_t delta_x = 0;
+    int64_t delta_y = 0;
+    // 0: accepted motion, 1: reset, 2: recorder initial state.
+    uint32_t kind = 0;
+    double velocity_x = 0.0;
+    double velocity_y = 0.0;
+    double previous_poll_offset_seconds = 0.0;
+    bool capture_active = false;
+    bool suspended = false;
+  };
+
+  // Called under the motion lock so event order matches bucket consumption.
+  void RecordRawInputSample(const RawInputSample& sample);
+
   void RecordInputSample(const InputSample& sample);
   bool FinishInputSampling();
   bool WriteInputSamplingReport(const std::vector<InputSample>& samples,
+                                const std::vector<RawInputSample>& events,
+                                size_t dropped_event_count,
                                 const KbmSettings& settings,
                                 std::chrono::steady_clock::time_point started,
                                 size_t dropped_sample_count,
@@ -170,6 +191,12 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   std::vector<KeyBinding> key_bindings_;
   std::deque<X_INPUT_KEYSTROKE> controller_keystrokes_;
   KbmSettings settings_;
+  // Couples motion arrival, bucket consumption and reset. Never acquire the
+  // settings lock while holding this lock.
+  xe::global_critical_region raw_mouse_motion_critical_region_;
+  uint64_t raw_mouse_event_sequence_ = 0;
+  bool raw_mouse_has_motion_ = false;
+  std::chrono::steady_clock::time_point raw_mouse_last_motion_time_;
   std::atomic<int64_t> raw_mouse_delta_x_{0};
   std::atomic<int64_t> raw_mouse_delta_y_{0};
   std::atomic<bool> raw_mouse_sample_reset_requested_{true};
@@ -198,6 +225,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   std::chrono::steady_clock::time_point input_sampling_deadline_;
   KbmSettings input_sampling_settings_;
   std::vector<InputSample> input_samples_;
+  std::vector<RawInputSample> input_events_;
+  size_t input_events_dropped_count_ = 0;
   size_t input_sampling_dropped_sample_count_ = 0;
   std::string input_sampling_report_path_;
 };

@@ -34,6 +34,7 @@ DECLARE_int32(kbm_user_index);
 #undef XE_HID_KBM_BINDING
 
 DECLARE_bool(raw_mouse);
+DECLARE_bool(raw_mouse_radial);
 DECLARE_double(raw_mouse_sensitivity);
 DECLARE_double(raw_mouse_full_scale_velocity);
 DECLARE_double(raw_mouse_response_curve);
@@ -405,6 +406,7 @@ KbmSettings GetSettingsFromCvars() {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   settings.raw_mouse = cvars::raw_mouse;
+  settings.raw_mouse_radial = cvars::raw_mouse_radial;
   settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
   settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
   settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
@@ -427,6 +429,7 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   cvars::raw_mouse = settings.raw_mouse;
+  cvars::raw_mouse_radial = settings.raw_mouse_radial;
   cvars::raw_mouse_sensitivity =
       std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0);
   cvars::raw_mouse_full_scale_velocity =

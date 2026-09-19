@@ -40,6 +40,7 @@ struct KbmSettings {
 #undef XE_HID_KBM_BINDING
 
   bool raw_mouse = true;
+  bool raw_mouse_radial = false;
   double raw_mouse_sensitivity = 10.0;
   double raw_mouse_full_scale_velocity = 24000.0;
   double raw_mouse_response_curve = 0.8;
