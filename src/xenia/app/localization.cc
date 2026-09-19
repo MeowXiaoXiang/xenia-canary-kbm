@@ -253,7 +253,8 @@ constexpr std::array<Translation, static_cast<size_t>(StringId::kCount)>
          "變更已套用，但儲存失敗；kbm.toml 並未變更。"},
         {"This kbm.toml uses an incompatible schema and was not loaded. Use "
          "Restore defaults, then Save settings to replace it.",
-         "此 kbm.toml 使用不相容的版本，尚未載入。請先還原預設值，再儲存設定以取代它。"},
+         "此 kbm.toml "
+         "使用不相容的版本，尚未載入。請先還原預設值，再儲存設定以取代它。"},
         {"Unbound", "未綁定"},
         {"Bind Escape", "綁定 Esc"},
         {"Cancel capture", "取消擷取"},

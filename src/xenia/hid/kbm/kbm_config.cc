@@ -237,13 +237,13 @@ void LoadConfig() {
     return;
   }
 
-  const auto schema_version =
-      parsed.at_path("schema_version").value<int64_t>();
+  const auto schema_version = parsed.at_path("schema_version").value<int64_t>();
   if (!IsKbmConfigSchemaVersionSupported(schema_version)) {
     config_state = KbmConfigState::kIncompatible;
-    XELOGW("kbm: ignored incompatible config '{}' (expected schema_version = "
-           "{}).",
-           config_path, kKbmConfigSchemaVersion);
+    XELOGW(
+        "kbm: ignored incompatible config '{}' (expected schema_version = "
+        "{}).",
+        config_path, kKbmConfigSchemaVersion);
     return;
   }
 
@@ -359,7 +359,8 @@ bool SaveConfig() {
   std::string output =
       "# KBM Controller keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n"
-      "schema_version = " + std::to_string(kKbmConfigSchemaVersion) + "\n";
+      "schema_version = " +
+      std::to_string(kKbmConfigSchemaVersion) + "\n";
   std::string category;
   for (const auto* config_var : vars) {
     if (category != config_var->category()) {

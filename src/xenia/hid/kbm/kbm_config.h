@@ -28,8 +28,7 @@ enum class KbmConfigState {
   kIncompatible,
 };
 
-inline bool IsKbmConfigSchemaVersionSupported(
-    std::optional<int64_t> version) {
+inline bool IsKbmConfigSchemaVersionSupported(std::optional<int64_t> version) {
   return version && *version == kKbmConfigSchemaVersion;
 }
 

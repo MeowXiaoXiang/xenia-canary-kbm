@@ -102,10 +102,8 @@ TEST_CASE("Radial minimum response preserves direction", "[kbm]") {
 TEST_CASE("KBM configuration accepts only the current schema", "[kbm]") {
   REQUIRE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion));
   REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(std::nullopt));
-  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(
-      kKbmConfigSchemaVersion - 1));
-  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(
-      kKbmConfigSchemaVersion + 1));
+  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion - 1));
+  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion + 1));
 }
 
 TEST_CASE("Event estimator snapshots do not consume state", "[kbm]") {

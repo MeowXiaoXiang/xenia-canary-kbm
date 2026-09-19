@@ -910,9 +910,9 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
              std::chrono::duration<double>(sample_time -
                                            raw_mouse_last_motion_time_)
                  .count(),
-              std::hypot(filtered_velocity_x, filtered_velocity_y),
-              settings.raw_mouse_full_scale_velocity /
-                  std::max(settings.raw_mouse_sensitivity, 0.01)))) {
+             std::hypot(filtered_velocity_x, filtered_velocity_y),
+             settings.raw_mouse_full_scale_velocity /
+                 std::max(settings.raw_mouse_sensitivity, 0.01)))) {
       mouse_thumb_x = 0;
       mouse_thumb_y = 0;
     }
