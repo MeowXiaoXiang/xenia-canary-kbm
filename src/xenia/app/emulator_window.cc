@@ -633,6 +633,7 @@ EmulatorWindow::KbmConfigDialog::KbmConfigDialog(
     : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
   settings_ = hid::kbm::GetSettingsFromCvars();
   original_settings_ = settings_;
+  saved_ = hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kCompatible;
 }
 
 EmulatorWindow::KbmConfigDialog::~KbmConfigDialog() {
@@ -735,6 +736,12 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
 
   if (!GetDriver()) {
     ImGui::TextWrapped("%s", tr(StringId::kKbmBackendInactive));
+    ImGui::Spacing();
+  }
+  if (hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kIncompatible) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+    ImGui::TextWrapped("%s", tr(StringId::kKbmConfigIncompatible));
+    ImGui::PopStyleColor();
     ImGui::Spacing();
   }
 
@@ -1022,7 +1029,9 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             driver->CancelInputSampling();
           }
         } else {
-          const bool save_and_start = dirty_;
+          const bool save_and_start =
+              dirty_ || hid::kbm::GetConfigState() ==
+                            hid::kbm::KbmConfigState::kIncompatible;
           if (ImGui::Button(tr(save_and_start
                                    ? StringId::kKbmSaveAndStartInputSampling
                                    : StringId::kKbmStartInputSampling))) {
@@ -1077,14 +1086,18 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   }
 
   ImGui::Separator();
-  if (dirty_) {
-    ImGui::TextUnformatted(tr(StringId::kKbmDirty));
+  if (save_failed_) {
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
+                       tr(StringId::kKbmAppliedSaveFailed));
+  } else if (dirty_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmAppliedUnsaved));
   } else if (saved_) {
-    ImGui::TextUnformatted(tr(StringId::kKbmSaved));
+    ImGui::TextUnformatted(tr(StringId::kKbmAppliedSaved));
   }
-  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
+  const bool save = ImGui::Button(tr(StringId::kKbmSave));
   ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmSave)) || save_and_close) {
+  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
+  if (save || save_and_close) {
     CancelBindingCapture();
     ApplyDraft();
     if (hid::kbm::SaveConfig()) {
@@ -1104,26 +1117,12 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     }
   }
   ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmCancel))) {
-    CancelBindingCapture();
-    RestoreOriginal();
-    Close();
-    ImGui::End();
-    emulator_window_.ToggleKbmConfigDialog();
-    return;
-  }
-  ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmResetAll))) {
+  if (ImGui::Button(tr(StringId::kKbmRestoreDefaults))) {
     CancelBindingCapture();
     settings_ = hid::kbm::KbmSettings();
     ApplyDraft();
   }
-  ImGui::SameLine();
   ImGui::TextDisabled("%s", tr(StringId::kKbmSettingsFile));
-  if (save_failed_) {
-    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
-                       tr(StringId::kKbmSaveFailed));
-  }
 
   ImGui::End();
   if (!dialog_open) {
