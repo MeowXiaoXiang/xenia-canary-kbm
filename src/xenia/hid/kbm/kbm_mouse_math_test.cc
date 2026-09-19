@@ -8,6 +8,7 @@
  */
 
 #include "xenia/hid/kbm/kbm_mouse_math.h"
+#include "xenia/hid/kbm/kbm_config.h"
 
 #include <deque>
 
@@ -88,6 +89,23 @@ TEST_CASE("Radial response preserves direction and bounds strength", "[kbm]") {
   }
   REQUIRE(MapMouseRadial({}, 3000.0, 0.8).x == 0.0);
   REQUIRE(MapMouseRadial({1500.0, 0.0}, 3000.0, 1.0).x == Approx(0.5));
+}
+
+TEST_CASE("Radial minimum response preserves direction", "[kbm]") {
+  const auto mapped = MapMouseRadial({3.0, 4.0}, 1000.0, 1.0, 0.30);
+  REQUIRE(mapped.y / mapped.x == Approx(4.0 / 3.0));
+  REQUIRE(std::hypot(mapped.x, mapped.y) >= 0.30);
+  REQUIRE(std::hypot(mapped.x, mapped.y) <= 1.0);
+  REQUIRE(MapMouseRadial({}, 1000.0, 1.0, 0.30).x == 0.0);
+}
+
+TEST_CASE("KBM configuration accepts only the current schema", "[kbm]") {
+  REQUIRE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion));
+  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(std::nullopt));
+  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(
+      kKbmConfigSchemaVersion - 1));
+  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(
+      kKbmConfigSchemaVersion + 1));
 }
 
 TEST_CASE("Event estimator snapshots do not consume state", "[kbm]") {

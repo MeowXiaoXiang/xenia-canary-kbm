@@ -10,13 +10,28 @@
 #ifndef XENIA_HID_KBM_KBM_CONFIG_H_
 #define XENIA_HID_KBM_KBM_CONFIG_H_
 
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
 #include "xenia/base/cvar.h"
 
 namespace xe::hid::kbm {
+
+inline constexpr int64_t kKbmConfigSchemaVersion = 2;
+
+enum class KbmConfigState {
+  kMissing,
+  kCompatible,
+  kIncompatible,
+};
+
+inline bool IsKbmConfigSchemaVersionSupported(
+    std::optional<int64_t> version) {
+  return version && *version == kKbmConfigSchemaVersion;
+}
 
 struct KbmChord {
   uint16_t virtual_key = 0;
@@ -40,7 +55,6 @@ struct KbmSettings {
 #undef XE_HID_KBM_BINDING
 
   bool raw_mouse = true;
-  bool raw_mouse_radial = false;
   double raw_mouse_sensitivity = 10.0;
   double raw_mouse_full_scale_velocity = 24000.0;
   double raw_mouse_response_curve = 0.8;
@@ -54,6 +68,7 @@ struct KbmSettings {
 
 void SetupConfig(const std::filesystem::path& storage_root);
 bool ConfigExists();
+KbmConfigState GetConfigState();
 const std::filesystem::path& ConfigPath();
 bool SaveConfig();
 

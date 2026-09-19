@@ -34,7 +34,6 @@ DECLARE_int32(kbm_user_index);
 #undef XE_HID_KBM_BINDING
 
 DECLARE_bool(raw_mouse);
-DECLARE_bool(raw_mouse_radial);
 DECLARE_double(raw_mouse_sensitivity);
 DECLARE_double(raw_mouse_full_scale_velocity);
 DECLARE_double(raw_mouse_response_curve);
@@ -222,6 +221,7 @@ std::string FormatChord(const KbmChord& chord, bool display) {
 }
 
 std::filesystem::path config_path;
+KbmConfigState config_state = KbmConfigState::kMissing;
 
 bool IsKbmConfigVar(const cvar::IConfigVar& config_var) {
   return config_var.category() == "HID.KBM";
@@ -232,7 +232,18 @@ void LoadConfig() {
   try {
     parsed = toml::parse_file(xe::path_to_utf8(config_path));
   } catch (const toml::parse_error& e) {
+    config_state = KbmConfigState::kIncompatible;
     XELOGE("kbm: failed to parse '{}': {}", config_path, e.what());
+    return;
+  }
+
+  const auto schema_version =
+      parsed.at_path("schema_version").value<int64_t>();
+  if (!IsKbmConfigSchemaVersionSupported(schema_version)) {
+    config_state = KbmConfigState::kIncompatible;
+    XELOGW("kbm: ignored incompatible config '{}' (expected schema_version = "
+           "{}).",
+           config_path, kKbmConfigSchemaVersion);
     return;
   }
 
@@ -249,6 +260,7 @@ void LoadConfig() {
       config_var->LoadConfigValue(node.node());
     }
   }
+  config_state = KbmConfigState::kCompatible;
   XELOGI("kbm: loaded config '{}'.", config_path);
 }
 
@@ -303,6 +315,7 @@ std::string FormatKbmBinding(std::string_view binding) {
 
 void SetupConfig(const std::filesystem::path& storage_root) {
   config_path = storage_root / "kbm.toml";
+  config_state = KbmConfigState::kMissing;
   if (std::filesystem::exists(config_path)) {
     LoadConfig();
   } else if (cvars::hid == "kbm") {
@@ -313,6 +326,8 @@ void SetupConfig(const std::filesystem::path& storage_root) {
 bool ConfigExists() {
   return !config_path.empty() && std::filesystem::exists(config_path);
 }
+
+KbmConfigState GetConfigState() { return config_state; }
 
 const std::filesystem::path& ConfigPath() { return config_path; }
 
@@ -343,7 +358,8 @@ bool SaveConfig() {
 
   std::string output =
       "# KBM Controller keyboard and Raw Input mouse settings.\n"
-      "# This file is intentionally separate from xenia-canary.config.toml.\n";
+      "# This file is intentionally separate from xenia-canary.config.toml.\n"
+      "schema_version = " + std::to_string(kKbmConfigSchemaVersion) + "\n";
   std::string category;
   for (const auto* config_var : vars) {
     if (category != config_var->category()) {
@@ -368,6 +384,7 @@ bool SaveConfig() {
     XELOGE("kbm: failed to write '{}'.", config_path);
     return false;
   }
+  config_state = KbmConfigState::kCompatible;
   XELOGI("kbm: saved config '{}'.", config_path);
   return true;
 }
@@ -406,7 +423,6 @@ KbmSettings GetSettingsFromCvars() {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   settings.raw_mouse = cvars::raw_mouse;
-  settings.raw_mouse_radial = cvars::raw_mouse_radial;
   settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
   settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
   settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
@@ -429,7 +445,6 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   cvars::raw_mouse = settings.raw_mouse;
-  cvars::raw_mouse_radial = settings.raw_mouse_radial;
   cvars::raw_mouse_sensitivity =
       std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0);
   cvars::raw_mouse_full_scale_velocity =

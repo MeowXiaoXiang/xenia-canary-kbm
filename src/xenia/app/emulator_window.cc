@@ -931,10 +931,6 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
 
     if (ImGui::TreeNodeEx(tr(StringId::kKbmFineTuning),
                           ImGuiTreeNodeFlags_Framed)) {
-      if (ImGui::Checkbox(tr(StringId::kKbmRadialMapping),
-                          &settings_.raw_mouse_radial)) {
-        changed = true;
-      }
       ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
       float curve = float(settings_.raw_mouse_response_curve);
       ImGui::SetNextItemWidth(

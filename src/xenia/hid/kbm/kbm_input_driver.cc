@@ -49,10 +49,6 @@ DEFINE_transient_bool(
 DEFINE_transient_double(raw_mouse_sensitivity, 10.0,
                         "Raw mouse sensitivity multiplier.", "HID.KBM");
 
-DEFINE_transient_bool(raw_mouse_radial, false,
-                      "Experimental direction-preserving radial mouse mapping.",
-                      "HID.KBM");
-
 DEFINE_transient_double(
     raw_mouse_full_scale_velocity, 24000.0,
     "Raw Input counts per second that produce full right-stick deflection "
@@ -149,7 +145,6 @@ static bool ModifiersMatch(bool required_shift, bool required_ctrl,
 static bool AreSettingsEqual(const KbmSettings& lhs, const KbmSettings& rhs) {
   if (lhs.enabled != rhs.enabled || lhs.user_index != rhs.user_index ||
       lhs.raw_mouse != rhs.raw_mouse ||
-      lhs.raw_mouse_radial != rhs.raw_mouse_radial ||
       lhs.raw_mouse_sensitivity != rhs.raw_mouse_sensitivity ||
       lhs.raw_mouse_full_scale_velocity != rhs.raw_mouse_full_scale_velocity ||
       lhs.raw_mouse_response_curve != rhs.raw_mouse_response_curve ||
@@ -169,38 +164,6 @@ static bool AreSettingsEqual(const KbmSettings& lhs, const KbmSettings& rhs) {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   return true;
-}
-
-static int16_t MouseVelocityToThumb(double velocity,
-                                    const KbmSettings& settings) {
-  if (velocity == 0.0) {
-    return 0;
-  }
-
-  const double full_scale_velocity =
-      std::max(settings.raw_mouse_full_scale_velocity, 1.0);
-  const double sensitivity = std::max(settings.raw_mouse_sensitivity, 0.0);
-  double normalized = velocity * sensitivity / full_scale_velocity;
-  normalized = std::clamp(normalized, -1.0, 1.0);
-
-  const double response_curve =
-      std::max(settings.raw_mouse_response_curve, 0.01);
-  normalized =
-      std::copysign(std::pow(std::abs(normalized), response_curve), normalized);
-
-  if (settings.raw_mouse_deadzone_compensation) {
-    const double minimum_response =
-        std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5);
-    normalized = std::copysign(
-        minimum_response + (1.0 - minimum_response) * std::abs(normalized),
-        normalized);
-  }
-
-  const long scaled =
-      std::lround(normalized * std::numeric_limits<int16_t>::max());
-  return static_cast<int16_t>(
-      std::clamp(scaled, long(std::numeric_limits<int16_t>::min()),
-                 long(std::numeric_limits<int16_t>::max())));
 }
 
 static int16_t AddThumbWithSaturation(int16_t left, int16_t right) {
@@ -612,12 +575,12 @@ bool KbmInputDriver::WriteInputSamplingReport(
   output += fmt::format(
       "# sensitivity={}, full_scale_velocity={}, "
       "response_curve={}, smoothing_time_ms={}, "
-      "deadzone_compensation={}, minimum_response={}, invert_y={}, radial={}\n",
+      "deadzone_compensation={}, minimum_response={}, invert_y={}, "
+      "mapper=radial\n",
       settings.raw_mouse_sensitivity, settings.raw_mouse_full_scale_velocity,
       settings.raw_mouse_response_curve, settings.raw_mouse_smoothing_time_ms,
       settings.raw_mouse_deadzone_compensation,
-      settings.raw_mouse_minimum_response, settings.raw_mouse_invert_y,
-      settings.raw_mouse_radial);
+      settings.raw_mouse_minimum_response, settings.raw_mouse_invert_y);
   output += fmt::format(
       "# schema=2, estimator=poll_ema_actual_time, "
       "timestamp=host_processing_steady_clock, events={}, dropped_events={}\n",
@@ -929,29 +892,27 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
     raw_mouse_filtered_velocity_x_ = filtered_velocity_x;
     raw_mouse_filtered_velocity_y_ = filtered_velocity_y;
 
-    int16_t mouse_thumb_x = MouseVelocityToThumb(filtered_velocity_x, settings);
-    int16_t mouse_thumb_y = MouseVelocityToThumb(filtered_velocity_y, settings);
-    if (settings.raw_mouse_radial) {
-      const auto mapped =
-          MapMouseRadial({filtered_velocity_x, filtered_velocity_y},
-                         settings.raw_mouse_full_scale_velocity /
-                             settings.raw_mouse_sensitivity,
-                         settings.raw_mouse_response_curve,
-                         settings.raw_mouse_deadzone_compensation
-                             ? settings.raw_mouse_minimum_response
-                             : 0.0);
-      mouse_thumb_x = static_cast<int16_t>(std::lround(mapped.x * 32767.0));
-      mouse_thumb_y = static_cast<int16_t>(std::lround(mapped.y * 32767.0));
-    }
+    const auto mapped =
+        MapMouseRadial({filtered_velocity_x, filtered_velocity_y},
+                       settings.raw_mouse_full_scale_velocity /
+                           std::max(settings.raw_mouse_sensitivity, 0.01),
+                       settings.raw_mouse_response_curve,
+                       settings.raw_mouse_deadzone_compensation
+                           ? settings.raw_mouse_minimum_response
+                           : 0.0);
+    int16_t mouse_thumb_x =
+        static_cast<int16_t>(std::lround(mapped.x * 32767.0));
+    int16_t mouse_thumb_y =
+        static_cast<int16_t>(std::lround(mapped.y * 32767.0));
     if (settings.raw_mouse_deadzone_compensation &&
         (!raw_mouse_has_motion_ ||
          !MouseCompensationActive(
              std::chrono::duration<double>(sample_time -
                                            raw_mouse_last_motion_time_)
                  .count(),
-             std::hypot(filtered_velocity_x, filtered_velocity_y),
-             settings.raw_mouse_full_scale_velocity /
-                 settings.raw_mouse_sensitivity))) {
+              std::hypot(filtered_velocity_x, filtered_velocity_y),
+              settings.raw_mouse_full_scale_velocity /
+                  std::max(settings.raw_mouse_sensitivity, 0.01)))) {
       mouse_thumb_x = 0;
       mouse_thumb_y = 0;
     }

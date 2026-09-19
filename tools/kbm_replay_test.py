@@ -2,7 +2,7 @@
 
 import unittest
 
-from kbm_replay import check_event_buckets
+from kbm_replay import check_event_buckets, uses_radial_mapper
 
 
 class EventBucketTests(unittest.TestCase):
@@ -23,6 +23,15 @@ class EventBucketTests(unittest.TestCase):
         self.assertEqual(result["checked_polls"], 3)
         rows[2]["raw_delta_x"] = "4"
         self.assertEqual(check_event_buckets(rows, events)["bucket_mismatches"], 1)
+
+    def test_new_reports_always_use_the_radial_mapper(self):
+        self.assertTrue(uses_radial_mapper({"mapper": "radial"}))
+        with self.assertRaises(ValueError):
+            uses_radial_mapper({"mapper": "axis"})
+
+    def test_legacy_reports_keep_their_recorded_mapper(self):
+        self.assertTrue(uses_radial_mapper({"radial": "true"}))
+        self.assertFalse(uses_radial_mapper({"radial": "false"}))
 
     def test_missing_event_is_not_success(self):
         events = [dict(kind="2", sequence="5", delta_x="0", delta_y="0")]

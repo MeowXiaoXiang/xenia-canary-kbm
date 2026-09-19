@@ -53,6 +53,16 @@ def axis_output(value, threshold, curve, minimum):
     return math.copysign(minimum + (1 - minimum) * magnitude, value)
 
 
+def uses_radial_mapper(metadata):
+    """Select the fixed v2 mapper while retaining old report analysis."""
+    mapper = metadata.get("mapper")
+    if mapper is not None:
+        if mapper != "radial":
+            raise ValueError(f"unsupported KBM mapper: {mapper}")
+        return True
+    return metadata.get("radial", "false") == "true"
+
+
 def check_event_buckets(rows, events):
     """Check recorded arrival order against poll buckets, including resets.
 
@@ -101,7 +111,7 @@ def analyze(path):
     tau = float(metadata["smoothing_time_ms"]) / 1000
     minimum = float(metadata["minimum_response"]) if metadata["deadzone_compensation"] == "true" else 0.0
     invert = metadata.get("invert_y", "false") == "true"
-    radial = metadata.get("radial", "false") == "true"
+    radial = uses_radial_mapper(metadata)
     def mapped(state):
         if not radial:
             return [axis_output(v, threshold, curve, minimum) for v in state]
