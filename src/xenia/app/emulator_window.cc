@@ -739,6 +739,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   }
 
   bool changed = HandleBindingCaptureResult();
+  bool close_after_start_sampling = false;
   ImGui::TextWrapped("%s", tr(StringId::kKbmInputPaused));
   ImGui::Text("%s %s", tr(StringId::kKbmCaptureToggle),
               hid::kbm::FormatKbmBinding(settings_.raw_mouse_capture_toggle_key)
@@ -930,6 +931,10 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
 
     if (ImGui::TreeNodeEx(tr(StringId::kKbmFineTuning),
                           ImGuiTreeNodeFlags_Framed)) {
+      if (ImGui::Checkbox(tr(StringId::kKbmRadialMapping),
+                          &settings_.raw_mouse_radial)) {
+        changed = true;
+      }
       ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
       float curve = float(settings_.raw_mouse_response_curve);
       ImGui::SetNextItemWidth(
@@ -1021,8 +1026,28 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             driver->CancelInputSampling();
           }
         } else {
-          if (ImGui::Button(tr(StringId::kKbmStartInputSampling))) {
-            driver->StartInputSampling();
+          const bool save_and_start = dirty_;
+          if (ImGui::Button(tr(save_and_start
+                                   ? StringId::kKbmSaveAndStartInputSampling
+                                   : StringId::kKbmStartInputSampling))) {
+            if (save_and_start) {
+              CancelBindingCapture();
+              ApplyDraft();
+              if (hid::kbm::SaveConfig()) {
+                original_settings_ = settings_;
+                committed_or_restored_ = true;
+                save_failed_ = false;
+                dirty_ = false;
+                saved_ = true;
+              } else {
+                save_failed_ = true;
+              }
+            }
+            if (!save_failed_) {
+              driver->StartInputSampling();
+              committed_or_restored_ = true;
+              close_after_start_sampling = true;
+            }
           }
           ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingHelp));
           if (!sampling.report_path.empty()) {
@@ -1046,6 +1071,13 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
   ImGui::EndChild();
   if (changed) {
     ApplyDraft();
+  }
+
+  if (close_after_start_sampling) {
+    Close();
+    ImGui::End();
+    emulator_window_.ToggleKbmConfigDialog();
+    return;
   }
 
   ImGui::Separator();

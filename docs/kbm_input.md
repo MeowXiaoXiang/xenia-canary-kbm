@@ -101,7 +101,8 @@ controller sensitivity, turn-speed, and deadzone behavior.
 - **Sensitivity** is a multiplier. The UI reset value, **10x**, is an editable
   initial reference for a 3600 DPI mouse, not a universal recommendation.
 - **Base full-stick speed** is the counts-per-second threshold at which the
-  emulated stick reaches full deflection. The default is **24000 counts/s**.
+  emulated stick reaches full deflection at **1x sensitivity**. The default is
+  **24000 counts/s**; at 10x the effective threshold is **2400 counts/s**.
   Lowering it reaches the game's maximum turn speed sooner; raising it leaves
   more room for fine movement.
 - **Aim curve** defaults to **0.8** to boost fine aim and recoil control.
@@ -111,7 +112,19 @@ controller sensitivity, turn-speed, and deadzone behavior.
   **0 ms** for direct translation; 4–12 ms is the usual useful range.
 - **Minimum stick output** is optional. Enable it only if the game's analog
   deadzone swallows small Raw Input output; it intentionally changes the
-  near-center feel.
+  near-center feel. A motion gate prevents a small filter tail from sustaining
+  minimum output indefinitely: it ends after at most 50 ms without nonzero
+  motion (observed at the next controller query), or earlier once the filtered
+  speed is below 2% and motion has been quiet for 12 ms. These are experimental
+  tuning values, not a measurement of the game's deadzone.
+- **Preserve mouse direction** is an experimental, default-off radial mapper
+  in Advanced tuning. It applies the response curve to total speed instead of
+  independently to X and Y. Mouse output is limited to a circle; keyboard stick
+  bindings still combine with it using per-axis saturation. First compare this
+  option with the same sensitivity and curve, then separately try a 1.0 curve.
+
+The velocity filter uses the actual elapsed controller-query time, including
+intervals below 1 ms. It does not detect or synchronize with a game's tick.
 
 Start from the defaults, adjust the game's own controller sensitivity, and
 then make small changes to the KBM Controller controls. DPI alone cannot predict the
@@ -124,14 +137,27 @@ capture, close the settings window so guest input resumes, play normally, and
 open the settings again to see the saved report path. The CSV is stored beside
 `kbm.toml` as `kbm-input-report-<timestamp>.csv`.
 
-Each report includes the Raw Input delta, filtered velocity, final right-stick
+Each report includes the Raw Input delta, filtered velocity, mouse right-stick
 output, game input polling interval, capture state, and a summary of reset,
 stale, or dropped samples. The report is written only when capture finishes,
 so recording does not add per-sample disk I/O.
 
-The first four lines are `#` metadata comments containing the sample summary
-and the settings used for that capture. The CSV column header follows them, so
-spreadsheet imports may need to skip those four lines.
+Schema 2 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
+accepted Raw Input events, reset markers, and the initial filter/bucket state.
+The timestamps describe host processing, not hardware sampling. Event sequence
+numbers associate poll buckets with the event trace. The poll report is published
+last and marks a completed pair; a sidecar alone is not a complete report.
+Changing KBM settings finishes the current capture so its metadata stays valid.
+
+Skip all leading `#` metadata comments when importing, rather than a fixed
+number of lines. Schema 2 intervals are actual elapsed times; older reports used
+a 1 ms floor. Dropped counters describe recorder capacity, not OS packet loss.
+The event buffer supports up to 600,000 entries and the poll buffer 120,000;
+reports expose truncation counts. Keep both files when sharing a new capture.
+
+For read-only poll replay, run `python tools/kbm_replay.py <report.csv>`.
+Its output compares timing calculations, not measured camera response. Legacy
+reports cannot reconstruct individual hardware or Raw Input events.
 
 ## Mouse capture
 
