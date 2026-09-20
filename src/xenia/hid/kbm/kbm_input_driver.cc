@@ -20,7 +20,6 @@
 #include "xenia/base/platform_win.h"
 #include "xenia/hid/hid_flags.h"
 #include "xenia/hid/input_system.h"
-#include "xenia/hid/kbm/kbm_mouse_math.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window.h"
 #include "xenia/ui/window_win.h"
@@ -98,7 +97,6 @@ namespace xe {
 namespace hid {
 namespace kbm {
 
-constexpr double kRawMouseMaximumSampleIntervalSeconds = 0.1;
 constexpr auto kInputSamplingDuration = std::chrono::seconds(60);
 constexpr size_t kInputSamplingCapacity = 120000;
 constexpr size_t kInputEventSamplingCapacity = 600000;
@@ -106,6 +104,16 @@ constexpr size_t kInputEventSamplingCapacity = 600000;
 bool static IsKbmForUserEnabled(const KbmSettings& settings,
                                 uint32_t user_index) {
   return settings.enabled && settings.user_index == user_index;
+}
+
+KbmMouseSettings GetMouseSettings(const KbmSettings& settings) {
+  return {settings.raw_mouse_sensitivity,
+          settings.raw_mouse_full_scale_velocity,
+          settings.raw_mouse_response_curve,
+          settings.raw_mouse_smoothing_time_ms,
+          settings.raw_mouse_deadzone_compensation,
+          settings.raw_mouse_minimum_response,
+          settings.raw_mouse_invert_y};
 }
 
 bool __inline IsKeyToggled(uint8_t key) {
@@ -223,7 +231,6 @@ void KbmInputDriver::RebuildKeyBindings(const KbmSettings& settings) {
 KbmInputDriver::KbmInputDriver(xe::ui::Window* window, size_t window_z_order)
     : KeyboardInputDriver(window, window_z_order, this),
       window_listener_(*this),
-      raw_mouse_last_sample_time_(std::chrono::steady_clock::now()),
       raw_mouse_last_center_time_(std::chrono::steady_clock::now()) {
   settings_ = GetSettingsFromCvars();
   RebuildKeyBindings(settings_);
@@ -307,8 +314,6 @@ void KbmInputDriver::UnregisterRawMouse() {
   raw_mouse_counts_per_second_y_ = 0.0;
   raw_mouse_thumb_x_ = 0;
   raw_mouse_thumb_y_ = 0;
-  raw_mouse_filtered_velocity_x_ = 0.0;
-  raw_mouse_filtered_velocity_y_ = 0.0;
   XELOGI("kbm: Raw Input mouse unregistered.");
 }
 
@@ -400,14 +405,17 @@ void KbmInputDriver::StartInputSampling() {
   RawInputSample initial;
   initial.time = now;
   initial.kind = 2;
-  initial.sequence = raw_mouse_event_sequence_;
-  initial.reset_pending = raw_mouse_sample_reset_requested_;
-  initial.delta_x = raw_mouse_delta_x_;
-  initial.delta_y = raw_mouse_delta_y_;
-  initial.velocity_x = raw_mouse_filtered_velocity_x_;
-  initial.velocity_y = raw_mouse_filtered_velocity_y_;
+  initial.sequence = raw_mouse_processor_.event_sequence();
+  initial.reset_pending = raw_mouse_processor_.reset_pending();
+  initial.delta_x = raw_mouse_processor_.pending_delta_x();
+  initial.delta_y = raw_mouse_processor_.pending_delta_y();
+  const auto filtered_velocity = raw_mouse_processor_.filtered_velocity();
+  initial.velocity_x = filtered_velocity.x;
+  initial.velocity_y = filtered_velocity.y;
   initial.previous_poll_offset_seconds =
-      std::chrono::duration<double>(raw_mouse_last_sample_time_ - now).count();
+      std::chrono::duration<double>(raw_mouse_processor_.last_sample_time() -
+                                    now)
+          .count();
   initial.capture_active = raw_mouse_capture_active_;
   initial.suspended = host_input_suspended_;
   input_events_.push_back(initial);
@@ -538,98 +546,26 @@ bool KbmInputDriver::WriteInputSamplingReport(
   *report_path = ConfigPath().parent_path() /
                  fmt::format("kbm-input-report-{}.csv", timestamp);
 
-  size_t active_samples = 0;
-  size_t moved_samples = 0;
-  size_t zero_output_samples = 0;
-  size_t reset_samples = 0;
-  size_t stale_samples = 0;
-  double total_interval_seconds = 0.0;
-  double longest_interval_seconds = 0.0;
-  for (const auto& sample : samples) {
-    active_samples += sample.input_active;
-    const bool moved = sample.raw_delta_x || sample.raw_delta_y;
-    moved_samples += moved;
-    zero_output_samples +=
-        moved && !sample.thumb_x && !sample.thumb_y && sample.input_active;
-    reset_samples += sample.reset_sample;
-    stale_samples += sample.stale_sample;
-    total_interval_seconds += sample.elapsed_seconds;
-    longest_interval_seconds =
-        std::max(longest_interval_seconds, sample.elapsed_seconds);
-  }
-
-  std::string output;
-  output.reserve(1024 + samples.size() * 110);
-  output += "# KBM Controller Raw Input sampling report\n";
-  output += fmt::format(
-      "# samples={}, dropped_samples={}, active_samples={}, "
-      "moved_samples={}, moved_with_zero_output={}, "
-      "reset_samples={}, stale_samples={}\n",
-      samples.size(), dropped_sample_count, active_samples, moved_samples,
-      zero_output_samples, reset_samples, stale_samples);
-  output += fmt::format(
-      "# average_interval_ms={:.3f}, "
-      "longest_interval_ms={:.3f}\n",
-      samples.empty() ? 0.0 : total_interval_seconds * 1000.0 / samples.size(),
-      longest_interval_seconds * 1000.0);
-  output += fmt::format(
-      "# sensitivity={}, full_scale_velocity={}, "
-      "response_curve={}, smoothing_time_ms={}, "
-      "deadzone_compensation={}, minimum_response={}, invert_y={}, "
-      "mapper=radial\n",
-      settings.raw_mouse_sensitivity, settings.raw_mouse_full_scale_velocity,
-      settings.raw_mouse_response_curve, settings.raw_mouse_smoothing_time_ms,
-      settings.raw_mouse_deadzone_compensation,
-      settings.raw_mouse_minimum_response, settings.raw_mouse_invert_y);
-  output += fmt::format(
-      "# schema=2, estimator=poll_ema_actual_time, "
-      "timestamp=host_processing_steady_clock, events={}, dropped_events={}\n",
-      events.size(), dropped_event_count);
-  output +=
-      "elapsed_ms,interval_ms,input_active,capture_active,input_suspended,"
-      "raw_delta_x,raw_delta_y,filtered_velocity_x,filtered_velocity_y,"
-      "thumb_x,thumb_y,reset_sample,stale_sample,event_sequence,output_"
-      "radius\n";
-  for (const auto& sample : samples) {
-    output += fmt::format(
-        "{:.6f},{:.6f},{},{},{},{},{},{:.9f},{:.9f},{},{},{},{},{},{:.9f}\n",
-        std::chrono::duration<double, std::milli>(sample.time - started)
-            .count(),
-        sample.elapsed_seconds * 1000.0, sample.input_active,
-        sample.capture_active, sample.input_suspended, sample.raw_delta_x,
-        sample.raw_delta_y, sample.filtered_velocity_x,
-        sample.filtered_velocity_y, sample.thumb_x, sample.thumb_y,
-        sample.reset_sample, sample.stale_sample, sample.event_sequence,
-        std::hypot(double(sample.thumb_x), double(sample.thumb_y)) / 32767.0);
-  }
+  const KbmInputReportContents report = SerializeKbmInputReport(
+      samples, events, dropped_sample_count, dropped_event_count,
+      {settings.raw_mouse_sensitivity, settings.raw_mouse_full_scale_velocity,
+       settings.raw_mouse_response_curve, settings.raw_mouse_smoothing_time_ms,
+       settings.raw_mouse_deadzone_compensation,
+       settings.raw_mouse_minimum_response, settings.raw_mouse_invert_y},
+      started);
 
   xe::filesystem::CreateParentFolder(*report_path);
   auto events_path = *report_path;
   events_path.replace_extension(".events.csv");
   auto events_temporary_path = events_path;
   events_temporary_path += ".tmp";
-  std::string event_output =
-      "# schema=2, timestamp=host_processing_steady_clock; "
-      "kind: 0=motion,1=reset,2=initial_state\n"
-      "event_elapsed_us,sequence,kind,delta_x,delta_y,velocity_x,velocity_y,"
-      "previous_poll_offset_ms,capture_active,input_suspended,reset_pending\n";
-  event_output.reserve(256 + events.size() * 100);
-  for (const auto& event : events) {
-    event_output += fmt::format(
-        "{:.3f},{},{},{},{},{:.9f},{:.9f},{:.6f},{},{},{}\n",
-        std::chrono::duration<double, std::micro>(event.time - started).count(),
-        event.sequence, event.kind, event.delta_x, event.delta_y,
-        event.velocity_x, event.velocity_y,
-        event.previous_poll_offset_seconds * 1000.0, event.capture_active,
-        event.suspended, event.reset_pending);
-  }
   FILE* event_file = xe::filesystem::OpenFile(events_temporary_path, "wb");
   if (!event_file) {
     return false;
   }
   const bool events_written =
-      fwrite(event_output.data(), 1, event_output.size(), event_file) ==
-      event_output.size();
+      fwrite(report.events_csv.data(), 1, report.events_csv.size(),
+             event_file) == report.events_csv.size();
   const bool events_closed = fclose(event_file) == 0;
   if (!events_written || !events_closed) {
     return false;
@@ -642,8 +578,8 @@ bool KbmInputDriver::WriteInputSamplingReport(
            *report_path);
     return false;
   }
-  const bool written =
-      fwrite(output.data(), 1, output.size(), file) == output.size();
+  const bool written = fwrite(report.poll_csv.data(), 1, report.poll_csv.size(),
+                              file) == report.poll_csv.size();
   const bool closed = fclose(file) == 0;
   // Publish the poll report last; it is the completion marker for the pair.
   if (!written || !closed ||
@@ -851,91 +787,38 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
   input_sample.input_suspended = host_input_suspended_;
   if (settings.raw_mouse && raw_mouse_registered_) {
     auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
-    input_sample.time = std::chrono::steady_clock::now();
-    input_sample.event_sequence = raw_mouse_event_sequence_;
-    const auto sample_time = input_sample.time;
-    double elapsed_seconds =
-        std::chrono::duration<double>(sample_time - raw_mouse_last_sample_time_)
-            .count();
-    const bool advance_sample = elapsed_seconds > 0.0;
-    if (advance_sample) {
-      raw_mouse_last_sample_time_ = sample_time;
-    }
-
-    int64_t delta_x = advance_sample ? raw_mouse_delta_x_.exchange(0) : 0;
-    int64_t delta_y = advance_sample ? raw_mouse_delta_y_.exchange(0) : 0;
-    input_sample.raw_delta_x = delta_x;
-    input_sample.raw_delta_y = delta_y;
-    const bool reset_sample =
-        advance_sample ? raw_mouse_sample_reset_requested_.exchange(false)
-                       : raw_mouse_sample_reset_requested_.load();
     const bool raw_mouse_input_active = window()->HasFocus() &&
                                         raw_mouse_capture_active_ &&
                                         !host_input_suspended_;
-    const bool stale_sample =
-        elapsed_seconds > kRawMouseMaximumSampleIntervalSeconds;
-    if (!raw_mouse_input_active || reset_sample || stale_sample) {
-      delta_x = 0;
-      delta_y = 0;
-    }
-    double filtered_velocity_x = 0.0;
-    double filtered_velocity_y = 0.0;
-    if (raw_mouse_input_active && !reset_sample && !stale_sample) {
-      filtered_velocity_x = FilterMouseDisplacement(
-          double(delta_x), elapsed_seconds,
-          settings.raw_mouse_smoothing_time_ms, raw_mouse_filtered_velocity_x_);
-      filtered_velocity_y = FilterMouseDisplacement(
-          double(settings.raw_mouse_invert_y ? delta_y : -delta_y),
-          elapsed_seconds, settings.raw_mouse_smoothing_time_ms,
-          raw_mouse_filtered_velocity_y_);
-    }
-    raw_mouse_filtered_velocity_x_ = filtered_velocity_x;
-    raw_mouse_filtered_velocity_y_ = filtered_velocity_y;
-
-    const auto mapped =
-        MapMouseRadial({filtered_velocity_x, filtered_velocity_y},
-                       settings.raw_mouse_full_scale_velocity /
-                           std::max(settings.raw_mouse_sensitivity, 0.01),
-                       settings.raw_mouse_response_curve,
-                       settings.raw_mouse_deadzone_compensation
-                           ? settings.raw_mouse_minimum_response
-                           : 0.0);
-    int16_t mouse_thumb_x =
-        static_cast<int16_t>(std::lround(mapped.x * 32767.0));
-    int16_t mouse_thumb_y =
-        static_cast<int16_t>(std::lround(mapped.y * 32767.0));
-    if (settings.raw_mouse_deadzone_compensation &&
-        (!raw_mouse_has_motion_ ||
-         !MouseCompensationActive(
-             std::chrono::duration<double>(sample_time -
-                                           raw_mouse_last_motion_time_)
-                 .count(),
-             std::hypot(filtered_velocity_x, filtered_velocity_y),
-             settings.raw_mouse_full_scale_velocity /
-                 std::max(settings.raw_mouse_sensitivity, 0.01)))) {
-      mouse_thumb_x = 0;
-      mouse_thumb_y = 0;
-    }
-    input_sample.elapsed_seconds = elapsed_seconds;
-    input_sample.input_active = raw_mouse_input_active;
-    input_sample.filtered_velocity_x = filtered_velocity_x;
-    input_sample.filtered_velocity_y = filtered_velocity_y;
-    input_sample.thumb_x = mouse_thumb_x;
-    input_sample.thumb_y = mouse_thumb_y;
-    input_sample.reset_sample = reset_sample;
-    input_sample.stale_sample = stale_sample;
+    const KbmMouseSample mouse_sample = raw_mouse_processor_.Consume(
+        GetMouseSettings(settings), raw_mouse_input_active,
+        std::chrono::steady_clock::now());
+    input_sample.time = mouse_sample.time;
+    input_sample.event_sequence = mouse_sample.event_sequence;
+    input_sample.elapsed_seconds = mouse_sample.elapsed_seconds;
+    input_sample.raw_delta_x = mouse_sample.raw_delta_x;
+    input_sample.raw_delta_y = mouse_sample.raw_delta_y;
+    input_sample.filtered_velocity_x = mouse_sample.filtered_velocity_x;
+    input_sample.filtered_velocity_y = mouse_sample.filtered_velocity_y;
+    input_sample.thumb_x = mouse_sample.thumb_x;
+    input_sample.thumb_y = mouse_sample.thumb_y;
+    input_sample.input_active = mouse_sample.input_active;
+    input_sample.reset_sample = mouse_sample.reset_sample;
+    input_sample.stale_sample = mouse_sample.stale_sample;
     if (raw_mouse_input_active) {
       // Keep the last active sample available while a host dialog suspends
       // guest input, so the settings page can be used for calibration.
-      if (advance_sample) {
-        raw_mouse_counts_per_second_x_ = double(delta_x) / elapsed_seconds;
-        raw_mouse_counts_per_second_y_ = double(delta_y) / elapsed_seconds;
+      if (mouse_sample.elapsed_seconds > 0.0) {
+        raw_mouse_counts_per_second_x_ =
+            double(mouse_sample.raw_delta_x) / mouse_sample.elapsed_seconds;
+        raw_mouse_counts_per_second_y_ =
+            double(mouse_sample.raw_delta_y) / mouse_sample.elapsed_seconds;
       }
-      raw_mouse_thumb_x_ = mouse_thumb_x;
-      raw_mouse_thumb_y_ = mouse_thumb_y;
+      raw_mouse_thumb_x_ = mouse_sample.thumb_x;
+      raw_mouse_thumb_y_ = mouse_sample.thumb_y;
     }
-    thumb_rx = AddThumbWithSaturation(thumb_rx, mouse_thumb_x);
-    thumb_ry = AddThumbWithSaturation(thumb_ry, mouse_thumb_y);
+    thumb_rx = AddThumbWithSaturation(thumb_rx, mouse_sample.thumb_x);
+    thumb_ry = AddThumbWithSaturation(thumb_ry, mouse_sample.thumb_y);
   }
   RecordInputSample(input_sample);
 
@@ -1169,15 +1052,10 @@ void KbmInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
     if (!raw_mouse_capture_active_ || host_input_suspended_) {
       return;
     }
-    raw_mouse_delta_x_.fetch_add(e.delta_x(), std::memory_order_relaxed);
-    raw_mouse_delta_y_.fetch_add(e.delta_y(), std::memory_order_relaxed);
     RawInputSample sample;
-    sample.sequence = ++raw_mouse_event_sequence_;
     sample.time = std::chrono::steady_clock::now();
-    if (e.delta_x() || e.delta_y()) {
-      raw_mouse_has_motion_ = true;
-      raw_mouse_last_motion_time_ = sample.time;
-    }
+    raw_mouse_processor_.AddDelta(e.delta_x(), e.delta_y(), sample.time);
+    sample.sequence = raw_mouse_processor_.event_sequence();
     sample.delta_x = e.delta_x();
     sample.delta_y = e.delta_y();
     sample.capture_active = raw_mouse_capture_active_;
@@ -1263,16 +1141,11 @@ void KbmInputDriver::ReleaseRawMouseCapture() {
 
 void KbmInputDriver::DiscardPendingRawMouseMotion() {
   auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
-  raw_mouse_delta_x_ = 0;
-  raw_mouse_delta_y_ = 0;
-  raw_mouse_filtered_velocity_x_ = 0.0;
-  raw_mouse_filtered_velocity_y_ = 0.0;
-  raw_mouse_sample_reset_requested_ = true;
-  raw_mouse_has_motion_ = false;
   RawInputSample sample;
   sample.time = std::chrono::steady_clock::now();
+  raw_mouse_processor_.Reset(sample.time);
   sample.kind = 1;
-  sample.sequence = ++raw_mouse_event_sequence_;
+  sample.sequence = raw_mouse_processor_.event_sequence();
   sample.reset_pending = true;
   sample.capture_active = raw_mouse_capture_active_;
   sample.suspended = host_input_suspended_;

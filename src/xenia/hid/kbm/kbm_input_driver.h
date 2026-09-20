@@ -18,6 +18,8 @@
 
 #include "xenia/base/mutex.h"
 #include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/kbm/kbm_input_report.h"
+#include "xenia/hid/kbm/kbm_mouse_processor.h"
 #include "xenia/hid/keyboard/keyboard_input_driver.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window_listener.h"
@@ -137,37 +139,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void DiscardPendingRawMouseMotion();
   void NotifyCaptureState(bool active);
 
-  struct InputSample {
-    uint64_t event_sequence = 0;
-    std::chrono::steady_clock::time_point time;
-    double elapsed_seconds = 0.0;
-    int64_t raw_delta_x = 0;
-    int64_t raw_delta_y = 0;
-    double filtered_velocity_x = 0.0;
-    double filtered_velocity_y = 0.0;
-    int16_t thumb_x = 0;
-    int16_t thumb_y = 0;
-    bool input_active = false;
-    bool capture_active = false;
-    bool input_suspended = false;
-    bool reset_sample = false;
-    bool stale_sample = false;
-  };
-
-  struct RawInputSample {
-    uint64_t sequence = 0;
-    bool reset_pending = false;
-    std::chrono::steady_clock::time_point time;
-    int64_t delta_x = 0;
-    int64_t delta_y = 0;
-    // 0: accepted motion, 1: reset, 2: recorder initial state.
-    uint32_t kind = 0;
-    double velocity_x = 0.0;
-    double velocity_y = 0.0;
-    double previous_poll_offset_seconds = 0.0;
-    bool capture_active = false;
-    bool suspended = false;
-  };
+  using InputSample = KbmInputSample;
+  using RawInputSample = KbmRawInputSample;
 
   // Called under the motion lock so event order matches bucket consumption.
   void RecordRawInputSample(const RawInputSample& sample);
@@ -194,13 +167,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   // Couples motion arrival, bucket consumption and reset. Never acquire the
   // settings lock while holding this lock.
   xe::global_critical_region raw_mouse_motion_critical_region_;
-  uint64_t raw_mouse_event_sequence_ = 0;
-  bool raw_mouse_has_motion_ = false;
-  std::chrono::steady_clock::time_point raw_mouse_last_motion_time_;
-  std::atomic<int64_t> raw_mouse_delta_x_{0};
-  std::atomic<int64_t> raw_mouse_delta_y_{0};
-  std::atomic<bool> raw_mouse_sample_reset_requested_{true};
-  std::chrono::steady_clock::time_point raw_mouse_last_sample_time_;
+  KbmMouseProcessor raw_mouse_processor_;
   std::chrono::steady_clock::time_point raw_mouse_last_center_time_;
   KbmChord raw_mouse_capture_toggle_;
   ui::Window::CursorVisibility raw_mouse_previous_cursor_visibility_ =
@@ -215,8 +182,6 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   std::atomic<double> raw_mouse_counts_per_second_y_{0.0};
   std::atomic<int16_t> raw_mouse_thumb_x_{0};
   std::atomic<int16_t> raw_mouse_thumb_y_{0};
-  std::atomic<double> raw_mouse_filtered_velocity_x_{0.0};
-  std::atomic<double> raw_mouse_filtered_velocity_y_{0.0};
 
   mutable xe::global_critical_region input_sampling_critical_region_;
   bool input_sampling_active_ = false;

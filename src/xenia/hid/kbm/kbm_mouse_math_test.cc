@@ -9,6 +9,8 @@
 
 #include "xenia/hid/kbm/kbm_mouse_math.h"
 #include "xenia/hid/kbm/kbm_binding.h"
+#include "xenia/hid/kbm/kbm_input_report.h"
+#include "xenia/hid/kbm/kbm_mouse_processor.h"
 
 #include <deque>
 
@@ -177,6 +179,48 @@ TEST_CASE("Mouse filter preserves constant velocity and tiny intervals",
             Approx(-250.0));
   }
   REQUIRE(FilterMouseDisplacement(1.0, 1e-12, 8.0, 0.0) == Approx(125.0));
+}
+
+TEST_CASE("Raw mouse processor resets stale motion before mapping", "[kbm]") {
+  KbmMouseProcessor processor;
+  KbmMouseSettings settings;
+  settings.smoothing_time_ms = 0.0;
+  const auto start = std::chrono::steady_clock::now();
+  processor.Reset(start);
+  const auto reset =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(1));
+  REQUIRE(reset.reset_sample);
+  processor.AddDelta(240, -120, start + std::chrono::milliseconds(2));
+  const auto sample =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(12));
+  REQUIRE(sample.raw_delta_x == 240);
+  REQUIRE(sample.raw_delta_y == -120);
+  REQUIRE(sample.thumb_x > 0);
+  REQUIRE(sample.thumb_y > 0);
+
+  const auto stale =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(120));
+  REQUIRE(stale.stale_sample);
+  REQUIRE(stale.thumb_x == 0);
+  REQUIRE(stale.thumb_y == 0);
+}
+
+TEST_CASE("Input reports retain the radial schema two contract", "[kbm]") {
+  const auto started = std::chrono::steady_clock::now();
+  KbmInputSample sample;
+  sample.time = started + std::chrono::milliseconds(8);
+  sample.elapsed_seconds = 0.008;
+  sample.raw_delta_x = 10;
+  sample.thumb_x = 1234;
+  KbmRawInputSample event;
+  event.time = started;
+  event.kind = 2;
+  const auto report =
+      SerializeKbmInputReport({sample}, {event}, 0, 0, {}, started);
+  REQUIRE(report.poll_csv.find("mapper=radial") != std::string::npos);
+  REQUIRE(report.poll_csv.find("# schema=2") != std::string::npos);
+  REQUIRE(report.events_csv.find("kind: 0=motion,1=reset,2=initial_state") !=
+          std::string::npos);
 }
 
 }  // namespace xe::hid::kbm

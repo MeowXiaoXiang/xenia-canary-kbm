@@ -1,4 +1,5 @@
-add_library(xenia-hid-kbm-core STATIC kbm_binding.cc)
+add_library(xenia-hid-kbm-core STATIC kbm_binding.cc kbm_input_report.cc
+                                        kbm_mouse_processor.cc)
 target_link_libraries(xenia-hid-kbm-core PUBLIC xenia-base)
 xe_target_defaults(xenia-hid-kbm-core)
 
