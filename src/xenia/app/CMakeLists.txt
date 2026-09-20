@@ -123,4 +123,15 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   )
 endif()
 
+if(XENIA_BUILD_TESTS)
+  add_executable(xenia-app-localization-tests localization.cc
+                 localization_test.cc)
+  target_include_directories(xenia-app-localization-tests PRIVATE
+    ${PROJECT_SOURCE_DIR})
+  target_link_libraries(xenia-app-localization-tests PRIVATE xenia-base)
+  xe_target_defaults(xenia-app-localization-tests)
+  add_test(NAME xenia-app-localization-tests
+           COMMAND xenia-app-localization-tests)
+endif()
+
 xe_target_defaults(xenia-app)

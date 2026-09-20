@@ -1486,23 +1486,20 @@ void EmulatorWindow::BuildMainMenu() {
       MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuUi));
   auto language_menu = MenuItem::Create(MenuItem::Type::kPopup,
                                         tr(StringId::kMenuInterfaceLanguage));
-  const bool traditional_chinese = localization::IsTraditionalChinese();
-  language_menu->AddChild(MenuItem::Create(
-      MenuItem::Type::kString,
-      tr(traditional_chinese ? StringId::kLanguageEnglish
-                             : StringId::kLanguageEnglishActive),
-      [this]() {
-        localization::SetLanguage(localization::Language::kEnglish);
-        BuildMainMenu();
-      }));
-  language_menu->AddChild(MenuItem::Create(
-      MenuItem::Type::kString,
-      tr(traditional_chinese ? StringId::kLanguageTraditionalChineseActive
-                             : StringId::kLanguageTraditionalChinese),
-      [this]() {
-        localization::SetLanguage(localization::Language::kTraditionalChinese);
-        BuildMainMenu();
-      }));
+  const localization::Language current_language = localization::GetLanguage();
+  for (const auto& language : localization::GetAvailableLanguages()) {
+    const std::string label =
+        fmt::format("{}{}", language.native_name,
+                    language.language == current_language
+                        ? tr(StringId::kLanguageActiveSuffix)
+                        : "");
+    language_menu->AddChild(
+        MenuItem::Create(MenuItem::Type::kString, label,
+                         [this, language_id = language.language]() {
+                           localization::SetLanguage(language_id);
+                           BuildMainMenu();
+                         }));
+  }
   ui_menu->AddChild(std::move(language_menu));
   main_menu->AddChild(std::move(ui_menu));
 
