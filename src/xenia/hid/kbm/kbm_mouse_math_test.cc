@@ -8,7 +8,7 @@
  */
 
 #include "xenia/hid/kbm/kbm_mouse_math.h"
-#include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/kbm/kbm_binding.h"
 
 #include <deque>
 
@@ -99,11 +99,27 @@ TEST_CASE("Radial minimum response preserves direction", "[kbm]") {
   REQUIRE(MapMouseRadial({}, 1000.0, 1.0, 0.30).x == 0.0);
 }
 
-TEST_CASE("KBM configuration accepts only the current schema", "[kbm]") {
-  REQUIRE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion));
-  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(std::nullopt));
-  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion - 1));
-  REQUIRE_FALSE(IsKbmConfigSchemaVersionSupported(kKbmConfigSchemaVersion + 1));
+TEST_CASE("Logical KBM input codes use stable v3 tokens", "[kbm]") {
+  KbmInputCode code;
+  REQUIRE(ParseKbmInputCode("Key.W", code));
+  REQUIRE(FormatKbmInputCode(code) == "Key.W");
+  REQUIRE(FormatKbmInputCode(code, true) == "W");
+  REQUIRE(ParseKbmInputCode("Mouse.X1", code));
+  REQUIRE(FormatKbmInputCode(code) == "Mouse.X1");
+  REQUIRE_FALSE(ParseKbmInputCode("W", code));
+  REQUIRE_FALSE(ParseKbmInputCode("0x57", code));
+}
+
+TEST_CASE("Logical KBM chords preserve modifiers and display names", "[kbm]") {
+  KbmChord chord;
+  REQUIRE(ParseKbmChord("Ctrl+Shift+Key.F8", chord));
+  REQUIRE(chord.ctrl);
+  REQUIRE(chord.shift);
+  REQUIRE(FormatKbmChord(chord) == "Ctrl+Shift+Key.F8");
+  REQUIRE(FormatKbmChord(chord, true) == "Ctrl+Shift+F8");
+  REQUIRE(ParseKbmChord("Key.LeftShift", chord));
+  REQUIRE(IsModifierInputCode(chord.input));
+  REQUIRE_FALSE(ParseKbmChord("Ctrl+F8", chord));
 }
 
 TEST_CASE("Event estimator snapshots do not consume state", "[kbm]") {
