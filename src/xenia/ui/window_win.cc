@@ -918,7 +918,8 @@ bool Win32Window::HandleKeyboard(
   KeyEvent e(
       this, VirtualKey(wParam), lParam & 0xFFFF, !!(lParam & (LPARAM(1) << 30)),
       !!(GetKeyState(VK_SHIFT) & 0x8000), !!(GetKeyState(VK_CONTROL) & 0x8000),
-      !!(GetKeyState(VK_MENU) & 0x8000), !!(GetKeyState(VK_CAPITAL) & 0x1));
+      !!(GetKeyState(VK_MENU) & 0x8000), !!(GetKeyState(VK_CAPITAL) & 0x1),
+      uint8_t((lParam >> 16) & 0xFF), !!(lParam & (LPARAM(1) << 24)));
   switch (message) {
     case WM_KEYDOWN:
       OnKeyDown(e, destruction_receiver);

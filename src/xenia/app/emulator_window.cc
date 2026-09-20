@@ -787,7 +787,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::SameLine();
     if (ImGui::SmallButton("Esc")) {
       CancelBindingCapture();
-      binding = "Esc";
+      binding = "Key.Escape";
       changed = true;
     }
     if (ImGui::IsItemHovered()) {

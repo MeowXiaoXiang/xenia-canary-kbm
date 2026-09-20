@@ -9,7 +9,9 @@
 
 #include "xenia/hid/kbm/kbm_mouse_math.h"
 #include "xenia/hid/kbm/kbm_binding.h"
+#include "xenia/hid/kbm/kbm_controller_state.h"
 #include "xenia/hid/kbm/kbm_input_report.h"
+#include "xenia/hid/kbm/kbm_input_state.h"
 #include "xenia/hid/kbm/kbm_mouse_processor.h"
 
 #include <deque>
@@ -108,6 +110,10 @@ TEST_CASE("Logical KBM input codes use stable v3 tokens", "[kbm]") {
   REQUIRE(FormatKbmInputCode(code, true) == "W");
   REQUIRE(ParseKbmInputCode("Mouse.X1", code));
   REQUIRE(FormatKbmInputCode(code) == "Mouse.X1");
+  REQUIRE(ParseKbmInputCode("Mouse.X2", code));
+  REQUIRE(FormatKbmInputCode(code, true) == "Mouse X2");
+  REQUIRE(ParseKbmInputCode("Key.Escape", code));
+  REQUIRE(FormatKbmInputCode(code) == "Key.Escape");
   REQUIRE_FALSE(ParseKbmInputCode("W", code));
   REQUIRE_FALSE(ParseKbmInputCode("0x57", code));
 }
@@ -221,6 +227,42 @@ TEST_CASE("Input reports retain the radial schema two contract", "[kbm]") {
   REQUIRE(report.poll_csv.find("# schema=2") != std::string::npos);
   REQUIRE(report.events_csv.find("kind: 0=motion,1=reset,2=initial_state") !=
           std::string::npos);
+}
+
+TEST_CASE("Logical input state clears modifiers on focus reset", "[kbm]") {
+  KbmInputState state;
+  state.SetPressed(KbmInputCode::kMouseX1, true);
+  state.SetPressed(KbmInputCode::kMouseX2, true);
+  state.SetPressed(KbmInputCode::kLeftShift, true);
+  state.SetPressed(KbmInputCode::kRightCtrl, true);
+  state.SetCapsLock(true);
+  REQUIRE(state.modifiers().shift);
+  REQUIRE(state.modifiers().ctrl);
+  REQUIRE(state.modifiers().caps_lock);
+  REQUIRE(state.IsPressed(KbmInputCode::kShift));
+  state.ResetMouseButtons();
+  REQUIRE_FALSE(state.IsPressed(KbmInputCode::kMouseX1));
+  REQUIRE_FALSE(state.IsPressed(KbmInputCode::kMouseX2));
+  REQUIRE(state.IsPressed(KbmInputCode::kShift));
+  state.Reset();
+  REQUIRE_FALSE(state.modifiers().shift);
+  REQUIRE_FALSE(state.modifiers().ctrl);
+  REQUIRE_FALSE(state.modifiers().caps_lock);
+}
+
+TEST_CASE("Portable controller state composes KBM controls", "[kbm]") {
+  KbmControllerState state;
+  ApplyKbmControl(state, KbmControl::kA);
+  ApplyKbmControl(state, KbmControl::kDpadLeft);
+  ApplyKbmControl(state, KbmControl::kRTrigger);
+  ApplyKbmControl(state, KbmControl::kLThumbLeft);
+  ApplyKbmControl(state, KbmControl::kLThumbRight);
+  REQUIRE(state.buttons == uint16_t(0x1004));
+  REQUIRE(state.right_trigger == 0xFF);
+  REQUIRE(state.thumb_lx == -1);
+  AddKbmThumb(state.thumb_rx, 30000);
+  AddKbmThumb(state.thumb_rx, 30000);
+  REQUIRE(state.thumb_rx == 32767);
 }
 
 }  // namespace xe::hid::kbm

@@ -517,7 +517,7 @@ bool EmulatorApp::OnInitialize() {
 
   config::SetupConfig(storage_root);
 #if XE_PLATFORM_WIN32
-  xe::hid::kbm::SetupConfig(storage_root);
+  xe::hid::kbm::SetupConfig(storage_root, cvars::hid == "kbm");
 #endif  // XE_PLATFORM_WIN32
 
 #if XE_ARCH_AMD64 == 1

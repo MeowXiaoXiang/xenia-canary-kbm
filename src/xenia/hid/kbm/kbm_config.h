@@ -10,17 +10,16 @@
 #ifndef XENIA_HID_KBM_KBM_CONFIG_H_
 #define XENIA_HID_KBM_KBM_CONFIG_H_
 
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <string_view>
 
 #include "xenia/base/cvar.h"
+#include "xenia/hid/kbm/kbm_binding.h"
 
 namespace xe::hid::kbm {
 
-inline constexpr int64_t kKbmConfigSchemaVersion = 2;
+inline constexpr int64_t kKbmConfigSchemaVersion = 3;
 
 enum class KbmConfigState {
   kMissing,
@@ -31,18 +30,6 @@ enum class KbmConfigState {
 inline bool IsKbmConfigSchemaVersionSupported(std::optional<int64_t> version) {
   return version && *version == kKbmConfigSchemaVersion;
 }
-
-struct KbmChord {
-  uint16_t virtual_key = 0;
-  bool shift = false;
-  bool ctrl = false;
-  bool alt = false;
-  bool super = false;
-};
-
-bool ParseKbmChord(std::string_view text, KbmChord& chord);
-std::string FormatKbmChord(const KbmChord& chord);
-std::string FormatKbmBinding(std::string_view binding);
 
 struct KbmSettings {
   bool enabled = true;
@@ -61,11 +48,12 @@ struct KbmSettings {
   bool raw_mouse_deadzone_compensation = false;
   double raw_mouse_minimum_response = 0.30;
   bool raw_mouse_invert_y = false;
-  std::string raw_mouse_capture_toggle_key = "F8";
+  std::string raw_mouse_capture_toggle_key = "Key.F8";
   bool raw_mouse_capture_on_start = false;
 };
 
-void SetupConfig(const std::filesystem::path& storage_root);
+void SetupConfig(const std::filesystem::path& storage_root,
+                 bool create_if_kbm_selected);
 bool ConfigExists();
 KbmConfigState GetConfigState();
 const std::filesystem::path& ConfigPath();
