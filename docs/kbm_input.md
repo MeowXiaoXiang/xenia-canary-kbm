@@ -7,9 +7,9 @@ and mouse buttons to an emulated Xbox 360 controller, and translates Windows
 Raw Input mouse movement into the emulated right stick. It is deliberately a
 generic controller-input feature: it contains no game-specific memory hooks,
 patches, or per-title profiles.
-Windows is this fork's supported build and runtime target. Linux is used in
-continuous integration only for the upstream-compatible formatting check; it
-does not build or expose a KBM Controller backend.
+Windows is this fork's supported build and runtime target. Linux does not
+build or expose a KBM Controller backend, selector, or settings UI. It can
+build and test the portable KBM core in continuous integration.
 
 ## Build provenance and upstream updates
 
@@ -42,10 +42,13 @@ separate from `xenia-canary.config.toml`. It does not import or migrate a
 previous `winkey.toml`; save the desired bindings again in the KBM Controller
 Settings dialog.
 
-New configurations use `schema_version = 2` and the current KBM defaults,
-including the 0.8 aim curve. Earlier `kbm.toml` files are intentionally not
-loaded or migrated: the settings page warns about them and leaves the file
-untouched until you choose **Restore defaults** and then **Save settings**.
+New configurations use `schema_version = 3` and the current KBM defaults,
+including the 0.8 aim curve. The current format separates controller state,
+keyboard/mouse bindings, Raw Mouse behavior, and Raw Mouse tuning into
+`[HID.KBM.Controller]`, `[HID.KBM.Bindings]`, `[HID.KBM.RawMouse]`, and
+`[HID.KBM.RawMouse.Tuning]`. Incompatible files are intentionally not loaded
+or migrated: the settings page warns about them and leaves the file untouched
+until you choose **Restore defaults** and then **Save settings**.
 
 ## Keyboard bindings
 
@@ -55,12 +58,18 @@ Edits apply immediately for testing, but only **Save settings** writes them to
 close the window to restore the settings that were active when the page opened.
 The status line distinguishes applied-but-unsaved changes, saved changes, and
 a save failure that left the file unchanged. **Restore defaults** applies the
-current KBM v2 defaults for testing; save explicitly if you want to keep them.
+current KBM defaults for testing; save explicitly if you want to keep them.
 
 Press Escape to cancel binding capture. Use the **Esc** button next to a binding
 to assign Escape itself. Multiple alternative keys for a stick direction count
-as one direction even when held together. Bindings allow additional modifiers:
-`K` and `Ctrl+K` may both activate while Ctrl+K is held.
+as one direction even when held together. Bindings use stable logical tokens in
+the saved file, not Windows virtual-key numbers: for example `Key.W`, `Key.F8`,
+`Key.ArrowUp`, `Key.LeftShift`, `Mouse.Left`, and `Mouse.X1`. Chords use the
+canonical order `Ctrl+Alt+Shift+Super+Key.F8`; a modifier by itself uses its
+key token such as `Key.LeftShift`. The UI continues to display friendly names
+like `F8` and `Mouse Left`. `Key.K` and `Ctrl+Key.K` may both activate while
+Ctrl+K is held. The `_` and `^` case prefixes remain available. Legacy bare
+keys, `VK_*`, and `0xNN` tokens are rejected by the current format.
 
 Configuration saves write a temporary file before replacing `kbm.toml`, so a
 failed write does not truncate the previously saved configuration.
@@ -69,12 +78,16 @@ Controller state and keystrokes use the same evaluated bindings. Modifier
 chords work in either press order, and captured Raw Input mouse button
 transitions are retained even between polls. Settings loaded from disk and
 settings applied from the UI share range validation; non-finite sensitivity
-and curve values revert to defaults.
+and curve values revert to defaults. A configuration with a wrong KBM value
+type or invalid binding is rejected as a whole, so no partial settings are
+applied.
 
-KBM bindings are stored as `kbm_keybind_*` under `[HID.KBM]` in
-`kbm.toml`. The upstream `keybind_*` settings in the main configuration belong
-to the keyboard driver and do not control KBM. Earlier experimental KBM builds
-shared those names incorrectly; re-save your KBM bindings after updating.
+KBM bindings are stored under `[HID.KBM.Bindings]` in `kbm.toml`; their keys
+are concise names such as `a`, `left_trigger`, and `right_thumb_up` rather than
+the runtime `kbm_keybind_*` CVar names. The upstream `keybind_*` settings in
+the main configuration belong to the keyboard driver and do not control KBM.
+Earlier experimental KBM builds shared those names incorrectly; re-save your
+KBM bindings after updating.
 
 If input is inactive, check that the main configuration selects `hid = "kbm"`.
 An explicit `hid = "any"` selects general hardware backends and does not enable
@@ -199,3 +212,20 @@ On a Windows development environment, the normal verification commands are:
 
 The release executable is
 `build\bin\Windows\Release\xenia_canary.exe`.
+
+Linux does not produce a KBM runtime executable. To validate the portable KBM
+core and host UI localization catalog from WSL, configure a separate build
+directory with tests enabled:
+
+```bash
+cmake -S . -B build-linux-kbm -G Ninja -DXENIA_BUILD_TESTS=ON \
+  -DCMAKE_CXX_FLAGS=-mmovdir64b
+cmake --build build-linux-kbm \
+  --target xenia-hid-kbm-core-tests xenia-app-localization-tests
+ctest --test-dir build-linux-kbm -R "xenia-(hid-kbm-core-tests|app-localization-tests)" \
+  --output-on-failure
+```
+
+The extra `-mmovdir64b` flag works around an upstream GCC 15 configuration
+issue in Xenia's unrelated memory implementation; it is not a KBM runtime
+requirement.

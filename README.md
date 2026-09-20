@@ -11,9 +11,9 @@ This is a Windows-only experimental fork of
 Controller backend that maps keyboard and Windows Raw Input mouse movement to
 an emulated Xbox 360 controller.
 
-KBM Controller is built and available only on Windows. Continuous integration
-uses Linux only for the upstream-compatible formatting check; its only build
-output is a short-lived Windows artifact for validation.
+KBM Controller is built and available only on Windows. Linux continuous
+integration builds and tests its portable mapping, state, mouse, and reporting
+core only; it exposes no KBM HID backend, selector, or settings UI.
 
 On Windows, KBM Controller is the default HID backend. Use `--hid=any` to
 restore general hardware backend selection, or `--hid=keyboard` for explicit
@@ -25,20 +25,30 @@ reports, and upstream contribution guidance belong to the
 
 ## What this fork changes
 
-- Separate `kbm.toml` storage for keyboard bindings and Raw Input mouse
-  settings.
+- Separate `kbm.toml` storage, grouped into controller, bindings, Raw Mouse,
+  and Raw Mouse tuning sections.
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
 - Raw Input mouse-to-right-stick translation with configurable sensitivity,
   radial response curve, time-based smoothing, full-stick threshold, capture,
   and optional minimum-output compensation.
-- Versioned `kbm.toml` storage that intentionally rejects obsolete KBM
-  settings rather than silently mixing old mapping behavior with new input.
+- Versioned `kbm.toml` storage using logical input tokens such as `Key.W` and
+  `Mouse.Left`, intentionally rejecting incompatible KBM settings rather than
+  silently mixing old mapping behavior with new input.
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 
 See [KBM Controller Input](docs/kbm_input.md) for setup, tuning, capture behavior,
 and known limits.
+
+### Adding a host UI translation
+
+Host UI translations are compile-time catalogs under
+`src/xenia/app/localization/`. To add a language, register its canonical
+BCP-47 code and native name, copy the complete English catalog, and keep every
+`StringId` and format placeholder aligned. Languages using scripts not already
+covered by the host font setup must also provide the corresponding Windows font
+and glyph support.
 
 ## Building
 
