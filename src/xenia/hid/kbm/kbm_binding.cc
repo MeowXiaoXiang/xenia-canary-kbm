@@ -162,10 +162,10 @@ bool ParseKbmInputCode(std::string_view text, KbmInputCode& code) {
       return true;
     }
   }
-  if (text.size() == 12 && StartsWith(text, "Key.Numpad") &&
-      std::isdigit(static_cast<unsigned char>(text[11]))) {
+  if (text.size() == 11 && StartsWith(text, "Key.Numpad") &&
+      std::isdigit(static_cast<unsigned char>(text[10]))) {
     code = static_cast<KbmInputCode>(
-        static_cast<uint16_t>(KbmInputCode::kNumpad0) + text[11] - '0');
+        static_cast<uint16_t>(KbmInputCode::kNumpad0) + text[10] - '0');
     return true;
   }
   return false;

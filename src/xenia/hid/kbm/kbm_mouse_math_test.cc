@@ -114,8 +114,13 @@ TEST_CASE("Logical KBM input codes use stable v3 tokens", "[kbm]") {
   REQUIRE(FormatKbmInputCode(code, true) == "Mouse X2");
   REQUIRE(ParseKbmInputCode("Key.Escape", code));
   REQUIRE(FormatKbmInputCode(code) == "Key.Escape");
+  REQUIRE(ParseKbmInputCode("Key.Numpad0", code));
+  REQUIRE(FormatKbmInputCode(code) == "Key.Numpad0");
+  REQUIRE(ParseKbmInputCode("Key.Numpad9", code));
+  REQUIRE(FormatKbmInputCode(code) == "Key.Numpad9");
   REQUIRE_FALSE(ParseKbmInputCode("W", code));
   REQUIRE_FALSE(ParseKbmInputCode("0x57", code));
+  REQUIRE_FALSE(ParseKbmInputCode("Key.Numpad00", code));
 }
 
 TEST_CASE("Logical KBM chords preserve modifiers and display names", "[kbm]") {
