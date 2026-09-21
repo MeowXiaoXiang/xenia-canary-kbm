@@ -125,6 +125,7 @@ void KbmPlatformInput::ApplyCapture() {
   window_.CaptureMouse();
   window_.SetCursorVisibility(ui::Window::CursorVisibility::kHidden);
   if (!UpdateClipRectangle()) {
+    ClipCursor(nullptr);
     window_.SetCursorVisibility(previous_cursor_visibility_);
     window_.ReleaseMouse();
     RegisterRawMouse(false);
@@ -182,12 +183,19 @@ void KbmPlatformInput::RefreshCapture() {
     if (GetCapture() != hwnd) {
       XELOGW("kbm: failed to restore Win32 mouse capture, error {}.",
              GetLastError());
+      ReleaseCapture();
       return;
     }
     repaired_native_capture = true;
   }
 
-  RegisterRawMouse(true);
+  if (!RegisterRawMouse(true)) {
+    XELOGW(
+        "kbm: failed to restore exclusive Raw Input registration; releasing "
+        "mouse capture.");
+    ReleaseCapture();
+    return;
+  }
   window_.SetCursorVisibility(ui::Window::CursorVisibility::kHidden);
   if (!UpdateClipRectangle()) {
     return;
