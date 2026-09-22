@@ -18,9 +18,13 @@
 
 #include "xenia/base/mutex.h"
 #include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/kbm/kbm_controller_state.h"
+#include "xenia/hid/kbm/kbm_input_report.h"
+#include "xenia/hid/kbm/kbm_input_state.h"
+#include "xenia/hid/kbm/kbm_mouse_processor.h"
+#include "xenia/hid/kbm/kbm_platform_input.h"
 #include "xenia/hid/keyboard/keyboard_input_driver.h"
 #include "xenia/ui/virtual_key.h"
-#include "xenia/ui/window_listener.h"
 
 namespace xe {
 namespace hid {
@@ -86,8 +90,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
 
  protected:
   struct KeyBinding {
-    ui::VirtualKey input_key = ui::VirtualKey::kNone;
-    ui::VirtualKey output_key = ui::VirtualKey::kNone;
+    KbmInputCode input_code = KbmInputCode::kNone;
+    KbmControl output_control = KbmControl::kA;
     bool uppercase = false;
     bool lowercase = false;
     bool shift = false;
@@ -97,26 +101,14 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
     bool pressed = false;
   };
 
-  class KbmWindowListener final : public ui::WindowListener {
-   public:
-    explicit KbmWindowListener(KbmInputDriver& driver) : driver_(driver) {}
-
-    void OnClosing(ui::UIEvent& e) override;
-    void OnResize(ui::UISetupEvent& e) override;
-    void OnGotFocus(ui::UISetupEvent& e) override;
-    void OnLostFocus(ui::UISetupEvent& e) override;
-
-   private:
-    KbmInputDriver& driver_;
-  };
-
   void ParseKeyBinding(std::vector<KeyBinding>& bindings,
-                       ui::VirtualKey virtual_key,
+                       KbmControl output_control,
                        const std::string_view description,
                        const std::string_view binding);
   void RebuildKeyBindings(const KbmSettings& settings);
-  void UpdateControllerKeystrokes(ui::KeyEvent* event = nullptr,
-                                  bool is_down = false);
+  void UpdateControllerKeystrokes(
+      KbmInputCode changed_code = KbmInputCode::kNone, bool is_down = false,
+      bool repeated = false);
 
   void OnKey(ui::KeyEvent& e, bool is_down) override;
   void OnMouseDown(ui::MouseEvent& e) override;
@@ -128,68 +120,51 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool CompleteBindingCapture(BindingCaptureStatus status,
                               std::string value = {});
   void ToggleRawMouseCapture();
-  void ApplyRawMouseCapture();
-  void ReleaseRawMouseCapture();
-  bool UpdateRawMouseClipRectangle();
-  bool CenterRawMouseCursor();
-  bool RegisterRawMouse(bool exclusive_capture = false);
-  void UnregisterRawMouse();
-  void DiscardPendingRawMouseMotion();
   void NotifyCaptureState(bool active);
+  void ResetRawMouseMotion();
+  void ResetMouseInputState();
+  void ResetInputState();
+  KbmInputState GetInputStateSnapshot() const;
+  void SetInputPressed(KbmInputCode code, bool pressed);
+  void SetInputCapsLock(bool enabled);
 
-  struct InputSample {
-    std::chrono::steady_clock::time_point time;
-    double elapsed_seconds = 0.0;
-    int64_t raw_delta_x = 0;
-    int64_t raw_delta_y = 0;
-    double filtered_velocity_x = 0.0;
-    double filtered_velocity_y = 0.0;
-    int16_t thumb_x = 0;
-    int16_t thumb_y = 0;
-    bool input_active = false;
-    bool capture_active = false;
-    bool input_suspended = false;
-    bool reset_sample = false;
-    bool stale_sample = false;
-  };
+  using InputSample = KbmInputSample;
+  using RawInputSample = KbmRawInputSample;
+
+  // Called under the motion lock so event order matches bucket consumption.
+  void RecordRawInputSample(const RawInputSample& sample);
 
   void RecordInputSample(const InputSample& sample);
   bool FinishInputSampling();
   bool WriteInputSamplingReport(const std::vector<InputSample>& samples,
+                                const std::vector<RawInputSample>& events,
+                                size_t dropped_event_count,
                                 const KbmSettings& settings,
                                 std::chrono::steady_clock::time_point started,
                                 size_t dropped_sample_count,
                                 std::filesystem::path* report_path) const;
 
-  KbmWindowListener window_listener_;
-
   xe::global_critical_region global_critical_region_;
   mutable xe::global_critical_region settings_critical_region_;
+  mutable xe::global_critical_region input_state_critical_region_;
   bool binding_capture_active_ = false;
   BindingCaptureResult binding_capture_result_;
   std::vector<KeyBinding> key_bindings_;
+  KbmInputState input_state_;
   std::deque<X_INPUT_KEYSTROKE> controller_keystrokes_;
   KbmSettings settings_;
-  std::atomic<int64_t> raw_mouse_delta_x_{0};
-  std::atomic<int64_t> raw_mouse_delta_y_{0};
-  std::atomic<bool> raw_mouse_sample_reset_requested_{true};
-  std::chrono::steady_clock::time_point raw_mouse_last_sample_time_;
-  std::chrono::steady_clock::time_point raw_mouse_last_center_time_;
+  KbmPlatformInput platform_input_;
+  // Couples motion arrival, bucket consumption and reset. Never acquire the
+  // settings lock while holding this lock.
+  xe::global_critical_region raw_mouse_motion_critical_region_;
+  KbmMouseProcessor raw_mouse_processor_;
   KbmChord raw_mouse_capture_toggle_;
-  ui::Window::CursorVisibility raw_mouse_previous_cursor_visibility_ =
-      ui::Window::CursorVisibility::kVisible;
-  std::atomic<bool> raw_mouse_registered_{false};
-  DWORD raw_mouse_registration_flags_ = 0;
-  std::atomic<bool> raw_mouse_capture_requested_{false};
-  std::atomic<bool> raw_mouse_capture_active_{false};
   CaptureStateCallback capture_state_callback_;
   std::atomic<bool> host_input_suspended_{false};
   std::atomic<double> raw_mouse_counts_per_second_x_{0.0};
   std::atomic<double> raw_mouse_counts_per_second_y_{0.0};
   std::atomic<int16_t> raw_mouse_thumb_x_{0};
   std::atomic<int16_t> raw_mouse_thumb_y_{0};
-  std::atomic<double> raw_mouse_filtered_velocity_x_{0.0};
-  std::atomic<double> raw_mouse_filtered_velocity_y_{0.0};
 
   mutable xe::global_critical_region input_sampling_critical_region_;
   bool input_sampling_active_ = false;
@@ -198,6 +173,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   std::chrono::steady_clock::time_point input_sampling_deadline_;
   KbmSettings input_sampling_settings_;
   std::vector<InputSample> input_samples_;
+  std::vector<RawInputSample> input_events_;
+  size_t input_events_dropped_count_ = 0;
   size_t input_sampling_dropped_sample_count_ = 0;
   std::string input_sampling_report_path_;
 };

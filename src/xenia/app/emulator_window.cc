@@ -633,6 +633,7 @@ EmulatorWindow::KbmConfigDialog::KbmConfigDialog(
     : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
   settings_ = hid::kbm::GetSettingsFromCvars();
   original_settings_ = settings_;
+  saved_ = hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kCompatible;
 }
 
 EmulatorWindow::KbmConfigDialog::~KbmConfigDialog() {
@@ -737,8 +738,15 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::TextWrapped("%s", tr(StringId::kKbmBackendInactive));
     ImGui::Spacing();
   }
+  if (hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kIncompatible) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+    ImGui::TextWrapped("%s", tr(StringId::kKbmConfigIncompatible));
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+  }
 
   bool changed = HandleBindingCaptureResult();
+  bool close_after_start_sampling = false;
   ImGui::TextWrapped("%s", tr(StringId::kKbmInputPaused));
   ImGui::Text("%s %s", tr(StringId::kKbmCaptureToggle),
               hid::kbm::FormatKbmBinding(settings_.raw_mouse_capture_toggle_key)
@@ -779,7 +787,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::SameLine();
     if (ImGui::SmallButton("Esc")) {
       CancelBindingCapture();
-      binding = "Esc";
+      binding = "Key.Escape";
       changed = true;
     }
     if (ImGui::IsItemHovered()) {
@@ -1021,8 +1029,30 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             driver->CancelInputSampling();
           }
         } else {
-          if (ImGui::Button(tr(StringId::kKbmStartInputSampling))) {
-            driver->StartInputSampling();
+          const bool save_and_start =
+              dirty_ || hid::kbm::GetConfigState() ==
+                            hid::kbm::KbmConfigState::kIncompatible;
+          if (ImGui::Button(tr(save_and_start
+                                   ? StringId::kKbmSaveAndStartInputSampling
+                                   : StringId::kKbmStartInputSampling))) {
+            if (save_and_start) {
+              CancelBindingCapture();
+              ApplyDraft();
+              if (hid::kbm::SaveConfig()) {
+                original_settings_ = settings_;
+                committed_or_restored_ = true;
+                save_failed_ = false;
+                dirty_ = false;
+                saved_ = true;
+              } else {
+                save_failed_ = true;
+              }
+            }
+            if (!save_failed_) {
+              driver->StartInputSampling();
+              committed_or_restored_ = true;
+              close_after_start_sampling = true;
+            }
           }
           ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingHelp));
           if (!sampling.report_path.empty()) {
@@ -1048,15 +1078,26 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ApplyDraft();
   }
 
-  ImGui::Separator();
-  if (dirty_) {
-    ImGui::TextUnformatted(tr(StringId::kKbmDirty));
-  } else if (saved_) {
-    ImGui::TextUnformatted(tr(StringId::kKbmSaved));
+  if (close_after_start_sampling) {
+    Close();
+    ImGui::End();
+    emulator_window_.ToggleKbmConfigDialog();
+    return;
   }
-  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
+
+  ImGui::Separator();
+  if (save_failed_) {
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
+                       tr(StringId::kKbmAppliedSaveFailed));
+  } else if (dirty_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmAppliedUnsaved));
+  } else if (saved_) {
+    ImGui::TextUnformatted(tr(StringId::kKbmAppliedSaved));
+  }
+  const bool save = ImGui::Button(tr(StringId::kKbmSave));
   ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmSave)) || save_and_close) {
+  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
+  if (save || save_and_close) {
     CancelBindingCapture();
     ApplyDraft();
     if (hid::kbm::SaveConfig()) {
@@ -1076,26 +1117,12 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     }
   }
   ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmCancel))) {
-    CancelBindingCapture();
-    RestoreOriginal();
-    Close();
-    ImGui::End();
-    emulator_window_.ToggleKbmConfigDialog();
-    return;
-  }
-  ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmResetAll))) {
+  if (ImGui::Button(tr(StringId::kKbmRestoreDefaults))) {
     CancelBindingCapture();
     settings_ = hid::kbm::KbmSettings();
     ApplyDraft();
   }
-  ImGui::SameLine();
   ImGui::TextDisabled("%s", tr(StringId::kKbmSettingsFile));
-  if (save_failed_) {
-    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
-                       tr(StringId::kKbmSaveFailed));
-  }
 
   ImGui::End();
   if (!dialog_open) {
@@ -1459,23 +1486,20 @@ void EmulatorWindow::BuildMainMenu() {
       MenuItem::Create(MenuItem::Type::kPopup, tr(StringId::kMenuUi));
   auto language_menu = MenuItem::Create(MenuItem::Type::kPopup,
                                         tr(StringId::kMenuInterfaceLanguage));
-  const bool traditional_chinese = localization::IsTraditionalChinese();
-  language_menu->AddChild(MenuItem::Create(
-      MenuItem::Type::kString,
-      tr(traditional_chinese ? StringId::kLanguageEnglish
-                             : StringId::kLanguageEnglishActive),
-      [this]() {
-        localization::SetLanguage(localization::Language::kEnglish);
-        BuildMainMenu();
-      }));
-  language_menu->AddChild(MenuItem::Create(
-      MenuItem::Type::kString,
-      tr(traditional_chinese ? StringId::kLanguageTraditionalChineseActive
-                             : StringId::kLanguageTraditionalChinese),
-      [this]() {
-        localization::SetLanguage(localization::Language::kTraditionalChinese);
-        BuildMainMenu();
-      }));
+  const localization::Language current_language = localization::GetLanguage();
+  for (const auto& language : localization::GetAvailableLanguages()) {
+    const std::string label =
+        fmt::format("{}{}", language.native_name,
+                    language.language == current_language
+                        ? tr(StringId::kLanguageActiveSuffix)
+                        : "");
+    language_menu->AddChild(
+        MenuItem::Create(MenuItem::Type::kString, label,
+                         [this, language_id = language.language]() {
+                           localization::SetLanguage(language_id);
+                           BuildMainMenu();
+                         }));
+  }
   ui_menu->AddChild(std::move(language_menu));
   main_menu->AddChild(std::move(ui_menu));
 

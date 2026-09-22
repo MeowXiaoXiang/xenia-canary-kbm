@@ -76,7 +76,8 @@ class KeyEvent : public UIEvent {
   explicit KeyEvent(Window* target, VirtualKey virtual_key, int repeat_count,
                     bool prev_state, bool modifier_shift_pressed,
                     bool modifier_ctrl_pressed, bool modifier_alt_pressed,
-                    bool modifier_capital_pressed)
+                    bool modifier_capital_pressed, uint8_t scan_code = 0,
+                    bool extended = false)
       : UIEvent(target),
         virtual_key_(virtual_key),
         repeat_count_(repeat_count),
@@ -84,7 +85,9 @@ class KeyEvent : public UIEvent {
         modifier_shift_pressed_(modifier_shift_pressed),
         modifier_ctrl_pressed_(modifier_ctrl_pressed),
         modifier_alt_pressed_(modifier_alt_pressed),
-        modifier_capital_pressed_(modifier_capital_pressed) {}
+        modifier_capital_pressed_(modifier_capital_pressed),
+        scan_code_(scan_code),
+        extended_(extended) {}
   ~KeyEvent() override = default;
 
   bool is_handled() const { return handled_; }
@@ -97,6 +100,8 @@ class KeyEvent : public UIEvent {
 
   int repeat_count() const { return repeat_count_; }
   bool prev_state() const { return prev_state_; }
+  uint8_t scan_code() const { return scan_code_; }
+  bool extended() const { return extended_; }
 
   bool is_shift_pressed() const { return modifier_shift_pressed_; }
   bool is_ctrl_pressed() const { return modifier_ctrl_pressed_; }
@@ -115,6 +120,8 @@ class KeyEvent : public UIEvent {
   bool modifier_capital_pressed_ = false;
   bool modifier_ctrl_pressed_ = false;
   bool modifier_alt_pressed_ = false;
+  uint8_t scan_code_ = 0;
+  bool extended_ = false;
 };
 
 class MouseEvent : public UIEvent {

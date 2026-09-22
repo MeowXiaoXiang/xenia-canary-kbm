@@ -18,19 +18,25 @@ the compatibility baseline.
   selector and made KBM Controller the default Windows HID backend, while
   retaining `--hid=any` for general hardware backend selection.
 - Changed the default Raw Input aim curve from 1.2 to 0.8 for more responsive
-  fine aiming and recoil control. Existing `kbm.toml` files keep their saved
-  curve until changed or reset in KBM Controller Settings.
+  fine aiming and recoil control. New KBM configurations use this default.
+- Made direction-preserving radial mapping the only Raw Input mouse mapper.
 
 ### Added
 
 - Added a 60-second Raw Input sampling report with input, filtering,
   right-stick, capture, and polling diagnostics for tuning KBM Controller.
+- Added a portable KBM mapping, input-state, mouse-processing, reporting, and
+  controller-state core that is built and tested on Linux without exposing a
+  Linux KBM runtime backend.
 
 ### Breaking changes
 
 - Replaced `winkey.toml` with `kbm.toml`. Existing WinKey settings are not
   automatically imported; configure and save them again in KBM Controller
   Settings.
+- `kbm.toml` now requires `schema_version = 3` and canonical logical tokens
+  such as `Key.W` and `Mouse.Left`. Incompatible files are not loaded or
+  migrated; restore defaults and save to replace one.
 
 ## [0.1.0] - 2026-08-30
 

@@ -528,36 +528,15 @@ bool ImGuiDrawer::LoadTraditionalChineseFont(ImGuiIO& io, float font_size) {
 
   // Only bake the characters used by the host UI translations. Preloading the
   // small subset keeps switching languages instant without the size and startup
-  // cost of the complete CJK range. Keep this list in sync with
-  // xenia/app/localization.cc.
+  // cost of the complete CJK range. The catalog below is the source of truth
+  // for the Traditional Chinese host UI glyph set.
+  // Derive the glyph set from the complete Traditional Chinese catalog so new
+  // translated strings cannot silently fall outside the font atlas.
   static constexpr char kUiGlyphs[] =
-      "導覽方向左右上下搖桿按鈕扳機返回開始肩"
-      "儲存並關閉尚未變更設定已綁取消擷取上次遊戲輸入樣本此視窗開啟時非即更新"
-      "檔案最近開啟項目封裝安內容建立解壓縮關閉顯示目錄結束設定玩家"
-      "時間倍率重設切換暫停繼續中斷並主機客體清除執行階段快取後製"
-      "處理全螢幕擷取畫面鍵盤滑鼠控制器震動快捷說明常見問題遊戲相"
-      "容性版本提交變更關於介面語言目前使用所有效果皆可用於任何品"
-      "牌無一般品質極致銳利化需要時會簡單否則只套用已啟用的或直接"
-      "原始進行最高改善細節超過之後再使用以保留邊緣高輸出至任意目"
-      "標解析度多次若未則改強烈建議降低越額外將最終使漸層平滑尚未"
-      "儲存但下次啟動必須才能輸入請按下按鈕點擊後按住可建立組合鍵"
-      "停用虛擬欄位替代提供給綁定只有模式靈敏測試起點相近仍影響手"
-      "感反轉垂直視角要求進階微調選用為線性高於減慢小幅移動低於加狀態"
-      "強閾值約達到數值越早轉向速度上限診斷上次右類比最大值就緒釋"
-      "放視窗接收無法檢查已鎖定交還未知區者日光節約小制地國家監護"
-      "初始化系統視訊影音寬單聲道網路位址英日德法西班牙義大利韓葡"
-      "萄波蘭俄瑞典土耳其挪威荷簡繁體中文取消全部失敗目前品牌超過"
-      "重新啟用關閉釋放銳利漸層輸出設定檔後即可與從而數值越低越高"
-      "不在域增想援支方此量長預"
-      "作個刪包半嗎找括指擇操料沒派登看確編該資輯"
-      "伸僅像升及對彩抖拉搖晰曲桿樣檔準滿濾瞄色記通鋸門檻雙頻齒"
-      "償實應止生產絕補零靜非驗"
-      "冊由考是校送參這插註傳槽熱游基底"
-      "輸入取樣開始秒停止並儲存報告取消關閉此視窗後正常遊玩完成重新開啟頁查看正"
-      "在剩餘筆本已無法請檢查記錄尚未產生"
-      "滑鼠速度依時間通常改善微調數值越高延遲明顯"
-      "內容安裝解壓顯示已音訊播放器選單狀態閒置暫停播放中繼續量"
-      "（），。：；！？／［］、｜";
+#define XE_LOCALIZATION_STRING(id, text) text
+#include "xenia/app/localization/zh_tw.inc"
+#undef XE_LOCALIZATION_STRING
+      ;
 
   static ImVector<ImWchar> glyph_ranges;
   if (glyph_ranges.empty()) {

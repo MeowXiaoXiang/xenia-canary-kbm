@@ -39,6 +39,15 @@ jobs:
   # ===========================================================================
   # Stage 2: Platform builds
   # ===========================================================================
+  test-kbm-core-linux:
+    name: Linux KBM Core
+    needs: [lint, commit-message]
+    if: >-
+      ${{ always() &&
+      needs.lint.result == 'success' &&
+      (needs.commit-message.result == 'success' || needs.commit-message.result == 'skipped') }}
+    uses: ./.github/workflows/Kbm_core_linux.yml
+
   build-windows:
     name: Windows (x86-64)
     needs: [lint, commit-message]

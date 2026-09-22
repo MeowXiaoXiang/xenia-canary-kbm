@@ -7,9 +7,9 @@ and mouse buttons to an emulated Xbox 360 controller, and translates Windows
 Raw Input mouse movement into the emulated right stick. It is deliberately a
 generic controller-input feature: it contains no game-specific memory hooks,
 patches, or per-title profiles.
-Windows is this fork's supported build and runtime target. Linux is used in
-continuous integration only for the upstream-compatible formatting check; it
-does not build or expose a KBM Controller backend.
+Windows is this fork's supported build and runtime target. Linux does not
+build or expose a KBM Controller backend, selector, or settings UI. It can
+build and test the portable KBM core in continuous integration.
 
 ## Build provenance and upstream updates
 
@@ -34,7 +34,7 @@ revision.
 2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
    selected, or after a `kbm.toml` file already exists.
 3. Enable **KBM Controller**, select its controller slot, configure bindings,
-   then choose **Save**.
+   then choose **Save settings**.
 
 When KBM Controller is selected for the first time, the backend creates
 `kbm.toml` in Xenia's storage root. This file intentionally remains
@@ -42,21 +42,34 @@ separate from `xenia-canary.config.toml`. It does not import or migrate a
 previous `winkey.toml`; save the desired bindings again in the KBM Controller
 Settings dialog.
 
-New configurations and **Reset all** use the current KBM defaults, including
-the 0.8 aim curve. Existing `kbm.toml` files keep their saved values; set the
-desired value in the dialog and choose **Save** to update them.
+New configurations use `schema_version = 3` and the current KBM defaults,
+including the 0.8 aim curve. The current format separates controller state,
+keyboard/mouse bindings, Raw Mouse behavior, and Raw Mouse tuning into
+`[HID.KBM.Controller]`, `[HID.KBM.Bindings]`, `[HID.KBM.RawMouse]`, and
+`[HID.KBM.RawMouse.Tuning]`. Incompatible files are intentionally not loaded
+or migrated: the settings page warns about them and leaves the file untouched
+until you choose **Restore defaults** and then **Save settings**.
 
 ## Keyboard bindings
 
 The settings window keeps its save controls visible while the content scrolls.
-Use **Save and close** to return to gameplay, or **Save** to keep editing.
-Unsaved edits are discarded on close. The diagnostics show the last gameplay
-sample, not live input while the settings window pauses the controller.
+Edits apply immediately for testing, but only **Save settings** writes them to
+`kbm.toml`. Use **Save settings and close** to return to gameplay, or
+close the window to restore the settings that were active when the page opened.
+The status line distinguishes applied-but-unsaved changes, saved changes, and
+a save failure that left the file unchanged. **Restore defaults** applies the
+current KBM defaults for testing; save explicitly if you want to keep them.
 
 Press Escape to cancel binding capture. Use the **Esc** button next to a binding
 to assign Escape itself. Multiple alternative keys for a stick direction count
-as one direction even when held together. Bindings allow additional modifiers:
-`K` and `Ctrl+K` may both activate while Ctrl+K is held.
+as one direction even when held together. Bindings use stable logical tokens in
+the saved file, not Windows virtual-key numbers: for example `Key.W`, `Key.F8`,
+`Key.ArrowUp`, `Key.LeftShift`, `Mouse.Left`, and `Mouse.X1`. Chords use the
+canonical order `Ctrl+Alt+Shift+Super+Key.F8`; a modifier by itself uses its
+key token such as `Key.LeftShift`. The UI continues to display friendly names
+like `F8` and `Mouse Left`. `Key.K` and `Ctrl+Key.K` may both activate while
+Ctrl+K is held. The `_` and `^` case prefixes remain available. Legacy bare
+keys, `VK_*`, and `0xNN` tokens are rejected by the current format.
 
 Configuration saves write a temporary file before replacing `kbm.toml`, so a
 failed write does not truncate the previously saved configuration.
@@ -65,12 +78,16 @@ Controller state and keystrokes use the same evaluated bindings. Modifier
 chords work in either press order, and captured Raw Input mouse button
 transitions are retained even between polls. Settings loaded from disk and
 settings applied from the UI share range validation; non-finite sensitivity
-and curve values revert to defaults.
+and curve values revert to defaults. A configuration with a wrong KBM value
+type or invalid binding is rejected as a whole, so no partial settings are
+applied.
 
-KBM bindings are stored as `kbm_keybind_*` under `[HID.KBM]` in
-`kbm.toml`. The upstream `keybind_*` settings in the main configuration belong
-to the keyboard driver and do not control KBM. Earlier experimental KBM builds
-shared those names incorrectly; re-save your KBM bindings after updating.
+KBM bindings are stored under `[HID.KBM.Bindings]` in `kbm.toml`; their keys
+are concise names such as `a`, `left_trigger`, and `right_thumb_up` rather than
+the runtime `kbm_keybind_*` CVar names. The upstream `keybind_*` settings in
+the main configuration belong to the keyboard driver and do not control KBM.
+Earlier experimental KBM builds shared those names incorrectly; re-save your
+KBM bindings after updating.
 
 If input is inactive, check that the main configuration selects `hid = "kbm"`.
 An explicit `hid = "any"` selects general hardware backends and does not enable
@@ -95,13 +112,16 @@ virtual controller with Raw Input mouse-to-right-stick support; use
 
 Raw Input deltas are sampled as counts per second, optionally smoothed with a
 time-based velocity filter, multiplied by **Sensitivity**, shaped by **Aim
-curve**, and converted to the right-stick range. The game still applies its own
-controller sensitivity, turn-speed, and deadzone behavior.
+curve** once over their combined X/Y speed, and converted to the right-stick
+range. This radial mapping preserves mouse direction and limits mouse output
+to a circle. The game still applies its own controller sensitivity, turn-speed,
+and deadzone behavior.
 
 - **Sensitivity** is a multiplier. The UI reset value, **10x**, is an editable
   initial reference for a 3600 DPI mouse, not a universal recommendation.
 - **Base full-stick speed** is the counts-per-second threshold at which the
-  emulated stick reaches full deflection. The default is **24000 counts/s**.
+  emulated stick reaches full deflection at **1x sensitivity**. The default is
+  **24000 counts/s**; at 10x the effective threshold is **2400 counts/s**.
   Lowering it reaches the game's maximum turn speed sooner; raising it leaves
   more room for fine movement.
 - **Aim curve** defaults to **0.8** to boost fine aim and recoil control.
@@ -111,7 +131,16 @@ controller sensitivity, turn-speed, and deadzone behavior.
   **0 ms** for direct translation; 4–12 ms is the usual useful range.
 - **Minimum stick output** is optional. Enable it only if the game's analog
   deadzone swallows small Raw Input output; it intentionally changes the
-  near-center feel.
+  near-center feel. A motion gate prevents a small filter tail from sustaining
+  minimum output indefinitely: it ends after at most 50 ms without nonzero
+  motion (observed at the next controller query), or earlier once the filtered
+  speed is below 2% and motion has been quiet for 12 ms. These are experimental
+  tuning values, not a measurement of the game's deadzone.
+- Raw Mouse always uses radial mapping. Keyboard stick bindings still combine
+  with mouse output using per-axis saturation.
+
+The velocity filter uses the actual elapsed controller-query time, including
+intervals below 1 ms. It does not detect or synchronize with a game's tick.
 
 Start from the defaults, adjust the game's own controller sensitivity, and
 then make small changes to the KBM Controller controls. DPI alone cannot predict the
@@ -124,14 +153,28 @@ capture, close the settings window so guest input resumes, play normally, and
 open the settings again to see the saved report path. The CSV is stored beside
 `kbm.toml` as `kbm-input-report-<timestamp>.csv`.
 
-Each report includes the Raw Input delta, filtered velocity, final right-stick
+Each report includes the Raw Input delta, filtered velocity, mouse right-stick
 output, game input polling interval, capture state, and a summary of reset,
-stale, or dropped samples. The report is written only when capture finishes,
-so recording does not add per-sample disk I/O.
+stale, or dropped samples. New reports identify the fixed `mapper=radial` in
+their metadata. The report is written only when capture finishes, so recording
+does not add per-sample disk I/O.
 
-The first four lines are `#` metadata comments containing the sample summary
-and the settings used for that capture. The CSV column header follows them, so
-spreadsheet imports may need to skip those four lines.
+Schema 2 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
+accepted Raw Input events, reset markers, and the initial filter/bucket state.
+The timestamps describe host processing, not hardware sampling. Event sequence
+numbers associate poll buckets with the event trace. The poll report is published
+last and marks a completed pair; a sidecar alone is not a complete report.
+Changing KBM settings finishes the current capture so its metadata stays valid.
+
+Skip all leading `#` metadata comments when importing, rather than a fixed
+number of lines. Schema 2 intervals are actual elapsed times; older reports used
+a 1 ms floor. Dropped counters describe recorder capacity, not OS packet loss.
+The event buffer supports up to 600,000 entries and the poll buffer 120,000;
+reports expose truncation counts. Keep both files when sharing a new capture.
+
+For read-only poll replay, run `python tools/kbm_replay.py <report.csv>`.
+Its output compares timing calculations, not measured camera response. Legacy
+reports cannot reconstruct individual hardware or Raw Input events.
 
 ## Mouse capture
 
@@ -169,3 +212,20 @@ On a Windows development environment, the normal verification commands are:
 
 The release executable is
 `build\bin\Windows\Release\xenia_canary.exe`.
+
+Linux does not produce a KBM runtime executable. To validate the portable KBM
+core and host UI localization catalog from WSL, configure a separate build
+directory with tests enabled:
+
+```bash
+cmake -S . -B build-linux-kbm -G Ninja -DXENIA_BUILD_TESTS=ON \
+  -DCMAKE_CXX_FLAGS=-mmovdir64b
+cmake --build build-linux-kbm \
+  --target xenia-hid-kbm-core-tests xenia-app-localization-tests
+ctest --test-dir build-linux-kbm -R "xenia-(hid-kbm-core-tests|app-localization-tests)" \
+  --output-on-failure
+```
+
+The extra `-mmovdir64b` flag works around an upstream GCC 15 configuration
+issue in Xenia's unrelated memory implementation; it is not a KBM runtime
+requirement.
