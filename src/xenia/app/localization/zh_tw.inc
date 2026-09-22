@@ -153,8 +153,8 @@ XE_LOCALIZATION_STRING(kKbmRawMouseRequiresController,
 XE_LOCALIZATION_STRING(kKbmSensitivity, "滑鼠靈敏度倍率：")
 XE_LOCALIZATION_STRING(
     kKbmSensitivityGuide,
-    "初始參考：3600 DPI 使用 "
-    "10x。這不是通用設定；遊戲內靈敏度與搖桿限制仍會影響手感。")
+    "3600 DPI／10x 是起點。高 DPI 通常需要較低倍率，低 DPI 可使用較高倍率；"
+    "遊戲內設定與搖桿限制仍會影響結果。")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "反轉垂直視角")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart, "KBM 控制器啟動時啟用滑鼠鎖定")
 XE_LOCALIZATION_STRING(kKbmCaptureToggle, "滑鼠鎖定熱鍵：")
@@ -162,17 +162,17 @@ XE_LOCALIZATION_STRING(kKbmFineTuning, "進階調校（選用）")
 XE_LOCALIZATION_STRING(kKbmAimCurve, "滑鼠反應曲線（預設 0.8；1.0 為線性）：")
 XE_LOCALIZATION_STRING(
     kKbmAimCurveHelp,
-    "0.8 會提升細微瞄準的輸出；高於 1.0 會降低小幅移動；1.0 為線性。")
-XE_LOCALIZATION_STRING(kKbmMouseSmoothing, "滑鼠平滑（0 ms 為直通）：")
+    "0.8 會提高低速移動輸出；>1.0 降低小幅移動輸出；1.0 線性。")
+XE_LOCALIZATION_STRING(kKbmMouseSmoothing, "滑鼠平滑（0 ms：不套用平滑）：")
 XE_LOCALIZATION_STRING(
     kKbmMouseSmoothingHelp,
-    "依時間平滑滑鼠速度。4–12 ms 通常可改善微調；數值越高延遲越明顯。")
+    "0 ms 最直接，但容易暴露輸入跳動。4–12 ms 通常可改善微調；數值越高延遲越明顯。")
 XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone,
-                       "補償類比搖桿 Deadzone（實驗性）")
-XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最小搖桿輸出：")
+                       "補償類比搖桿 Deadzone")
+XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最小搖桿輸出（0.0–0.5）：")
 XE_LOCALIZATION_STRING(kKbmMinimumResponseHelp,
-                       "只影響非零的 Raw Input "
-                       "移動。關閉時保留原本滑鼠反應，靜止時絕不產生搖桿輸入。")
+                       "僅在遊戲忽略細微移動時啟用。提高最小輸出可越過遊戲 Deadzone，"
+                       "但過高會讓中心附近難以微調；停止移動後輸出會自動回零。")
 XE_LOCALIZATION_STRING(kKbmFullStickThreshold,
                        "1x 時達到搖桿滿輸出的速度（counts/s）：")
 XE_LOCALIZATION_STRING(

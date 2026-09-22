@@ -164,8 +164,9 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmSensitivity, "Mouse sensitivity multiplier:")
 XE_LOCALIZATION_STRING(
     kKbmSensitivityGuide,
-    "Initial reference: 3600 DPI at 10x. This is not universal; in-game "
-    "settings and controller limits still apply.")
+    "3600 DPI at 10x is a starting point. Higher DPI usually needs a lower "
+    "multiplier, while lower DPI can use a higher one; in-game settings and "
+    "controller limits still affect the result.")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "Invert vertical look")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
@@ -175,19 +176,21 @@ XE_LOCALIZATION_STRING(kKbmAimCurve,
                        "Mouse response curve (default 0.8; 1.0 is linear):")
 XE_LOCALIZATION_STRING(
     kKbmAimCurveHelp,
-    "0.8 boosts fine aim. Above 1.0 slows small movements; 1.0 is linear.")
-XE_LOCALIZATION_STRING(kKbmMouseSmoothing, "Mouse smoothing (0 ms is direct):")
+    "0.8 boosts low-speed output; >1.0 slows small movements; 1.0 is linear.")
+XE_LOCALIZATION_STRING(kKbmMouseSmoothing,
+                       "Mouse smoothing (0 ms: no smoothing):")
 XE_LOCALIZATION_STRING(
     kKbmMouseSmoothingHelp,
-    "Time-based velocity smoothing. 4–12 ms usually improves fine aim; "
-    "higher values add more lag.")
+    "0 ms is most direct but can expose input jitter. 4–12 ms usually "
+    "improves fine adjustment; higher values add more lag.")
 XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone,
-                       "Compensate analog-stick deadzone (Experimental)")
-XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output:")
+                       "Compensate analog-stick deadzone")
+XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0.0–0.5):")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
-    "Only affects non-zero Raw Input movement. Off preserves the original "
-    "mouse response and never creates idle stick input.")
+    "Enable only if the game ignores subtle movement. Raising minimum output "
+    "can clear the game's deadzone, but too much makes near-center adjustment "
+    "difficult. Output returns to zero after movement stops.")
 XE_LOCALIZATION_STRING(kKbmFullStickThreshold,
                        "Full-stick speed at 1x (counts/s):")
 XE_LOCALIZATION_STRING(

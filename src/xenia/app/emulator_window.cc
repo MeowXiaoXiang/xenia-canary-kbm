@@ -761,11 +761,12 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
                               : binding.empty()
                                   ? tr(StringId::kKbmUnbound)
                                   : hid::kbm::FormatKbmBinding(binding);
+    const std::string binding_button_id = label + "##BindingValue";
     const float action_width = ImGui::CalcTextSize("Esc").x +
                                ImGui::GetStyle().FramePadding.x * 2 +
                                (allow_alternatives ? 64.0f : 40.0f);
     ImGui::BeginDisabled(GetDriver() == nullptr);
-    if (ImGui::Button(label.c_str(),
+    if (ImGui::Button(binding_button_id.c_str(),
                       ImVec2(std::max(80.0f, ImGui::GetContentRegionAvail().x -
                                                  action_width),
                              0.0f))) {
@@ -776,7 +777,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     }
     if (allow_alternatives) {
       ImGui::SameLine();
-      if (ImGui::SmallButton("+")) {
+      if (ImGui::SmallButton("+##AddAlternativeBinding")) {
         StartBindingCapture(&binding, true);
       }
       if (ImGui::IsItemHovered()) {
@@ -785,7 +786,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::SmallButton("Esc")) {
+    if (ImGui::SmallButton("Esc##BindEscape")) {
       CancelBindingCapture();
       binding = "Key.Escape";
       changed = true;
@@ -794,7 +795,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
       ImGui::SetTooltip("%s", tr(StringId::kKbmBindEscape));
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("x")) {
+    if (ImGui::SmallButton("x##ClearBinding")) {
       if (capturing) {
         CancelBindingCapture();
       }
@@ -921,8 +922,8 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             std::clamp(settings_.raw_mouse_minimum_response, 0.0, 0.5);
         changed = true;
       }
-      ImGui::TextDisabled("%s", tr(StringId::kKbmMinimumResponseHelp));
     }
+    ImGui::TextWrapped("%s", tr(StringId::kKbmMinimumResponseHelp));
 
     if (ImGui::Checkbox(tr(StringId::kKbmInvertVertical),
                         &settings_.raw_mouse_invert_y)) {
@@ -957,7 +958,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             std::clamp(settings_.raw_mouse_response_curve, 0.1, 4.0);
         changed = true;
       }
-      ImGui::TextDisabled("%s", tr(StringId::kKbmAimCurveHelp));
+      ImGui::TextWrapped("%s", tr(StringId::kKbmAimCurveHelp));
 
       ImGui::TextUnformatted(tr(StringId::kKbmMouseSmoothing));
       float smoothing_time_ms = float(settings_.raw_mouse_smoothing_time_ms);
@@ -968,7 +969,7 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
         settings_.raw_mouse_smoothing_time_ms = smoothing_time_ms;
         changed = true;
       }
-      ImGui::TextDisabled("%s", tr(StringId::kKbmMouseSmoothingHelp));
+      ImGui::TextWrapped("%s", tr(StringId::kKbmMouseSmoothingHelp));
 
       ImGui::TextUnformatted(tr(StringId::kKbmFullStickThreshold));
       ImGui::SetNextItemWidth(220.0f);
@@ -979,10 +980,10 @@ void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
             std::clamp(settings_.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
         changed = true;
       }
-      ImGui::TextDisabled(tr(StringId::kKbmFullStickHelp),
-                          settings_.raw_mouse_sensitivity,
-                          settings_.raw_mouse_full_scale_velocity /
-                              std::max(settings_.raw_mouse_sensitivity, 0.01));
+      ImGui::TextWrapped(tr(StringId::kKbmFullStickHelp),
+                         settings_.raw_mouse_sensitivity,
+                         settings_.raw_mouse_full_scale_velocity /
+                             std::max(settings_.raw_mouse_sensitivity, 0.01));
       ImGui::TreePop();
     }
     ImGui::EndDisabled();

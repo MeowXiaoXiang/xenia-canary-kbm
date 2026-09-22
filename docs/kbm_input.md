@@ -117,25 +117,24 @@ range. This radial mapping preserves mouse direction and limits mouse output
 to a circle. The game still applies its own controller sensitivity, turn-speed,
 and deadzone behavior.
 
-- **Sensitivity** is a multiplier. The UI reset value, **10x**, is an editable
-  initial reference for a 3600 DPI mouse, not a universal recommendation.
+- **Sensitivity** is a multiplier. **3600 DPI / 10x** is a starting point:
+  higher DPI usually needs a lower multiplier, while lower DPI can use a higher
+  one. The game's settings and controller limits still affect the result.
 - **Base full-stick speed** is the counts-per-second threshold at which the
   emulated stick reaches full deflection at **1x sensitivity**. The default is
   **24000 counts/s**; at 10x the effective threshold is **2400 counts/s**.
   Lowering it reaches the game's maximum turn speed sooner; raising it leaves
   more room for fine movement.
-- **Aim curve** defaults to **0.8** to boost fine aim and recoil control.
-  A value of 1.0 is linear; values above 1.0 slow very small movements.
-- **Mouse smoothing** defaults to **8 ms**. It smooths low-speed Raw Input
-  count quantization without relying on a fixed game polling rate. Set it to
-  **0 ms** for direct translation; 4–12 ms is the usual useful range.
-- **Minimum stick output** is optional. Enable it only if the game's analog
-  deadzone swallows small Raw Input output; it intentionally changes the
-  near-center feel. A motion gate prevents a small filter tail from sustaining
-  minimum output indefinitely: it ends after at most 50 ms without nonzero
-  motion (observed at the next controller query), or earlier once the filtered
-  speed is below 2% and motion has been quiet for 12 ms. These are experimental
-  tuning values, not a measurement of the game's deadzone.
+- **Aim curve** defaults to **0.8**. It boosts low-speed output; **1.0** is
+  linear, and values above **1.0** slow small movements.
+- **Mouse smoothing** defaults to **8 ms**. **0 ms** applies no smoothing and
+  is most direct, but can expose input jitter. **4–12 ms** usually improves
+  fine adjustment; higher values add more lag.
+- **Minimum stick output** has a **0.0–0.5** range. Enable it only if the game
+  ignores subtle movement. Raising it can clear the game's deadzone, but too
+  much makes near-center adjustment difficult. Output returns to zero after
+  movement stops; a short filtered tail may be present before the motion gate
+  ends it.
 - Raw Mouse always uses radial mapping. Keyboard stick bindings still combine
   with mouse output using per-axis saturation.
 
