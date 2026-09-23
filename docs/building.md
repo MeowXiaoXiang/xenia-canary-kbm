@@ -6,7 +6,12 @@ drivers.
 
 This repository is a Windows-only KBM Controller fork. The Linux material is
 retained below as upstream reference for synchronization only; it is not a
-supported build or runtime path for this fork.
+supported emulator build or runtime path for this fork. CI only builds and
+tests the portable KBM core on Linux.
+
+To try the Windows fork without building it, use an unofficial archive from
+this repository's [Releases](https://github.com/MeowXiaoXiang/xenia-canary-kbm/releases).
+The instructions below are for building from source.
 
 ## Setup
 

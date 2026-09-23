@@ -77,3 +77,20 @@ jobs:
   #   name: Android
   #   needs: [lint]
   #   uses: ./.github/workflows/build-android.yml
+
+  # Publish only builds from this fork's main branch after both checks pass.
+  release:
+    name: Create KBM Release
+    needs: [build-windows, test-kbm-core-linux]
+    if: >-
+      ${{ always() &&
+      github.repository == 'MeowXiaoXiang/xenia-canary-kbm' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.build-windows.result == 'success' &&
+      needs.test-kbm-core-linux.result == 'success' }}
+    uses: ./.github/workflows/Create_release.yml
+    permissions:
+      contents: write
+    with:
+      commit: ${{ github.sha }}

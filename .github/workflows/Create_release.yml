@@ -1,26 +1,21 @@
-name: Create Release
+name: Create KBM Release
 
 on:
   workflow_call:
     inputs:
-      tag:
-        description: 'Full commit SHA for tagging'
+      commit:
+        description: Full fork commit SHA to release
         required: true
-        type: string
-      branch:
-        description: 'Branch name used as release tag suffix (e.g. canary_experimental)'
-        default: 'canary_experimental'
         type: string
 
 jobs:
   release:
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repository for git log access
+      - name: Checkout repository for release notes and tags
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -28,87 +23,97 @@ jobs:
       - name: Build release notes
         id: notes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          FULL_SHA: ${{ inputs.commit }}
         run: |-
-          FULL_SHA="${{ inputs.tag }}"
-          SHORT_SHA="${FULL_SHA::7}"
-          BRANCH="${{ inputs.branch }}"
-          TAG_NAME="$SHORT_SHA"
-          TITLE="${SHORT_SHA}_$BRANCH"
+          set -euo pipefail
+          SHORT_SHA="${FULL_SHA:0:12}"
+          TAG_NAME="kbm-${SHORT_SHA}"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          # Never reuse a tag that points to another build.
+          if git show-ref --verify --quiet "refs/tags/$TAG_NAME"; then
+            TAG_SHA=$(git rev-parse "refs/tags/$TAG_NAME^{}")
+            if [ "$TAG_SHA" != "$FULL_SHA" ]; then
+              echo "::error::Tag $TAG_NAME points to $TAG_SHA, not $FULL_SHA"
+              exit 1
+            fi
+          fi
 
-          PREV_TAG=$(gh release list \
-            --repo "$REPO" \
-            --limit 1 \
+          PREV_TAG=$(gh release list --repo "$REPO" --exclude-drafts --limit 100 \
             --json tagName \
-            --jq '.[0].tagName' 2>/dev/null || echo)
+            --jq '[.[] | select(.tagName | startswith("kbm-"))][0].tagName // ""')
 
-          if [ -n "$PREV_TAG" ]; then
-            PREV_SHA=$(git rev-parse "${PREV_TAG}^{}" 2>/dev/null || \
-                       git rev-parse "${PREV_TAG}" 2>/dev/null || echo)
-          fi
-
-          if [ -n "$PREV_SHA" ]; then
-            COMMITS=$(git log --format='- %s (`%h`)' --abbrev=7 "${PREV_SHA}..$FULL_SHA" --)
-            COMPARE_URL="https://github.com/${REPO}/compare/${PREV_TAG}...$TAG_NAME"
-          else
-            COMMITS=$(git log --format='- %s (`%h`)' --abbrev=7 -1 "$FULL_SHA" --)
-          fi
-
-          # Assemble body
           {
-            echo "body<<RELEASE_BODY_EOF"
-
-            if [ -n "$COMMITS" ]; then
-              echo "### Changes"
+            echo 'Unofficial Windows build of Xenia Canary - KBM Controller Input.'
+            echo
+            echo "Fork commit: $FULL_SHA"
+            echo
+            if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$TAG_NAME" ]; then
+              PREV_SHA=$(git rev-parse "refs/tags/$PREV_TAG^{}")
+              if ! git merge-base --is-ancestor "$PREV_SHA" "$FULL_SHA"; then
+                echo "::error::Previous release $PREV_TAG is not an ancestor of $FULL_SHA" >&2
+                exit 1
+              fi
+              echo '### Changes since the previous KBM release'
+              git log --format='- %s (`%h`)' "$PREV_SHA..$FULL_SHA" --
               echo
-              echo "$COMMITS"
-            fi
-
-            if [ -n "$COMPARE_URL" ]; then
+              echo "Full changelog: https://github.com/${REPO}/compare/${PREV_TAG}...${TAG_NAME}"
+            else
+              git fetch --no-tags \
+                https://github.com/xenia-canary/xenia-canary.git \
+                canary_experimental
+              BASE_SHA=$(git merge-base "$FULL_SHA" FETCH_HEAD)
+              echo '### Fork changes since the integrated upstream base'
+              git log --format='- %s (`%h`)' "$BASE_SHA..$FULL_SHA" --
               echo
-              echo "**Full changelog**: $COMPARE_URL"
+              echo "Full changelog: https://github.com/${REPO}/compare/${BASE_SHA}...${TAG_NAME}"
             fi
+          } > release_notes.md
 
-            echo "RELEASE_BODY_EOF"
-          } >> $GITHUB_OUTPUT
-
-      - name: Download artifacts
+      - name: Download Windows build
         uses: actions/download-artifact@v8
         with:
+          name: xenia_canary_kbm_windows
           path: release_assets
-          merge-multiple: true
 
-      - name: Create GitHub Release
+      - name: Publish release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TAG: ${{ steps.notes.outputs.tag_name }}
-          TITLE: ${{ steps.notes.outputs.title }}
-          BODY: ${{ steps.notes.outputs.body }}
-          TARGET: ${{ inputs.tag }}
+          TAG_NAME: ${{ steps.notes.outputs.tag_name }}
+          FULL_SHA: ${{ inputs.commit }}
         run: |-
-          echo "$BODY" > release_notes.md
-          echo "Creating release: $TAG"
+          set -euo pipefail
+          ASSET=release_assets/xenia_canary_kbm_windows.7z
+          test -s "$ASSET"
 
-          # Check if tag/release already exists (re-run safety)
-          if gh release view "$TAG" --repo "$REPO" --json tagName 2>/dev/null; then
-            echo "Release $TAG exists, uploading new assets..."
-            gh release upload "$TAG" \
-              --repo "$REPO" \
-              --clobber \
-              release_assets/*
-          else
-            gh release create "$TAG" \
-              --repo "$REPO" \
-              --target "${{ inputs.tag }}" \
-              --title "$TITLE" \
-              --notes-file release_notes.md \
-              --latest \
-              release_assets/*
+          if gh release view "$TAG_NAME" --repo "$REPO" --json tagName >/dev/null 2>&1; then
+            IS_DRAFT=$(gh release view "$TAG_NAME" --repo "$REPO" \
+              --json isDraft --jq '.isDraft')
+
+            if [ "$IS_DRAFT" = true ]; then
+              # A draft is not public yet, so a retry can replace its archive.
+              gh release upload "$TAG_NAME" --repo "$REPO" --clobber "$ASSET"
+              gh release edit "$TAG_NAME" --repo "$REPO" --draft=false --latest
+              exit 0
+            fi
+
+            HAS_ASSET=$(gh release view "$TAG_NAME" --repo "$REPO" \
+              --json assets --jq 'any(.assets[]; .name == "xenia_canary_kbm_windows.7z")')
+            if [ "$HAS_ASSET" != true ]; then
+              echo "::error::Published release $TAG_NAME is missing its Windows archive"
+              exit 1
+            fi
+            echo "Release $TAG_NAME already has its Windows archive; leaving it unchanged."
+            exit 0
           fi
 
-          echo "✅ Release $TAG published"
+          gh release create "$TAG_NAME" \
+            --repo "$REPO" \
+            --target "$FULL_SHA" \
+            --title "KBM Controller Input main@${FULL_SHA:0:12}" \
+            --notes-file release_notes.md \
+            --latest \
+            "$ASSET"

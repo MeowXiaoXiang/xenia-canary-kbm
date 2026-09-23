@@ -17,6 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch integrated upstream base for build version
+        run: |-
+          git remote add upstream https://github.com/xenia-canary/xenia-canary.git
+          git fetch --no-tags upstream canary_experimental:refs/remotes/upstream/canary_experimental
+
       - name: Cache Vulkan SDK
         id: cache-vulkan-sdk
         uses: actions/cache@v6
@@ -73,7 +78,7 @@ jobs:
             echo "::error:: Executable is too small."
             exit 1
           }
-          $path="xenia_canary_windows.7z"
+          $path="xenia_canary_kbm_windows.7z"
           7z a $path .\build\bin\Windows\Release\xenia_canary.exe LICENSE -mx9 -bb3
           if ((Get-Item "$path").Length -le 100000) {
             echo "::error:: Archive is too small."
@@ -81,10 +86,11 @@ jobs:
           }
           echo "path=$path" >> $env:GITHUB_OUTPUT
 
-      - name: Upload Xenia Canary artifact
+      - name: Upload KBM Windows artifact
         if: ${{ steps.prepare_artifacts.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
+          name: xenia_canary_kbm_windows
           path: ${{ steps.prepare_artifacts.outputs.path }}
           if-no-files-found: error
           retention-days: 7

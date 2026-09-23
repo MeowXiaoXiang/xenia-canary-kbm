@@ -13,11 +13,13 @@ build and test the portable KBM core in continuous integration.
 
 ## Build provenance and upstream updates
 
-Every local build records two revisions. **Fork build commit** is the exact
+Every Windows build records two revisions. **Fork build commit** is the exact
 commit from this repository that was compiled. **Upstream base commit** is the
 merge base with `upstream/canary_experimental` — the Xenia Canary revision that
 is actually present in that fork commit. Both are shown in the title and
 startup log, and the Help menu opens each commit in its correct repository.
+Published Windows archives use `kbm-<12-character fork commit>` tags; the tag
+and the fork build commit refer to the same source revision.
 
 Do not edit either revision by hand. `xenia-build.py` calculates the upstream
 base automatically whenever it generates `build/version.h`. When updating
@@ -199,7 +201,11 @@ hotkey, focus the Xenia window, and enable it again.
 
 ## Build
 
-Use the Windows section of [the included upstream build guide](building.md).
+To try the Windows backend, download the unofficial archive from this fork's
+[Releases](https://github.com/MeowXiaoXiang/xenia-canary-kbm/releases). The
+archive is published only after the `main` build and portable KBM tests pass.
+You can also build the same source locally. Use the Windows section of
+[the included upstream build guide](building.md).
 On a Windows development environment, the normal verification commands are:
 
 ```powershell
@@ -209,7 +215,7 @@ On a Windows development environment, the normal verification commands are:
 
 `xb.ps1` provides the same commands for PowerShell.
 
-The release executable is
+The locally built Release executable is
 `build\bin\Windows\Release\xenia_canary.exe`.
 
 Linux does not produce a KBM runtime executable. To validate the portable KBM

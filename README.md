@@ -17,10 +17,13 @@ core only; it exposes no KBM HID backend, selector, or settings UI.
 
 On Windows, KBM Controller is the default HID backend. Use `--hid=any` to
 restore general hardware backend selection, or `--hid=keyboard` for explicit
-keyboard passthrough. It is not an official Xenia Canary build or support channel.
-This repository does not publish releases; build it locally when you want to
-try the experimental input path. General emulator information, compatibility
-reports, and upstream contribution guidance belong to the
+keyboard passthrough. It is not an official Xenia Canary build or support
+channel. This fork publishes unofficial
+[Windows releases](https://github.com/MeowXiaoXiang/xenia-canary-kbm/releases)
+after `main` passes CI. Each `kbm-<12-character fork commit>` tag identifies the
+source used for its archive; the application also shows the fork commit and
+integrated upstream base. General emulator information, compatibility reports,
+and upstream contribution guidance belong to the
 [Xenia Canary project](https://github.com/xenia-canary/xenia-canary).
 
 ## What this fork changes
@@ -52,11 +55,13 @@ and glyph support.
 
 ## Building
 
-Use the Windows prerequisites in the included upstream
-[building guide](docs/building.md), then run `xb.bat setup` and
-`xb.bat build --config=release` from a Windows developer environment.
+Download the Windows archive from this fork's
+[Releases](https://github.com/MeowXiaoXiang/xenia-canary-kbm/releases) to try a
+verified build. For a local build, use the Windows prerequisites in the included
+upstream [building guide](docs/building.md), then run `xb.bat setup`
+and `xb.bat build --config=release` from a Windows developer environment.
 `xb.ps1` provides the same commands for PowerShell. The expected executable is
-`build\\bin\\Windows\\Release\\xenia_canary.exe`.
+`build\bin\Windows\Release\xenia_canary.exe`.
 
 ## Scope and privacy
 
