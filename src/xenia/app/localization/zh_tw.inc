@@ -164,15 +164,15 @@ XE_LOCALIZATION_STRING(
     kKbmAimCurveHelp,
     "0.8 會提高低速移動輸出；>1.0 降低小幅移動輸出；1.0 線性。")
 XE_LOCALIZATION_STRING(kKbmMouseSmoothing, "滑鼠平滑（0 ms：不套用平滑）：")
-XE_LOCALIZATION_STRING(
-    kKbmMouseSmoothingHelp,
-    "0 ms 最直接，但容易暴露輸入跳動。4–12 ms 通常可改善微調；數值越高延遲越明顯。")
-XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone,
-                       "補償類比搖桿 Deadzone")
+XE_LOCALIZATION_STRING(kKbmMouseSmoothingHelp,
+                       "0 ms 最直接，但容易暴露輸入跳動。4–12 ms "
+                       "通常可改善微調；數值越高延遲越明顯。")
+XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "補償類比搖桿 Deadzone")
 XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最小搖桿輸出（0.0–0.5）：")
-XE_LOCALIZATION_STRING(kKbmMinimumResponseHelp,
-                       "僅在遊戲忽略細微移動時啟用。提高最小輸出可越過遊戲 Deadzone，"
-                       "但過高會讓中心附近難以微調；停止移動後輸出會自動回零。")
+XE_LOCALIZATION_STRING(
+    kKbmMinimumResponseHelp,
+    "僅在遊戲忽略細微移動時啟用。提高最小輸出可越過遊戲 Deadzone，"
+    "但過高會讓中心附近難以微調；停止移動後輸出會自動回零。")
 XE_LOCALIZATION_STRING(kKbmFullStickThreshold,
                        "1x 時達到搖桿滿輸出的速度（counts/s）：")
 XE_LOCALIZATION_STRING(
