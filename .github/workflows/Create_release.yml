@@ -75,8 +75,8 @@ jobs:
       - name: Download Windows build
         uses: actions/download-artifact@v8
         with:
-          name: xenia_canary_kbm_windows
           path: release_assets
+          merge-multiple: true
 
       - name: Publish release
         env:
@@ -87,7 +87,23 @@ jobs:
         run: |-
           set -euo pipefail
           ASSET=release_assets/xenia_canary_kbm_windows.7z
-          test -s "$ASSET"
+
+          if [ ! -f "$ASSET" ]; then
+            echo "::error::Expected Windows archive was not downloaded: $ASSET"
+            find release_assets -maxdepth 2 -type f -print || true
+            exit 1
+          fi
+
+          ASSET_SIZE=$(stat -c%s "$ASSET")
+          if [ "$ASSET_SIZE" -le 100000 ]; then
+            echo "::error::Windows archive is unexpectedly small: ${ASSET_SIZE} bytes"
+            exit 1
+          fi
+
+          ASSET_SHA256=$(sha256sum "$ASSET" | cut -d' ' -f1)
+          echo "Release asset: $ASSET"
+          echo "Release asset size: ${ASSET_SIZE} bytes"
+          echo "Release asset SHA256: $ASSET_SHA256"
 
           if gh release view "$TAG_NAME" --repo "$REPO" --json tagName >/dev/null 2>&1; then
             IS_DRAFT=$(gh release view "$TAG_NAME" --repo "$REPO" \
