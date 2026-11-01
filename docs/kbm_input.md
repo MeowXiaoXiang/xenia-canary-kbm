@@ -223,6 +223,11 @@ also resets capture history and rejects poll intervals greater than 100 ms.
 This timeout describes time between controller polls, not the age of each Raw
 Input event, and does not replace focus and capture reset checks.
 
+Host-dialog suspension clears logical keyboard state on both entry and resume.
+Keys received for UI navigation or binding capture must not become held guest
+controls when the last dialog closes. A new press can activate the binding
+again after resume.
+
 Diagnostic completion currently copies sample buffers, serializes CSV, and
 writes reports synchronously. Automatic completion can occur inside a
 controller query while the emulator's global critical region is held. This is
@@ -263,14 +268,18 @@ from a developer environment:
 .\xb.bat build --config=release --build-tests `
   --target=xenia-hid-kbm-core-tests `
   --target=xenia-hid-kbm-config-tests `
+  --target=xenia-hid-kbm-lifecycle-tests `
   --target=xenia-app-localization-tests
 ctest --test-dir build -C Release --output-on-failure `
-  -R "xenia-(hid-kbm-(core|config)-tests|app-localization-tests)"
+  -R "^xenia-(hid-kbm-(core|config|lifecycle)-tests|app-localization-tests)$"
 ```
 
 These tests cover portable state and mapping behavior, configuration rejection
-and failed replacement, and catalog consistency. Run the Windows lifecycle
-checks above in addition to these automated tests.
+and failed replacement, catalog consistency, and driver focus and host-dialog
+transitions using an in-process test window. The driver tests do not register
+Raw Input, create a native window, or validate cursor clipping and capture.
+Windows CI runs these four suites before preparing an artifact. Run the native
+Windows lifecycle checks above in addition to these automated tests.
 
 The dependency-prefix parser has separate Python regression tests:
 

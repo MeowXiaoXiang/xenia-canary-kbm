@@ -35,5 +35,15 @@ if(XENIA_BUILD_TESTS)
     target_link_libraries(xenia-hid-kbm-config-tests PRIVATE xenia-hid-kbm)
     add_test(NAME xenia-hid-kbm-config-tests
       COMMAND xenia-hid-kbm-config-tests)
+
+    add_executable(xenia-hid-kbm-lifecycle-tests kbm_lifecycle_test.cc)
+    target_compile_definitions(xenia-hid-kbm-lifecycle-tests PRIVATE
+      CATCH_CONFIG_MAIN)
+    target_include_directories(xenia-hid-kbm-lifecycle-tests PRIVATE
+      ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src)
+    target_compile_features(xenia-hid-kbm-lifecycle-tests PRIVATE cxx_std_17)
+    target_link_libraries(xenia-hid-kbm-lifecycle-tests PRIVATE xenia-hid-kbm)
+    add_test(NAME xenia-hid-kbm-lifecycle-tests
+      COMMAND xenia-hid-kbm-lifecycle-tests)
   endif()
 endif()

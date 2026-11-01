@@ -69,7 +69,18 @@ jobs:
           git submodule update --init --depth=1 -j $env:NUMBER_OF_PROCESSORS $SUBMODULES
 
       - name: Build Xenia
-        run: python xenia-build.py build --config=Release --target=xenia-app
+        run: >-
+          python xenia-build.py build --config=Release --build-tests
+          --target=xenia-app
+          --target=xenia-hid-kbm-core-tests
+          --target=xenia-hid-kbm-config-tests
+          --target=xenia-hid-kbm-lifecycle-tests
+          --target=xenia-app-localization-tests
+
+      - name: Test KBM and localization
+        run: >-
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error
+          -R "^xenia-(hid-kbm-(core|config|lifecycle)-tests|app-localization-tests)$"
 
       - name: Prepare artifacts
         id: prepare_artifacts

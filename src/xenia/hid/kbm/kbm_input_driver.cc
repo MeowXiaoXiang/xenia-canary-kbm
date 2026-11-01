@@ -458,19 +458,18 @@ bool KbmInputDriver::WriteInputSamplingReport(
 }
 
 void KbmInputDriver::SetHostInputSuspended(bool suspended) {
-  if (host_input_suspended_.exchange(suspended) != suspended) {
-    XELOGI("kbm: host UI input suspended = {}.", suspended);
-  }
-  if (suspended) {
-    {
-      auto settings_lock = settings_critical_region_.Acquire();
-      auto lock = global_critical_region_.Acquire();
-      controller_keystrokes_.clear();
-      for (auto& binding : key_bindings_) {
-        binding.pressed = false;
-      }
+  bool was_suspended;
+  {
+    auto lock = global_critical_region_.Acquire();
+    was_suspended = host_input_suspended_.exchange(suspended);
+    if (suspended || was_suspended) {
+      // Host UI key events still reach the driver for binding capture. Clear
+      // those keys before a controller poll can observe resumed input.
+      ResetInputState();
     }
-    ResetInputState();
+  }
+  if (was_suspended != suspended) {
+    XELOGI("kbm: host UI input suspended = {}.", suspended);
   }
   platform_input_.SetInputSuspended(suspended);
 }
@@ -692,9 +691,10 @@ void KbmInputDriver::OnKey(ui::KeyEvent& e, bool is_down) {
 
 void KbmInputDriver::UpdateControllerKeystrokes(KbmInputCode changed_code,
                                                 bool is_down, bool repeated) {
-  const KbmInputState input_state = GetInputStateSnapshot();
   auto settings_lock = settings_critical_region_.Acquire();
   auto lock = global_critical_region_.Acquire();
+  // Keep the snapshot and binding update together across lifecycle resets.
+  const KbmInputState input_state = GetInputStateSnapshot();
   const KbmModifiers modifiers = input_state.modifiers();
   const bool active =
       settings_.enabled && !host_input_suspended_ && window()->HasFocus();
