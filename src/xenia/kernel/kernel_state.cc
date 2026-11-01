@@ -66,6 +66,7 @@ KernelState::KernelState(Emulator* emulator)
   smc_ = std::make_unique<SystemManagementController>();
   xconfig_ =
       std::make_unique<XConfig>(emulator->storage_root() / "xconfig.settings");
+  nui_ = std::make_unique<NUIController>();
 
   InitializeKernelGuestGlobals();
   kernel_version_ = KernelVersion(cvars::kernel_build_version);
@@ -77,6 +78,21 @@ KernelState::KernelState(Emulator* emulator)
       kMemoryProtectRead | kMemoryProtectWrite);
 
   xenia_assert(fixed_alloc_worked);
+}
+
+KernelState::KernelState(Memory* memory, cpu::Processor* processor,
+                         vfs::VirtualFileSystem* file_system)
+    : emulator_(nullptr),
+      memory_(memory),
+      processor_(processor),
+      file_system_(file_system),
+      dispatch_thread_running_(false),
+      dpc_list_(memory),
+      kernel_trampoline_group_(processor->backend()) {
+  assert_null(shared_kernel_state_);
+  shared_kernel_state_ = this;
+  InitializeKernelGuestGlobals();
+  kernel_version_ = KernelVersion(cvars::kernel_build_version);
 }
 
 KernelState::~KernelState() {
@@ -798,7 +814,10 @@ bool KernelState::IsPatchSignatureProper(
   patch_module->GetOptHeader(XEX_HEADER_DELTA_PATCH_DESCRIPTOR,
                              reinterpret_cast<void**>(&patch_header));
 
-  assert_not_null(patch_header);
+  if (!patch_header) {
+    XELOGE("XEX patch has no delta patch descriptor");
+    return false;
+  }
 
   // Compare hash inside delta descriptor to base XEX signature
   uint8_t digest[0x14];
@@ -1046,7 +1065,12 @@ void KernelState::RegisterNotifyListener(XNotifyListener* listener) {
     listener->EnqueueNotification(kXNotificationSystemUI,
                                   xam_state()->IsUIActive());
     listener->EnqueueNotification(kXNotificationSystemSignInChanged, 1);
-    listener->EnqueueNotification(kXNotificationSystemStorageDevicesChanged, 0);
+    // 415607FA: Doesn't like receiving this notification on boot. Causes game
+    // to crash.
+    if (title_id() == kDashboardID) {
+      listener->EnqueueNotification(kXNotificationSystemStorageDevicesChanged,
+                                    0);
+    }
   }
   if (!has_notified_live_startup_ && listener->mask() & kXNotifyLive) {
     has_notified_live_startup_ = true;
@@ -1095,8 +1119,9 @@ void KernelState::CompleteOverlappedEx(uint32_t overlapped_ptr, X_RESULT result,
   XOverlappedSetResult(ptr, result);
   XOverlappedSetExtendedError(ptr, extended_error);
   XOverlappedSetLength(ptr, length);
+  // The event is left unsignaled when there is a completion routine.
   X_HANDLE event_handle = XOverlappedGetEvent(ptr);
-  if (event_handle) {
+  if (event_handle && !XOverlappedGetCompletionRoutine(ptr)) {
     auto ev = object_table()->LookupObject<XEvent>(event_handle);
     assert_not_null(ev);
     if (ev) {
@@ -1334,8 +1359,10 @@ bool KernelState::Restore(ByteStream* stream) {
     return false;
   }
 
-  // Restore the object table
-  object_table_.Restore(stream);
+  // Restore the object table.
+  if (!object_table_.Restore(stream)) {
+    return false;
+  }
 
   // TLS bitmap is now stored per-process in X_KPROCESS structures (in guest
   // memory) Skip reading old global TLS bitmap if present in old save files

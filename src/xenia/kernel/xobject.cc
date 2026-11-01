@@ -71,13 +71,17 @@ Memory* XObject::memory() const { return kernel_state_->memory(); }
 XObject::Type XObject::type() const { return type_; }
 
 void XObject::RetainHandle() {
-  kernel_state_->object_table()->RetainHandle(handles_[0]);
+  auto global_lock = global_critical_region::AcquireDirect();
+  if (!handles_.empty()) {
+    kernel_state_->object_table()->RetainHandle(handles_[0]);
+  }
 }
 
 bool XObject::ReleaseHandle() {
+  auto global_lock = global_critical_region::AcquireDirect();
   // FIXME: Return true when handle is actually released.
-  return kernel_state_->object_table()->ReleaseHandle(handles_[0]) ==
-         X_STATUS_SUCCESS;
+  return !handles_.empty() && kernel_state_->object_table()->ReleaseHandle(
+                                  handles_[0]) == X_STATUS_SUCCESS;
 }
 
 void XObject::Retain() { ++pointer_ref_count_; }
@@ -103,6 +107,7 @@ X_STATUS XObject::Delete() {
 bool XObject::SaveObject(ByteStream* stream) {
   stream->Write<uint32_t>(allocated_guest_object_);
   stream->Write<uint32_t>(guest_object_ptr_);
+  stream->Write<uint32_t>(guest_object_type_ptr_.load());
 
   stream->Write(uint32_t(handles_.size()));
   stream->Write(&handles_[0], handles_.size() * sizeof(X_HANDLE));
@@ -113,6 +118,7 @@ bool XObject::SaveObject(ByteStream* stream) {
 bool XObject::RestoreObject(ByteStream* stream) {
   allocated_guest_object_ = stream->Read<uint32_t>() > 0;
   guest_object_ptr_ = stream->Read<uint32_t>();
+  guest_object_type_ptr_.store(stream->Read<uint32_t>());
 
   handles_.resize(stream->Read<uint32_t>());
   stream->Read(&handles_[0], handles_.size() * sizeof(X_HANDLE));
@@ -123,6 +129,28 @@ bool XObject::RestoreObject(ByteStream* stream) {
   }
 
   return true;
+}
+
+void XObject::SetNativeType() {
+  // Use the host object type for these objects.
+  if (allocated_guest_object_) {
+    return;
+  }
+
+  // ObOpenObjectByPointer takes an Object Manager object, whose body follows
+  // an X_OBJECT_HEADER. Generic dispatch lookups must not inspect this prefix.
+  if (guest_object_ptr_ < sizeof(X_OBJECT_HEADER)) {
+    return;
+  }
+  const uint32_t header_ptr = guest_object_ptr_ - sizeof(X_OBJECT_HEADER);
+  if (!header_ptr ||
+      memory()->QueryRangeAccess(header_ptr, sizeof(X_OBJECT_HEADER)) ==
+          memory::PageAccess::kNoAccess) {
+    return;
+  }
+  auto header = memory()->TranslateVirtual<X_OBJECT_HEADER*>(header_ptr);
+
+  guest_object_type_ptr_.store(header->object_type_ptr);
 }
 
 object_ref<XObject> XObject::Restore(KernelState* kernel_state, Type type,
@@ -394,6 +422,28 @@ void XObject::SetNativePointer(uint32_t native_ptr, bool uninitialized) {
   guest_object_ptr_ = native_ptr;
 }
 
+void XObject::UpdateNativeHandle(X_HANDLE removed_handle) {
+  if (!guest_object_ptr_ || memory()->QueryRangeAccess(
+                                guest_object_ptr_, sizeof(X_DISPATCH_HEADER)) !=
+                                memory::PageAccess::kReadWrite) {
+    return;
+  }
+  auto* header =
+      memory()->TranslateVirtual<X_DISPATCH_HEADER*>(guest_object_ptr_);
+  if (header->wait_list.flink_ptr != kXObjSignature ||
+      header->wait_list.blink_ptr != removed_handle) {
+    return;
+  }
+  if (!handles_.empty()) {
+    StashHandle(header, handles_.front());
+  } else {
+    const uint32_t wait_list =
+        guest_object_ptr_ + uint32_t(offsetof(X_DISPATCH_HEADER, wait_list));
+    header->wait_list.flink_ptr = wait_list;
+    header->wait_list.blink_ptr = wait_list;
+  }
+}
+
 object_ref<XObject> XObject::GetNativeObject(KernelState* kernel_state,
                                              void* native_ptr,
                                              X_OBJECT_TYPES as_type,
@@ -425,9 +475,8 @@ object_ref<XObject> XObject::GetNativeObject(KernelState* kernel_state,
     // Already initialized.
     // TODO: assert if the type of the object != as_type
     uint32_t handle = header->wait_list.blink_ptr;
-    result = kernel_state->object_table()
-                 ->LookupObject<XObject>(handle, true)
-                 .release();
+    result = kernel_state->object_table()->LookupNativeObject(
+        handle, kernel_state->memory()->HostToGuestVirtual(native_ptr));
     if (result) {
       // The only place the guest hands us a raw dispatch header, so the only
       // place a direct write to it can be picked up.

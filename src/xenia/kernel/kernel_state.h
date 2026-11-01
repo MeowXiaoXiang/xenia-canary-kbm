@@ -20,6 +20,7 @@
 #include "xenia/cpu/backend/backend.h"
 #include "xenia/cpu/export_resolver.h"
 #include "xenia/kernel/kernel.h"
+#include "xenia/kernel/nui.h"
 #include "xenia/kernel/smc.h"
 #include "xenia/kernel/util/kernel_fwd.h"
 #include "xenia/kernel/util/native_list.h"
@@ -45,6 +46,10 @@ class Processor;
 
 namespace xe {
 namespace kernel {
+
+namespace test {
+class KernelStateTest;
+}  // namespace test
 
 constexpr fourcc_t kKernelSaveSignature = make_fourcc("KRNL");
 
@@ -184,6 +189,8 @@ class KernelState {
   xam::XamState* xam_state() const { return xam_state_.get(); }
 
   SystemManagementController* smc() const { return smc_.get(); }
+
+  NUIController* nui() const { return nui_.get(); }
 
   xam::AchievementManager* achievement_manager() const {
     return xam_state()->achievement_manager();
@@ -329,6 +336,11 @@ class KernelState {
   std::array<uint32_t, 0x11> xbdm_counters_address = {};
 
  private:
+  // Object Manager tests use the real kernel without Emulator UI or storage.
+  KernelState(Memory* memory, cpu::Processor* processor,
+              vfs::VirtualFileSystem* file_system);
+  friend class test::KernelStateTest;
+
   void LoadKernelModule(object_ref<KernelModule> kernel_module);
   void InitializeProcess(X_KPROCESS* process, uint32_t type,
                          char priority_class, char default_priority,
@@ -356,6 +368,7 @@ class KernelState {
   std::unique_ptr<SystemManagementController> smc_;
   std::unique_ptr<XmpVolumePatch> xmp_volume_patch_;
   std::unique_ptr<XConfig> xconfig_;
+  std::unique_ptr<NUIController> nui_;
 
   KernelVersion kernel_version_;
 

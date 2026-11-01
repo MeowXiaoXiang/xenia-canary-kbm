@@ -65,8 +65,8 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
 
   bool Update(bool is_rasterization_done,
               reg::RB_DEPTHCONTROL normalized_depth_control,
-              uint32_t normalized_color_mask,
-              const Shader& vertex_shader) override;
+              uint32_t normalized_color_mask, const Shader& vertex_shader,
+              int32_t window_offset_tiles) override;
 
   void InvalidateCommandListRenderTargets() {
     are_current_command_list_render_targets_valid_ = false;
@@ -98,7 +98,7 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
   // Returns true if any downloads were submitted to the command processor.
   bool InitializeTraceSubmitDownloads();
   void InitializeTraceCompleteDownloads();
-  void RestoreEdramSnapshot(const void* snapshot);
+  void RestoreEdramSnapshot(const void* snapshot, size_t size_bytes);
 
   // For host render targets.
 
@@ -145,7 +145,11 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
     return D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION;
   }
 
-  RenderTarget* CreateRenderTarget(RenderTargetKey key) override;
+  RenderTarget* CreateRenderTarget(RenderTargetKey key,
+                                   uint32_t height) override;
+  RenderTarget* GrowRenderTarget(
+      RenderTarget* source, uint32_t height,
+      const std::vector<Transfer>& transfers) override;
 
   bool IsHostDepthEncodingDifferent(
       xenos::DepthRenderTargetFormat format) const override;
@@ -247,14 +251,14 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
     // tile ownership transfers in floating-point formats, and to distinguish
     // between two -1 representations in snorm formats).
     D3D12RenderTarget(
-        RenderTargetKey key, ID3D12Resource* resource,
+        RenderTargetKey key, uint32_t height, ID3D12Resource* resource,
         ui::d3d12::D3D12CpuDescriptorPool::Descriptor&& descriptor_draw,
         ui::d3d12::D3D12CpuDescriptorPool::Descriptor&&
             descriptor_load_separate,
         ui::d3d12::D3D12CpuDescriptorPool::Descriptor&& descriptor_srv,
         ui::d3d12::D3D12CpuDescriptorPool::Descriptor&& descriptor_srv_stencil,
         D3D12_RESOURCE_STATES resource_state)
-        : RenderTarget(key),
+        : RenderTarget(key, height),
           resource_(resource),
           descriptor_draw_(std::move(descriptor_draw)),
           descriptor_load_separate_(std::move(descriptor_load_separate)),
@@ -319,6 +323,17 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
     uint32_t temporary_srv_descriptor_index_stencil_ = UINT32_MAX;
     uint32_t temporary_sort_index_ = 0;
   };
+
+  std::deque<std::pair<uint64_t, std::unique_ptr<RenderTarget>>>
+      retired_render_targets_;
+
+  // Transitions render targets using their sample positions for depth.
+  // Multisampled depth drawn at Xenos sample positions is decompressed in place
+  // before leaving DEPTH_WRITE. Otherwise, shader reads may use the default
+  // positions to interpret compressed depth.
+  // https://microsoft.github.io/DirectX-Specs/d3d/ProgrammableSamplePositions.html
+  void TransitionRenderTarget(D3D12RenderTarget& render_target,
+                              D3D12_RESOURCE_STATES new_state);
 
   enum TransferCBVRegister : uint32_t {
     kTransferCBVRegisterStencilMask,
@@ -478,16 +493,17 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
   union TransferAddressConstant {
     uint32_t constant;
     struct {
-      // All in tiles.
-      uint32_t dest_pitch : xenos::kEdramPitchTilesBits;
-      uint32_t source_pitch : xenos::kEdramPitchTilesBits;
+      // All in tiles, the pitches of render target keys.
+      uint32_t dest_pitch : RenderTargetKey::kPitchTilesBits;
+      uint32_t source_pitch : RenderTargetKey::kPitchTilesBits;
       // Destination base in tiles minus source base in tiles (not vice versa
       // because this is a transform of the coordinate system, not addresses
-      // themselves).
-      // + 1 bit because this is a signed difference between two EDRAM bases.
+      // themselves), wrapped, the shader wraps the sum anyway.
       // 0 for host_depth_source_is_copy (ignored in this case anyway as
       // destination == source anyway).
-      int32_t source_to_dest : xenos::kEdramBaseTilesBits + 1;
+      uint32_t source_to_dest : xenos::kEdramBaseTilesBits;
+      // The source render target is in the next period (64bpp color only).
+      uint32_t source_next_period : 1;
     };
     TransferAddressConstant() : constant(0) {
       static_assert_size(*this, sizeof(constant));
@@ -592,8 +608,9 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
     uint32_t offsets;
     struct {
       // May be beyond the EDRAM tile count in case of EDRAM addressing
-      // wrapping, thus + 1 bit.
-      uint32_t dispatch_first_tile : xenos::kEdramBaseTilesBits + 1;
+      // wrapping, and another tile count beyond for a render target in the next
+      // period, thus + 2 bits.
+      uint32_t dispatch_first_tile : xenos::kEdramBaseTilesBits + 2;
       uint32_t source_base_tiles : xenos::kEdramBaseTilesBits;
     };
     DumpOffsets() : offsets(0) { static_assert_size(*this, sizeof(offsets)); }
@@ -716,7 +733,7 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
   // resolve_clear_rectangle is expected to be provided by
   // PrepareHostRenderTargetsResolveClear which should do all the needed size
   // bound checks.
-  void PerformTransfersAndResolveClears(
+  bool PerformTransfersAndResolveClears(
       uint32_t render_target_count, RenderTarget* const* render_targets,
       const std::vector<Transfer>* render_target_transfers,
       const uint64_t* render_target_resolve_clear_values = nullptr,

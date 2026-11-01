@@ -30,6 +30,9 @@ namespace kernel {
 constexpr fourcc_t kXObjSignature = make_fourcc('X', 'E', 'N', '\0');
 
 class KernelState;
+namespace util {
+class ObjectTable;
+}  // namespace util
 
 template <typename T>
 class object_ref;
@@ -181,6 +184,7 @@ class XObject {
 
   const std::string& name() const { return name_; }
   uint32_t guest_object() const { return guest_object_ptr_; }
+  uint32_t guest_object_type() const { return guest_object_type_ptr_.load(); }
 
   // Has this object been created for use by the host?
   // Host objects are persisted through reloads/etc.
@@ -209,6 +213,8 @@ class XObject {
   // Dereference()
 
   void SetAttributes(uint32_t obj_attributes_ptr);
+
+  void SetNativeType();
 
   X_STATUS Wait(uint32_t wait_reason, uint32_t processor_mode,
                 uint32_t alertable, uint64_t* opt_timeout);
@@ -269,6 +275,10 @@ class XObject {
   bool host_object_ = false;
 
  private:
+  friend class util::ObjectTable;
+  // Called under the object-table lock after a slot loses its last reference.
+  void UpdateNativeHandle(X_HANDLE removed_handle);
+
   std::atomic<int32_t> pointer_ref_count_;
 
   Type type_;
@@ -279,6 +289,8 @@ class XObject {
   // if we allocated it!
   uint32_t guest_object_ptr_ = 0;
   bool allocated_guest_object_ = false;
+  // Guest type recorded by ObOpenObjectByPointer.
+  std::atomic<uint32_t> guest_object_type_ptr_{0};
 };
 
 template <typename T>
