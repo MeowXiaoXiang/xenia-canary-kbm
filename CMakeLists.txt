@@ -82,6 +82,9 @@ file(MAKE_DIRECTORY "${PROJECT_SOURCE_DIR}/scratch")
 # Python for shader compilation scripts
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+include(cmake/XeniaMsvcDependencies.cmake)
+xe_detect_msvc_include_prefix()
+
 # Include helpers
 include(cmake/XeniaHelpers.cmake)
 
