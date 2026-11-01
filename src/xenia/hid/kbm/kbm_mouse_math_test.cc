@@ -216,6 +216,87 @@ TEST_CASE("Raw mouse processor resets stale motion before mapping", "[kbm]") {
   REQUIRE(stale.thumb_y == 0);
 }
 
+TEST_CASE("Short capture resets discard queued motion and filter history",
+          "[kbm]") {
+  KbmMouseProcessor processor;
+  KbmMouseSettings settings;
+  const auto start = std::chrono::steady_clock::now();
+  processor.Reset(start);
+  processor.Consume(settings, true, start + std::chrono::milliseconds(1));
+  processor.AddDelta(24, -12, start + std::chrono::milliseconds(2));
+  const auto moving =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(3));
+  REQUIRE(moving.thumb_x > 0);
+  processor.AddDelta(240, -120, start + std::chrono::milliseconds(4));
+
+  // Release and restore within the stale-sample timeout must still reset.
+  processor.Reset(start + std::chrono::milliseconds(5));
+  const auto restored =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(6));
+  REQUIRE(restored.reset_sample);
+  REQUIRE_FALSE(restored.stale_sample);
+  REQUIRE(restored.raw_delta_x == 0);
+  REQUIRE(restored.raw_delta_y == 0);
+  REQUIRE(restored.thumb_x == 0);
+  REQUIRE(restored.thumb_y == 0);
+  REQUIRE(restored.filtered_velocity_x == 0.0);
+  REQUIRE(restored.filtered_velocity_y == 0.0);
+
+  processor.AddDelta(12, -6, start + std::chrono::milliseconds(7));
+  const auto resumed =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(8));
+  REQUIRE_FALSE(resumed.reset_sample);
+  REQUIRE(resumed.raw_delta_x == 12);
+  REQUIRE(resumed.thumb_x > 0);
+}
+
+TEST_CASE("Suspended polls discard motion without carrying a filter tail",
+          "[kbm]") {
+  KbmMouseProcessor processor;
+  const KbmMouseSettings settings;
+  const auto start = std::chrono::steady_clock::now();
+  processor.Reset(start);
+  processor.Consume(settings, true, start + std::chrono::milliseconds(1));
+  processor.AddDelta(24, -12, start + std::chrono::milliseconds(2));
+  REQUIRE(
+      processor.Consume(settings, true, start + std::chrono::milliseconds(3))
+          .thumb_x > 0);
+  processor.AddDelta(240, -120, start + std::chrono::milliseconds(4));
+  const auto suspended =
+      processor.Consume(settings, false, start + std::chrono::milliseconds(5));
+  REQUIRE(suspended.raw_delta_x == 240);
+  REQUIRE(suspended.thumb_x == 0);
+  REQUIRE(suspended.thumb_y == 0);
+  const auto resumed =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(6));
+  REQUIRE(resumed.raw_delta_x == 0);
+  REQUIRE(resumed.thumb_x == 0);
+  REQUIRE(resumed.thumb_y == 0);
+}
+
+TEST_CASE("Same-time polls retain pending motion for the next advancing poll",
+          "[kbm]") {
+  KbmMouseProcessor processor;
+  KbmMouseSettings settings;
+  settings.smoothing_time_ms = 0.0;
+  const auto start = std::chrono::steady_clock::now();
+  processor.Reset(start);
+  processor.Consume(settings, true, start + std::chrono::milliseconds(1));
+  processor.AddDelta(12, -6, start + std::chrono::milliseconds(1));
+  const auto same_time =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(1));
+  REQUIRE(same_time.raw_delta_x == 0);
+  const auto advancing =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(2));
+  REQUIRE(advancing.raw_delta_x == 12);
+  REQUIRE(advancing.raw_delta_y == -6);
+  REQUIRE(advancing.thumb_x > 0);
+  const auto empty =
+      processor.Consume(settings, true, start + std::chrono::milliseconds(3));
+  REQUIRE(empty.raw_delta_x == 0);
+  REQUIRE(empty.thumb_x == 0);
+}
+
 TEST_CASE("Input reports retain the radial schema two contract", "[kbm]") {
   const auto started = std::chrono::steady_clock::now();
   KbmInputSample sample;

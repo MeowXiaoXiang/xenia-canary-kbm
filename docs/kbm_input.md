@@ -199,6 +199,36 @@ hotkey, focus the Xenia window, and enable it again.
 - The backend is intended to coexist with upstream Xenia Canary behavior; do
   not rely on it for competitive or anti-cheat-protected online play.
 
+## Input lifecycle regression checks
+
+Use a separate test directory and disposable configuration files. Record the
+fork revision, integrated upstream base, mouse settings, and results before
+changing input behavior. A successful build or portable-core test run does not
+verify native Windows event ordering or a game's camera response.
+
+| Check | Procedure | Expected result |
+| --- | --- | --- |
+| Focus loss | Hold a movement key or mouse button, switch to another application, release it there, and return. | No stuck control. Requested mouse capture can resume on return. |
+| Capture toggle | Move the mouse while repeatedly capturing and releasing with F8. | Cursor visibility and clipping match capture state; old movement does not reappear after capture resumes. |
+| Host dialogs | Open and close settings while moving or holding a control; repeat with another host dialog. | Guest input is suspended, the cursor is available, and closing the last dialog restores requested capture without stale input. |
+| Binding capture | Capture a key, mouse button, and modifier chord; cancel capture with Escape. | Correct binding names, working cancellation, and no unintended controller input while the dialog is open. |
+| Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Saved settings survive reopening; cancellation restores the settings active when the dialog opened. Existing builds apply edits immediately until canceled. |
+| XAM UI | Exercise game-requested XAM dialogs with short and long durations, with and without a controller connected. | No crash or false successful keystroke; no old mouse movement after the dialog closes. |
+| Diagnostic completion | Record a full 60-second gameplay sample while recording frame times. | Reports are readable; compare frame times around completion with a run without sampling. Track any completion stall separately from mouse mapping behavior. |
+
+Host dialogs suspend KBM through the ImGui dialog lifecycle. The XAM UI-active
+flag and the host dialog becoming visible are separate transitions; check their
+ordering rather than assuming they change simultaneously. The mouse processor
+also resets capture history and rejects poll intervals greater than 100 ms.
+This timeout describes time between controller polls, not the age of each Raw
+Input event, and does not replace focus and capture reset checks.
+
+Diagnostic completion currently copies sample buffers, serializes CSV, and
+writes reports synchronously. Automatic completion can occur inside a
+controller query while the emulator's global critical region is held. This is
+a latency risk to measure; a synthetic report benchmark alone does not prove a
+particular game's frame-time behavior.
+
 ## Build
 
 To try the Windows backend, download the unofficial archive from this fork's
@@ -217,6 +247,40 @@ On a Windows development environment, the normal verification commands are:
 
 The locally built Release executable is
 `build\bin\Windows\Release\xenia_canary.exe`.
+
+Windows Ninja builds detect the compiler's localized `/showIncludes` prefix
+without converting UTF-8 diagnostics through the system ANSI code page. This
+allows header changes to trigger incremental recompilation on localized MSVC
+installations. For a build directory created before this detection was added,
+run `xb.bat build --config=release --force` once to replace objects whose header
+dependencies may be missing. Changing Windows language settings or installing
+an English compiler language pack is not required.
+
+To run the Windows KBM core, configuration, and localization regression tests
+from a developer environment:
+
+```powershell
+.\xb.bat build --config=release --build-tests `
+  --target=xenia-hid-kbm-core-tests `
+  --target=xenia-hid-kbm-config-tests `
+  --target=xenia-app-localization-tests
+ctest --test-dir build -C Release --output-on-failure `
+  -R "xenia-(hid-kbm-(core|config)-tests|app-localization-tests)"
+```
+
+These tests cover portable state and mapping behavior, configuration rejection
+and failed replacement, and catalog consistency. Run the Windows lifecycle
+checks above in addition to these automated tests.
+
+The dependency-prefix parser has separate Python regression tests:
+
+```powershell
+python -B tools/build/msvc_showincludes_test.py
+```
+
+From an MSVC developer environment with CMake and Ninja on PATH, set
+`$env:XENIA_TEST_MSVC_DEPS = "1"` before running this command to also check real
+C and C++ header-triggered rebuilds in a disposable temporary directory.
 
 Linux does not produce a KBM runtime executable. To validate the portable KBM
 core and host UI localization catalog from WSL, configure a separate build
