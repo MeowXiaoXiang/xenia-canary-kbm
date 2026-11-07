@@ -224,6 +224,8 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmInputSamplingProgress,
                        "正在取樣：剩餘 %.0f 秒｜%zu 筆樣本")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportSaved, "報告已儲存：%s")
+XE_LOCALIZATION_STRING(kKbmInputSamplingWriting,
+                       "正在儲存輸入報告，完成後即可開始下一次取樣。")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportFailed,
                        "無法儲存輸入報告，請檢查記錄檔。")
 XE_LOCALIZATION_STRING(kKbmInputSamplingNoReport, "尚未產生輸入報告。")

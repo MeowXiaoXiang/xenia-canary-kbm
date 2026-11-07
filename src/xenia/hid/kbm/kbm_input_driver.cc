@@ -15,12 +15,12 @@
 #include <filesystem>
 #include <limits>
 
-#include "xenia/base/filesystem.h"
 #include "xenia/base/logging.h"
 #include "xenia/base/platform_win.h"
 #include "xenia/hid/hid_flags.h"
 #include "xenia/hid/input_system.h"
 #include "xenia/hid/kbm/kbm_input_adapter.h"
+#include "xenia/hid/kbm/kbm_input_report_writer_win.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window.h"
 #include "xenia/ui/windowed_app_context.h"
@@ -46,10 +46,6 @@ DECLARE_bool(raw_mouse_capture_on_start);
 namespace xe {
 namespace hid {
 namespace kbm {
-
-constexpr auto kInputSamplingDuration = std::chrono::seconds(60);
-constexpr size_t kInputSamplingCapacity = 120000;
-constexpr size_t kInputEventSamplingCapacity = 600000;
 
 bool static IsKbmForUserEnabled(const KbmSettings& settings,
                                 uint32_t user_index) {
@@ -152,7 +148,8 @@ KbmInputDriver::KbmInputDriver(xe::ui::Window* window, size_t window_z_order)
            .reset_mouse_buttons = [this]() { ResetMouseInputState(); },
            .reset_input_state = [this]() { ResetInputState(); },
            .capture_state_changed =
-               [this](bool active) { NotifyCaptureState(active); }}) {
+               [this](bool active) { NotifyCaptureState(active); }}),
+      input_sampling_(WriteKbmInputSamplingReport) {
   settings_ = GetSettingsFromCvars();
   RebuildKeyBindings(settings_);
   ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
@@ -206,7 +203,7 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
   // The dialog reapplies identical settings when it closes. A report should
   // end only when its mapping actually changes.
   if (settings_changed) {
-    FinishInputSampling();
+    StopInputSampling();
   }
 
   {
@@ -246,215 +243,73 @@ KbmInputDriver::Diagnostics KbmInputDriver::GetDiagnostics() const {
   return diagnostics;
 }
 
-void KbmInputDriver::StartInputSampling() {
-  std::vector<InputSample> samples;
-  std::vector<RawInputSample> events;
-  samples.reserve(kInputSamplingCapacity);
-  events.reserve(kInputEventSamplingCapacity);
-  auto settings_lock = settings_critical_region_.Acquire();
-  auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
-  const auto now = std::chrono::steady_clock::now();
-  const KbmSettings settings = settings_;
-  auto lock = input_sampling_critical_region_.Acquire();
-  input_sampling_active_ = true;
-  input_sampling_report_write_failed_ = false;
-  input_sampling_started_ = now;
-  input_sampling_deadline_ = now + kInputSamplingDuration;
-  input_sampling_settings_ = settings;
-  input_samples_.swap(samples);
-  input_events_.swap(events);
-  input_events_dropped_count_ = 0;
-  RawInputSample initial;
-  initial.time = now;
-  initial.kind = 2;
-  initial.sequence = raw_mouse_processor_.event_sequence();
-  initial.reset_pending = raw_mouse_processor_.reset_pending();
-  initial.delta_x = raw_mouse_processor_.pending_delta_x();
-  initial.delta_y = raw_mouse_processor_.pending_delta_y();
-  const auto filtered_velocity = raw_mouse_processor_.filtered_velocity();
-  initial.velocity_x = filtered_velocity.x;
-  initial.velocity_y = filtered_velocity.y;
-  initial.previous_poll_offset_seconds =
-      std::chrono::duration<double>(raw_mouse_processor_.last_sample_time() -
-                                    now)
-          .count();
-  initial.capture_active = platform_input_.capture_active();
-  initial.suspended = host_input_suspended_;
-  input_events_.push_back(initial);
-  input_sampling_dropped_sample_count_ = 0;
-  input_sampling_report_path_.clear();
-  XELOGI(
-      "kbm: started a {} second input sampling session.",
-      std::chrono::duration_cast<std::chrono::seconds>(kInputSamplingDuration)
-          .count());
+bool KbmInputDriver::StartInputSampling() {
+  auto report = input_sampling_.Prepare();
+  if (!report) {
+    return false;
+  }
+  bool started;
+  {
+    auto settings_lock = settings_critical_region_.Acquire();
+    auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
+    const auto now = std::chrono::steady_clock::now();
+    report->started = now;
+    report->settings = {settings_.raw_mouse_sensitivity,
+                        settings_.raw_mouse_full_scale_velocity,
+                        settings_.raw_mouse_response_curve,
+                        settings_.raw_mouse_smoothing_time_ms,
+                        settings_.raw_mouse_deadzone_compensation,
+                        settings_.raw_mouse_minimum_response,
+                        settings_.raw_mouse_invert_y};
+    if (!ConfigPath().empty()) {
+      report->directory = ConfigPath().parent_path();
+    }
+    RawInputSample initial;
+    initial.time = now;
+    initial.kind = 2;
+    initial.sequence = raw_mouse_processor_.event_sequence();
+    initial.reset_pending = raw_mouse_processor_.reset_pending();
+    initial.delta_x = raw_mouse_processor_.pending_delta_x();
+    initial.delta_y = raw_mouse_processor_.pending_delta_y();
+    const auto filtered_velocity = raw_mouse_processor_.filtered_velocity();
+    initial.velocity_x = filtered_velocity.x;
+    initial.velocity_y = filtered_velocity.y;
+    initial.previous_poll_offset_seconds =
+        std::chrono::duration<double>(raw_mouse_processor_.last_sample_time() -
+                                      now)
+            .count();
+    initial.capture_active = platform_input_.capture_active();
+    initial.suspended = host_input_suspended_;
+    report->events.push_back(initial);
+    started = input_sampling_.Start(report);
+  }
+  if (started) {
+    XELOGI("kbm: started a 60 second input sampling session.");
+  }
+  return started;
 }
 
-bool KbmInputDriver::StopInputSampling() { return FinishInputSampling(); }
+bool KbmInputDriver::StopInputSampling() {
+  // Keep the manual cutoff ordered with in-flight controller/raw samples.
+  // The worker does not acquire this region and performs all report I/O.
+  auto lock = global_critical_region_.Acquire();
+  return input_sampling_.Finish();
+}
 
 void KbmInputDriver::CancelInputSampling() {
-  auto lock = input_sampling_critical_region_.Acquire();
-  if (!input_sampling_active_) {
-    return;
+  if (input_sampling_.Cancel()) {
+    XELOGI("kbm: cancelled the input sampling session.");
   }
-  input_sampling_active_ = false;
-  input_samples_.clear();
-  input_events_.clear();
-  input_events_dropped_count_ = 0;
-  input_sampling_dropped_sample_count_ = 0;
-  XELOGI("kbm: cancelled the input sampling session.");
 }
 
 KbmInputDriver::InputSamplingStatus KbmInputDriver::GetInputSamplingStatus()
     const {
-  InputSamplingStatus status;
-  auto lock = input_sampling_critical_region_.Acquire();
-  status.active = input_sampling_active_;
-  status.report_write_failed = input_sampling_report_write_failed_;
-  status.sample_count = input_samples_.size();
-  status.dropped_sample_count = input_sampling_dropped_sample_count_;
-  status.report_path = input_sampling_report_path_;
-  if (status.active) {
-    status.seconds_remaining = std::max(
-        0.0, std::chrono::duration<double>(input_sampling_deadline_ -
-                                           std::chrono::steady_clock::now())
-                 .count());
-  }
-  return status;
+  return input_sampling_.GetStatus();
 }
 
-void KbmInputDriver::RecordInputSample(const InputSample& sample) {
-  bool should_finish = false;
-  {
-    auto lock = input_sampling_critical_region_.Acquire();
-    if (!input_sampling_active_ || sample.time < input_sampling_started_) {
-      return;
-    }
-    if (input_samples_.size() < kInputSamplingCapacity) {
-      input_samples_.push_back(sample);
-    } else {
-      ++input_sampling_dropped_sample_count_;
-    }
-    should_finish = sample.time >= input_sampling_deadline_;
-  }
-  if (should_finish) {
-    FinishInputSampling();
-  }
-}
-
-void KbmInputDriver::RecordRawInputSample(const RawInputSample& sample) {
-  auto lock = input_sampling_critical_region_.Acquire();
-  if (!input_sampling_active_ || sample.time < input_sampling_started_) {
-    return;
-  }
-  if (input_events_.size() < kInputEventSamplingCapacity) {
-    input_events_.push_back(sample);
-  } else {
-    ++input_events_dropped_count_;
-  }
-}
-
-bool KbmInputDriver::FinishInputSampling() {
-  std::vector<InputSample> samples;
-  std::vector<RawInputSample> events;
-  size_t dropped_event_count = 0;
-  KbmSettings settings;
-  std::chrono::steady_clock::time_point started;
-  size_t dropped_sample_count = 0;
-  {
-    auto lock = input_sampling_critical_region_.Acquire();
-    if (!input_sampling_active_) {
-      return false;
-    }
-    input_sampling_active_ = false;
-    samples = input_samples_;
-    events = input_events_;
-    dropped_event_count = input_events_dropped_count_;
-    settings = input_sampling_settings_;
-    started = input_sampling_started_;
-    dropped_sample_count = input_sampling_dropped_sample_count_;
-  }
-
-  std::filesystem::path report_path;
-  const bool written =
-      WriteInputSamplingReport(samples, events, dropped_event_count, settings,
-                               started, dropped_sample_count, &report_path);
-  {
-    auto lock = input_sampling_critical_region_.Acquire();
-    if (input_sampling_started_ == started) {
-      input_sampling_report_write_failed_ = !written;
-      input_sampling_report_path_ =
-          written ? xe::path_to_utf8(report_path) : "";
-    }
-  }
-  if (written) {
-    XELOGI("kbm: saved input sampling report '{}'.", report_path);
-  }
-  return written;
-}
-
-bool KbmInputDriver::WriteInputSamplingReport(
-    const std::vector<InputSample>& samples,
-    const std::vector<RawInputSample>& events, size_t dropped_event_count,
-    const KbmSettings& settings, std::chrono::steady_clock::time_point started,
-    size_t dropped_sample_count, std::filesystem::path* report_path) const {
-  if (ConfigPath().empty() || !report_path) {
-    return false;
-  }
-
-  const auto timestamp =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
-  *report_path = ConfigPath().parent_path() /
-                 fmt::format("kbm-input-report-{}.csv", timestamp);
-
-  const KbmInputReportContents report = SerializeKbmInputReport(
-      samples, events, dropped_sample_count, dropped_event_count,
-      {settings.raw_mouse_sensitivity, settings.raw_mouse_full_scale_velocity,
-       settings.raw_mouse_response_curve, settings.raw_mouse_smoothing_time_ms,
-       settings.raw_mouse_deadzone_compensation,
-       settings.raw_mouse_minimum_response, settings.raw_mouse_invert_y},
-      started);
-
-  xe::filesystem::CreateParentFolder(*report_path);
-  auto events_path = *report_path;
-  events_path.replace_extension(".events.csv");
-  auto events_temporary_path = events_path;
-  events_temporary_path += ".tmp";
-  FILE* event_file = xe::filesystem::OpenFile(events_temporary_path, "wb");
-  if (!event_file) {
-    return false;
-  }
-  const bool events_written =
-      fwrite(report.events_csv.data(), 1, report.events_csv.size(),
-             event_file) == report.events_csv.size();
-  const bool events_closed = fclose(event_file) == 0;
-  if (!events_written || !events_closed) {
-    return false;
-  }
-  auto temporary_path = *report_path;
-  temporary_path += ".tmp";
-  FILE* file = xe::filesystem::OpenFile(temporary_path, "wb");
-  if (!file) {
-    XELOGE("kbm: failed to open input sampling report '{}' for writing.",
-           *report_path);
-    return false;
-  }
-  const bool written = fwrite(report.poll_csv.data(), 1, report.poll_csv.size(),
-                              file) == report.poll_csv.size();
-  const bool closed = fclose(file) == 0;
-  // Publish the poll report last; it is the completion marker for the pair.
-  if (!written || !closed ||
-      !MoveFileExW(events_temporary_path.c_str(), events_path.c_str(),
-                   MOVEFILE_WRITE_THROUGH) ||
-      !MoveFileExW(temporary_path.c_str(), report_path->c_str(),
-                   MOVEFILE_WRITE_THROUGH)) {
-    std::error_code ignored;
-    std::filesystem::remove(temporary_path, ignored);
-    XELOGE("kbm: failed to write input sampling report '{}'.", *report_path);
-    return false;
-  }
-  return true;
+void KbmInputDriver::ShutdownInputSampling() {
+  input_sampling_.Shutdown();
+  XELOGI("kbm: input sampling shut down.");
 }
 
 void KbmInputDriver::SetHostInputSuspended(bool suspended) {
@@ -602,7 +457,7 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
     AddKbmThumb(controller_state.thumb_rx, mouse_sample.thumb_x);
     AddKbmThumb(controller_state.thumb_ry, mouse_sample.thumb_y);
   }
-  RecordInputSample(input_sample);
+  input_sampling_.Record(input_sample);
 
   out_state->gamepad.buttons = controller_state.buttons;
   out_state->gamepad.left_trigger = controller_state.left_trigger;
@@ -816,7 +671,7 @@ void KbmInputDriver::OnRawMouseMove(ui::RawMouseMoveEvent& e) {
     sample.delta_y = e.delta_y();
     sample.capture_active = platform_input_.capture_active();
     sample.suspended = host_input_suspended_;
-    RecordRawInputSample(sample);
+    input_sampling_.Record(sample);
   }
 
   platform_input_.RefreshCaptureIfDue(std::chrono::steady_clock::now());
@@ -842,7 +697,7 @@ void KbmInputDriver::ResetRawMouseMotion() {
   sample.reset_pending = true;
   sample.capture_active = platform_input_.capture_active();
   sample.suspended = host_input_suspended_;
-  RecordRawInputSample(sample);
+  input_sampling_.Record(sample);
 }
 
 void KbmInputDriver::ResetMouseInputState() {

@@ -29,7 +29,7 @@ jobs:
         run: |-
           cmake -S . -B build-linux-kbm -G Ninja -DXENIA_BUILD_TESTS=ON \
             -DCMAKE_CXX_FLAGS=-mmovdir64b
-          cmake --build build-linux-kbm --target xenia-hid-kbm-core-tests xenia-app-localization-tests
+          cmake --build build-linux-kbm --target xenia-hid-kbm-core-tests xenia-hid-kbm-sampling-tests xenia-app-localization-tests
 
       - name: Run portable KBM core tests
-        run: ctest --test-dir build-linux-kbm --output-on-failure -R "xenia-(hid-kbm-core-tests|app-localization-tests)"
+        run: ctest --test-dir build-linux-kbm --output-on-failure --no-tests=error -R "^xenia-(hid-kbm-(core|sampling)-tests|app-localization-tests)$"

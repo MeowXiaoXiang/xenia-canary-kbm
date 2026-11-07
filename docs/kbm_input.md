@@ -228,11 +228,29 @@ Keys received for UI navigation or binding capture must not become held guest
 controls when the last dialog closes. A new press can activate the binding
 again after resume.
 
-Diagnostic completion currently copies sample buffers, serializes CSV, and
-writes reports synchronously. Automatic completion can occur inside a
-controller query while the emulator's global critical region is held. This is
-a latency risk to measure; a synthetic report benchmark alone does not prove a
-particular game's frame-time behavior.
+Diagnostic completion transfers the completed buffers to one report worker.
+The controller query does not copy the buffers, serialize CSV, or write files.
+The worker publishes the event file first and the poll CSV last as the report
+pair's completion marker. CSV schema and mapping calculations are unchanged.
+
+The settings page shows a saving message until publication finishes. Another
+session can start after saving completes; a write failure is shown instead of a
+successful report path. Stop requests publication asynchronously, while Cancel
+discards an active recording. A report already being saved is allowed to finish.
+Shutdown waits for an accepted report to finish and discards an unfinished
+recording. The Windows application explicitly shuts down sampling before its
+quick-exit path, which bypasses ordinary driver destruction. Frame-time
+comparisons during gameplay remain useful because moving
+work off the input thread does not eliminate all CPU and storage contention.
+
+Sampling buffers and the report worker belong to the sampling component. Buffer
+allocation and lazy worker startup happen on the UI path before input locks are
+acquired. The driver snapshots initial mouse state and activates recording under
+its existing input locks. Producers then take only a short session mutex to
+append or transfer ownership; the worker releases that mutex before report work
+and never accesses the driver, UI, or emulator global critical region.
+Manual Stop briefly takes the input region to keep the recording cutoff ordered
+with an in-flight poll; report processing still occurs entirely on the worker.
 
 ## Build
 
@@ -269,17 +287,20 @@ from a developer environment:
   --target=xenia-hid-kbm-core-tests `
   --target=xenia-hid-kbm-config-tests `
   --target=xenia-hid-kbm-lifecycle-tests `
+  --target=xenia-hid-kbm-sampling-tests `
   --target=xenia-app-localization-tests
 ctest --test-dir build -C Release --output-on-failure `
-  -R "^xenia-(hid-kbm-(core|config|lifecycle)-tests|app-localization-tests)$"
+  -R "^xenia-(hid-kbm-(core|config|lifecycle|sampling)-tests|app-localization-tests)$"
 ```
 
 These tests cover portable state and mapping behavior, configuration rejection
 and failed replacement, catalog consistency, and driver focus and host-dialog
 transitions using an in-process test window. The driver tests do not register
 Raw Input, create a native window, or validate cursor clipping and capture.
-Windows CI runs these four suites before preparing an artifact. Run the native
-Windows lifecycle checks above in addition to these automated tests.
+Sampling tests also cover worker handoff, capacity limits, cancellation,
+shutdown, writer failures, CSV compatibility and publication cleanup. Windows
+CI runs these five suites before preparing an artifact. Run the native Windows
+lifecycle checks above in addition to these automated tests.
 
 The dependency-prefix parser has separate Python regression tests:
 
@@ -299,8 +320,8 @@ directory with tests enabled:
 cmake -S . -B build-linux-kbm -G Ninja -DXENIA_BUILD_TESTS=ON \
   -DCMAKE_CXX_FLAGS=-mmovdir64b
 cmake --build build-linux-kbm \
-  --target xenia-hid-kbm-core-tests xenia-app-localization-tests
-ctest --test-dir build-linux-kbm -R "xenia-(hid-kbm-core-tests|app-localization-tests)" \
+  --target xenia-hid-kbm-core-tests xenia-hid-kbm-sampling-tests xenia-app-localization-tests
+ctest --test-dir build-linux-kbm -R "^xenia-(hid-kbm-(core|sampling)-tests|app-localization-tests)$" \
   --output-on-failure
 ```
 

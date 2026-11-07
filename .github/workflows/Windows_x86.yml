@@ -75,12 +75,13 @@ jobs:
           --target=xenia-hid-kbm-core-tests
           --target=xenia-hid-kbm-config-tests
           --target=xenia-hid-kbm-lifecycle-tests
+          --target=xenia-hid-kbm-sampling-tests
           --target=xenia-app-localization-tests
 
       - name: Test KBM and localization
         run: >-
           ctest --test-dir build -C Release --output-on-failure --no-tests=error
-          -R "^xenia-(hid-kbm-(core|config|lifecycle)-tests|app-localization-tests)$"
+          -R "^xenia-(hid-kbm-(core|config|lifecycle|sampling)-tests|app-localization-tests)$"
 
       - name: Prepare artifacts
         id: prepare_artifacts

@@ -89,6 +89,9 @@ class EmulatorWindow {
   void ShutdownGraphicsSystemPresenterPainting();
 
   void OnEmulatorInitialized();
+#if XE_PLATFORM_WIN32
+  void ShutdownKbmInputSampling();
+#endif  // XE_PLATFORM_WIN32
 
   xe::X_STATUS RunTitle(const std::filesystem::path& path_to_file);
   void UpdateTitle();

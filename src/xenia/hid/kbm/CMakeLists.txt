@@ -1,5 +1,6 @@
 add_library(xenia-hid-kbm-core STATIC kbm_binding.cc kbm_controller_state.cc
                                         kbm_input_report.cc
+                                        kbm_input_sampling.cc
                                         kbm_input_state.cc
                                         kbm_mouse_processor.cc)
 target_link_libraries(xenia-hid-kbm-core PUBLIC xenia-base)
@@ -9,6 +10,7 @@ if(WIN32)
   add_library(xenia-hid-kbm STATIC kbm_config.cc kbm_hid.cc
                                         kbm_input_adapter.cc
                                         kbm_input_driver.cc
+                                        kbm_input_report_writer_win.cc
                                         kbm_platform_input_win.cc)
   target_link_libraries(xenia-hid-kbm PUBLIC xenia-base xenia-hid
                         xenia-hid-kbm-core xenia-hid-keyboard xenia-ui)
@@ -16,6 +18,19 @@ if(WIN32)
 endif()
 
 if(XENIA_BUILD_TESTS)
+  add_executable(xenia-hid-kbm-sampling-tests kbm_input_sampling_test.cc)
+  target_compile_definitions(xenia-hid-kbm-sampling-tests PRIVATE
+    CATCH_CONFIG_MAIN)
+  target_include_directories(xenia-hid-kbm-sampling-tests PRIVATE
+    ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src)
+  target_compile_features(xenia-hid-kbm-sampling-tests PRIVATE cxx_std_17)
+  target_link_libraries(xenia-hid-kbm-sampling-tests PRIVATE xenia-hid-kbm-core)
+  if(WIN32)
+    target_link_libraries(xenia-hid-kbm-sampling-tests PRIVATE xenia-hid-kbm)
+  endif()
+  add_test(NAME xenia-hid-kbm-sampling-tests COMMAND xenia-hid-kbm-sampling-tests)
+  set_tests_properties(xenia-hid-kbm-sampling-tests PROPERTIES TIMEOUT 30)
+
   add_executable(xenia-hid-kbm-core-tests kbm_mouse_math_test.cc)
   target_compile_definitions(xenia-hid-kbm-core-tests PRIVATE
     CATCH_CONFIG_MAIN)

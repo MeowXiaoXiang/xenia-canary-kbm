@@ -337,6 +337,22 @@ void EmulatorWindow::OnEmulatorInitialized() {
   }
 }
 
+#if XE_PLATFORM_WIN32
+void EmulatorWindow::ShutdownKbmInputSampling() {
+  // Menus/input are enabled only after initialization has completed on the UI
+  // thread. Avoid reading the driver list while startup is still populating it.
+  if (!emulator_initialized_) {
+    return;
+  }
+  if (auto* input_system = emulator_->input_system()) {
+    if (auto* driver = input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
+      // GetDriver has released its lock; joining must hold no input locks.
+      driver->ShutdownInputSampling();
+    }
+  }
+}
+#endif  // XE_PLATFORM_WIN32
+
 void EmulatorWindow::EmulatorWindowListener::OnClosing(ui::UIEvent& e) {
   emulator_window_.app_context_.QuitFromUIThread();
 }

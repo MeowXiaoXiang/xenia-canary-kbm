@@ -584,6 +584,14 @@ bool EmulatorApp::OnInitialize() {
 void EmulatorApp::OnDestroy() {
   ShutdownEmulatorThreadFromUIThread();
 
+#if XE_PLATFORM_WIN32
+  // quick_exit below skips driver destructors. Drain accepted KBM reports
+  // explicitly while logging and the emulator services are still available.
+  if (emulator_window_) {
+    emulator_window_->ShutdownKbmInputSampling();
+  }
+#endif  // XE_PLATFORM_WIN32
+
   if (cvars::discord) {
     discord::DiscordPresence::Shutdown();
   }

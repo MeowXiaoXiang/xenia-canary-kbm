@@ -421,6 +421,8 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
           if (ImGui::Button(tr(StringId::kKbmCancelInputSampling))) {
             driver->CancelInputSampling();
           }
+        } else if (sampling.writing) {
+          ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingWriting));
         } else {
           const bool save_and_start =
               dirty_ || hid::kbm::GetConfigState() ==
@@ -441,8 +443,7 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
                 save_failed_ = true;
               }
             }
-            if (!save_failed_) {
-              driver->StartInputSampling();
+            if (!save_failed_ && driver->StartInputSampling()) {
               committed_or_restored_ = true;
               close_after_start_sampling = true;
             }

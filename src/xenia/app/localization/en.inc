@@ -250,6 +250,9 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmInputSamplingProgress,
                        "Recording: %.0f s remaining | %zu samples")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportSaved, "Report saved: %s")
+XE_LOCALIZATION_STRING(
+    kKbmInputSamplingWriting,
+    "Saving input report. A new sample can start when saving finishes.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportFailed,
                        "Failed to save the input report. Check the log.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingNoReport,
