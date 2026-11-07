@@ -20,6 +20,7 @@
 #include "xenia/hid/kbm/kbm_controller_state.h"
 #include "xenia/hid/kbm/kbm_input_sampling.h"
 #include "xenia/hid/kbm/kbm_input_state.h"
+#include "xenia/hid/kbm/kbm_mouse_preview.h"
 #include "xenia/hid/kbm/kbm_mouse_processor.h"
 #include "xenia/hid/kbm/kbm_platform_input.h"
 #include "xenia/hid/keyboard/keyboard_input_driver.h"
@@ -81,6 +82,14 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool StopInputSampling();
   void CancelInputSampling();
   void ShutdownInputSampling();
+  bool StartMousePreview();
+  void StopMousePreview();
+  void ResetMousePreview();
+  bool MousePreviewFailed() const {
+    return platform_input_.preview_capture_failed();
+  }
+  const KbmMousePreview& SampleMousePreview(const KbmSettings& draft);
+
   InputSamplingStatus GetInputSamplingStatus() const;
 
  protected:
@@ -148,6 +157,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   std::atomic<int16_t> raw_mouse_thumb_x_{0};
   std::atomic<int16_t> raw_mouse_thumb_y_{0};
 
+  KbmMousePreview mouse_preview_;
   KbmInputSampling input_sampling_;
 };
 

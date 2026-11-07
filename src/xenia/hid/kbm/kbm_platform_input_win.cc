@@ -35,7 +35,8 @@ KbmPlatformInput::~KbmPlatformInput() {
   window_.RemoveListener(&window_listener_);
 }
 
-bool KbmPlatformInput::RegisterRawMouse(bool exclusive_capture) {
+bool KbmPlatformInput::RegisterRawMouse(bool exclusive_capture,
+                                        bool reset_gameplay) {
   const DWORD registration_flags =
       exclusive_capture ? RIDEV_NOLEGACY | RIDEV_CAPTUREMOUSE : 0;
   if (raw_mouse_registered_ &&
@@ -59,7 +60,7 @@ bool KbmPlatformInput::RegisterRawMouse(bool exclusive_capture) {
 
   const bool was_registered = raw_mouse_registered_.exchange(true);
   raw_mouse_registration_flags_ = registration_flags;
-  if (!was_registered) {
+  if (!was_registered && reset_gameplay) {
     ResetRawMouseMotion();
   }
   XELOGI("kbm: Raw Input mouse registered for right thumbstick ({}).",
@@ -67,12 +68,14 @@ bool KbmPlatformInput::RegisterRawMouse(bool exclusive_capture) {
   return true;
 }
 
-void KbmPlatformInput::UnregisterRawMouse() {
+bool KbmPlatformInput::UnregisterRawMouse(bool preserve_gameplay) {
   if (!raw_mouse_registered_) {
-    return;
+    return true;
   }
-  capture_requested_ = false;
-  ReleaseCapture();
+  if (!preserve_gameplay) {
+    capture_requested_ = false;
+    ReleaseCapture();
+  }
 
   RAWINPUTDEVICE raw_mouse_device = {};
   raw_mouse_device.usUsagePage = 0x01;
@@ -83,14 +86,76 @@ void KbmPlatformInput::UnregisterRawMouse() {
                                sizeof(raw_mouse_device))) {
     XELOGW("kbm: failed to unregister Raw Input mouse, error {}.",
            GetLastError());
+    return false;
   }
   raw_mouse_registered_ = false;
   raw_mouse_registration_flags_ = 0;
-  ResetRawMouseMotion();
+  if (!preserve_gameplay) {
+    ResetRawMouseMotion();
+  }
   XELOGI("kbm: Raw Input mouse unregistered.");
+  return true;
+}
+
+bool KbmPlatformInput::BeginPreviewCapture() {
+  if (preview_capture_active_) {
+    return true;
+  }
+  if (!input_suspended_ || capture_active_ || !window_.HasFocus()) {
+    return false;
+  }
+  preview_capture_failed_ = false;
+  preview_restore_registration_ = raw_mouse_registered_;
+  if (!RegisterRawMouse(true, false)) {
+    preview_capture_failed_ = true;
+    return false;
+  }
+  previous_cursor_visibility_ = window_.GetCursorVisibility();
+  window_.CaptureMouse();
+  window_.SetCursorVisibility(ui::Window::CursorVisibility::kHidden);
+  if (GetCapture() != static_cast<ui::Win32Window*>(&window_)->hwnd() ||
+      !UpdateClipRectangle()) {
+    ClipCursor(nullptr);
+    window_.SetCursorVisibility(previous_cursor_visibility_);
+    window_.ReleaseMouse();
+    RestorePreviewRegistration();
+    preview_capture_failed_ = true;
+    XELOGE("kbm: could not activate preview capture.");
+    return false;
+  }
+  preview_capture_active_ = true;
+  last_center_time_ = std::chrono::steady_clock::now();
+  return true;
+}
+
+void KbmPlatformInput::EndPreviewCapture() {
+  if (!preview_capture_active_.exchange(false)) {
+    return;
+  }
+  ClipCursor(nullptr);
+  window_.SetCursorVisibility(previous_cursor_visibility_);
+  window_.ReleaseMouse();
+  if (!RestorePreviewRegistration()) {
+    preview_capture_failed_ = true;
+  }
+}
+
+bool KbmPlatformInput::RestorePreviewRegistration() {
+  if (preview_restore_registration_ && RegisterRawMouse(false, false)) {
+    return true;
+  }
+  const bool removed = UnregisterRawMouse(true);
+  if (preview_restore_registration_) {
+    XELOGE("kbm: could not restore foreground Raw Input after preview.");
+    return false;
+  }
+  return removed;
 }
 
 void KbmPlatformInput::SetInputSuspended(bool suspended) {
+  if (!suspended) {
+    EndPreviewCapture();
+  }
   input_suspended_ = suspended;
   if (suspended) {
     ReleaseCapture();
@@ -124,7 +189,8 @@ void KbmPlatformInput::ApplyCapture() {
   ResetRawMouseMotion();
   window_.CaptureMouse();
   window_.SetCursorVisibility(ui::Window::CursorVisibility::kHidden);
-  if (!UpdateClipRectangle()) {
+  if (GetCapture() != static_cast<ui::Win32Window*>(&window_)->hwnd() ||
+      !UpdateClipRectangle()) {
     ClipCursor(nullptr);
     window_.SetCursorVisibility(previous_cursor_visibility_);
     window_.ReleaseMouse();
@@ -140,6 +206,10 @@ void KbmPlatformInput::ApplyCapture() {
 }
 
 void KbmPlatformInput::ReleaseCapture() {
+  if (preview_capture_active_) {
+    EndPreviewCapture();
+    return;
+  }
   const bool was_active = capture_active_.exchange(false);
   // Do this after native state changes, so motion queued before release can
   // never become the first sample after a later capture restore.
@@ -160,6 +230,19 @@ void KbmPlatformInput::ReleaseCapture() {
 }
 
 void KbmPlatformInput::RefreshCapture() {
+  if (preview_capture_active_) {
+    const auto hwnd = static_cast<ui::Win32Window*>(&window_)->hwnd();
+    if (GetCapture() != hwnd) {
+      SetCapture(hwnd);
+    }
+    if (!input_suspended_ || !window_.HasFocus() || GetCapture() != hwnd ||
+        !RegisterRawMouse(true, false) || !UpdateClipRectangle()) {
+      EndPreviewCapture();
+      preview_capture_failed_ = true;
+      XELOGE("kbm: preview capture interrupted; cursor released.");
+    }
+    return;
+  }
   if (!capture_requested_) {
     return;
   }
@@ -207,7 +290,7 @@ void KbmPlatformInput::RefreshCapture() {
 
 void KbmPlatformInput::RefreshCaptureIfDue(
     std::chrono::steady_clock::time_point now) {
-  if (capture_active_ &&
+  if ((capture_active_ || preview_capture_active_) &&
       now - last_center_time_ >= std::chrono::milliseconds(50)) {
     RefreshCapture();
     last_center_time_ = now;

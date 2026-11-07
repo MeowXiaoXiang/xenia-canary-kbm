@@ -161,42 +161,17 @@ XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "Enable Raw Input mouse control")
 XE_LOCALIZATION_STRING(
     kKbmRawMouseRequiresController,
     "Enable KBM Controller to configure Raw Input mouse control.")
-XE_LOCALIZATION_STRING(kKbmSensitivity, "Mouse sensitivity multiplier:")
-XE_LOCALIZATION_STRING(
-    kKbmSensitivityGuide,
-    "3600 DPI at 10x is a starting point. Higher DPI usually needs a lower "
-    "multiplier, while lower DPI can use a higher one; in-game settings and "
-    "controller limits still affect the result.")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "Invert vertical look")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
 XE_LOCALIZATION_STRING(kKbmCaptureToggle, "Mouse capture hotkey:")
-XE_LOCALIZATION_STRING(kKbmFineTuning, "Advanced tuning (optional)")
-XE_LOCALIZATION_STRING(kKbmAimCurve,
-                       "Mouse response curve (default 0.8; 1.0 is linear):")
-XE_LOCALIZATION_STRING(
-    kKbmAimCurveHelp,
-    "0.8 boosts low-speed output; >1.0 slows small movements; 1.0 is linear.")
-XE_LOCALIZATION_STRING(kKbmMouseSmoothing,
-                       "Mouse smoothing (0 ms: no smoothing):")
-XE_LOCALIZATION_STRING(
-    kKbmMouseSmoothingHelp,
-    "0 ms is most direct but can expose input jitter. 4–12 ms usually "
-    "improves fine adjustment; higher values add more lag.")
-XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone,
-                       "Compensate analog-stick deadzone")
+XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "Stick anti-deadzone")
 XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0.0–0.5):")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
-    "Enable only if the game ignores subtle movement. Raising minimum output "
-    "can clear the game's deadzone, but too much makes near-center adjustment "
-    "difficult. Output returns to zero after movement stops.")
-XE_LOCALIZATION_STRING(kKbmFullStickThreshold,
-                       "Full-stick speed at 1x (counts/s):")
-XE_LOCALIZATION_STRING(
-    kKbmFullStickHelp,
-    "At %.3fx, full-stick output begins near %.0f counts/s. Lower values "
-    "reach the game's turn-speed cap sooner.")
+    "Raises non-zero output to cross the game's stick deadzone. Too much "
+    "minimum output makes fine adjustment difficult. Zero movement still "
+    "produces zero output. Disable for pure linear output.")
 XE_LOCALIZATION_STRING(kKbmDiagnostics, "Diagnostics")
 XE_LOCALIZATION_STRING(kKbmLastStickOutput,
                        "Latest right-stick output: {:.0f}%{}")
@@ -220,14 +195,16 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmDiagnosticsUnavailable,
                        "Runtime diagnostics are unavailable.")
 XE_LOCALIZATION_STRING(kKbmSave, "Save settings")
+XE_LOCALIZATION_STRING(kKbmCancel, "Cancel")
 XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "Restore defaults")
 XE_LOCALIZATION_STRING(kKbmSaveClose, "Save settings and close")
 XE_LOCALIZATION_STRING(kKbmSettingsFile, "Settings file: kbm.toml")
-XE_LOCALIZATION_STRING(kKbmAppliedUnsaved, "Changes are applied but not saved.")
+XE_LOCALIZATION_STRING(kKbmAppliedUnsaved,
+                       "Draft changes affect preview only; save to activate.")
 XE_LOCALIZATION_STRING(kKbmAppliedSaved, "Changes are applied and saved.")
 XE_LOCALIZATION_STRING(
     kKbmAppliedSaveFailed,
-    "Changes are applied, but saving failed. kbm.toml was not changed.")
+    "Saving failed. The active settings and kbm.toml were not changed.")
 XE_LOCALIZATION_STRING(
     kKbmConfigIncompatible,
     "kbm.toml is incompatible and was not loaded. Restore defaults, then "
@@ -378,3 +355,36 @@ XE_LOCALIZATION_STRING(kGuestLanguageTurkish, "Turkish")
 XE_LOCALIZATION_STRING(kGuestLanguageNorwegian, "Norwegian")
 XE_LOCALIZATION_STRING(kGuestLanguageDutch, "Dutch")
 XE_LOCALIZATION_STRING(kGuestLanguageSimplifiedChinese, "Simplified Chinese")
+
+XE_LOCALIZATION_STRING(kKbmDpi, "Mouse hardware DPI (100–32,000)")
+
+XE_LOCALIZATION_STRING(kKbmPhysicalSpeed, "Full-stick speed (1–100 cm/s)")
+
+XE_LOCALIZATION_STRING(
+    kKbmPhysicalGuide,
+    "Enter your mouse DPI manually; it is not detected. Full-stick speed is "
+    "physical mouse speed, not cm/360 degrees. Lower values reach full stick "
+    "more easily. Defaults do not reproduce legacy tuning.")
+
+XE_LOCALIZATION_STRING(kKbmMigrationNotice,
+                       "Legacy v3 bindings were loaded. Mouse tuning now uses "
+                       "DPI and physical speed and needs recalibration. Saving "
+                       "upgrades to v4 after backing up the original file.")
+
+XE_LOCALIZATION_STRING(kKbmLivePreview, "Independent live stick preview")
+
+XE_LOCALIZATION_STRING(kKbmStartPreview, "Start test")
+
+XE_LOCALIZATION_STRING(kKbmStopPreview, "Stop test")
+
+XE_LOCALIZATION_STRING(kKbmPreviewExitHelp,
+                       "Move the mouse to test. Press Escape, Enter or Space "
+                       "to release the cursor. Game input remains paused.")
+
+XE_LOCALIZATION_STRING(kKbmPreviewPeak, "Peak: %.1f%%")
+
+XE_LOCALIZATION_STRING(kKbmResetPreviewPeak, "Reset peak")
+
+XE_LOCALIZATION_STRING(
+    kKbmPreviewFailed,
+    "Preview capture failed. The cursor has been released; check the log.")

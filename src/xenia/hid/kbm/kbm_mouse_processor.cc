@@ -20,17 +20,12 @@ void KbmMouseProcessor::AddDelta(int64_t delta_x, int64_t delta_y,
   pending_delta_x_ += delta_x;
   pending_delta_y_ += delta_y;
   ++event_sequence_;
-  if (delta_x || delta_y) {
-    has_motion_ = true;
-    last_motion_time_ = time;
-  }
 }
 
 void KbmMouseProcessor::Reset(std::chrono::steady_clock::time_point time) {
   pending_delta_x_ = 0;
   pending_delta_y_ = 0;
-  filtered_velocity_ = {};
-  has_motion_ = false;
+  velocity_ = {};
   reset_pending_ = true;
   last_sample_time_ = time;
   ++event_sequence_;
@@ -62,35 +57,19 @@ KbmMouseSample KbmMouseProcessor::Consume(
     delta_x = 0;
     delta_y = 0;
   }
-  if (input_active && !sample.reset_sample && !sample.stale_sample) {
-    filtered_velocity_.x = FilterMouseDisplacement(
-        double(delta_x), sample.elapsed_seconds, settings.smoothing_time_ms,
-        filtered_velocity_.x);
-    filtered_velocity_.y = FilterMouseDisplacement(
-        double(settings.invert_y ? delta_y : -delta_y), sample.elapsed_seconds,
-        settings.smoothing_time_ms, filtered_velocity_.y);
-  } else {
-    filtered_velocity_ = {};
+  velocity_ = {};
+  if (advance && input_active && !sample.reset_sample && !sample.stale_sample) {
+    velocity_.x = double(delta_x) / sample.elapsed_seconds;
+    velocity_.y = double(settings.invert_y ? delta_y : -double(delta_y)) /
+                  sample.elapsed_seconds;
   }
-  sample.filtered_velocity_x = filtered_velocity_.x;
-  sample.filtered_velocity_y = filtered_velocity_.y;
-
-  const double full_scale =
-      settings.full_scale_velocity / std::max(settings.sensitivity, 0.01);
-  const auto mapped = MapMouseRadial(
-      filtered_velocity_, full_scale, settings.response_curve,
+  sample.velocity_x = velocity_.x;
+  sample.velocity_y = velocity_.y;
+  const auto mapped = MapMousePhysical(
+      velocity_, settings.dpi, settings.full_stick_speed_cm_s,
       settings.deadzone_compensation ? settings.minimum_response : 0.0);
   sample.thumb_x = static_cast<int16_t>(std::lround(mapped.x * 32767.0));
   sample.thumb_y = static_cast<int16_t>(std::lround(mapped.y * 32767.0));
-  if (settings.deadzone_compensation &&
-      (!has_motion_ ||
-       !MouseCompensationActive(
-           std::chrono::duration<double>(time - last_motion_time_).count(),
-           std::hypot(filtered_velocity_.x, filtered_velocity_.y),
-           full_scale))) {
-    sample.thumb_x = 0;
-    sample.thumb_y = 0;
-  }
   return sample;
 }
 

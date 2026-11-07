@@ -14,93 +14,92 @@
 #include "xenia/hid/kbm/kbm_input_state.h"
 #include "xenia/hid/kbm/kbm_mouse_processor.h"
 
-#include <deque>
+#include <limits>
+#include "xenia/hid/kbm/kbm_mouse_preview.h"
 
 #include "third_party/catch/single_include/catch2/catch.hpp"
 
 namespace xe::hid::kbm {
 
-// Offline reference candidate only. Window membership is evaluated from event
-// time without consuming history when the consumer polls.
-class FixedWindowReference {
- public:
-  void Add(double time, double delta) { events_.push_back({time, delta}); }
-  double Snapshot(double now, double window) const {
-    double sum = 0.0;
-    for (const auto& event : events_) {
-      if (event.first > now - window && event.first <= now) {
-        sum += event.second;
+TEST_CASE("Physical mapping preserves radial direction and speed units",
+          "[kbm]") {
+  const double full = 800.0 * 10.0 / 2.54;
+  REQUIRE(full == Approx(3149.606299));
+  for (const double fraction : {0.0, 0.01, 0.5, 1.0, 2.0}) {
+    auto value = MapMousePhysical(
+        {full * fraction * 0.6, -full * fraction * 0.8}, 800, 10);
+    REQUIRE(std::hypot(value.x, value.y) == Approx(std::min(fraction, 1.0)));
+    REQUIRE(value.x == Approx(std::min(fraction, 1.0) * 0.6));
+    REQUIRE(value.y == Approx(-std::min(fraction, 1.0) * 0.8));
+  }
+  REQUIRE(MapMousePhysical({}, 800, 10, 0.5).x == 0.0);
+  REQUIRE(MapMousePhysical({full * 0.5, 0}, 800, 10, 0.3).x == Approx(0.65));
+  REQUIRE(MapMousePhysical({full, 0}, 1600, 10).x == Approx(0.5));
+  REQUIRE(MapMousePhysical({full, 0}, 800, 20).x == Approx(0.5));
+  REQUIRE(
+      MapMousePhysical({std::numeric_limits<double>::infinity(), 0}, 800, 10)
+          .x == 0.0);
+  REQUIRE(
+      MapMousePhysical({1, 1}, std::numeric_limits<double>::quiet_NaN(), 0).x >
+      0.0);
+}
+
+TEST_CASE("Physical poll buckets use actual duration and stop without a tail",
+          "[kbm]") {
+  for (const auto micros : {1, 50, 1000, 8000, 16000, 33000, 100000, 100001}) {
+    for (bool compensation : {false, true}) {
+      KbmMouseProcessor processor;
+      KbmMouseSettings settings;
+      settings.deadzone_compensation = compensation;
+      const auto start = std::chrono::steady_clock::now();
+      processor.Reset(start);
+      const auto initial = start + std::chrono::microseconds(1);
+      processor.Consume(settings, true, initial);
+      processor.AddDelta(1, -1, initial);
+      const auto sample = processor.Consume(
+          settings, true, initial + std::chrono::microseconds(micros));
+      REQUIRE(sample.raw_delta_x == 1);
+      REQUIRE(sample.stale_sample == (micros > 100000));
+      if (micros <= 100000) {
+        REQUIRE(sample.velocity_x == Approx(1000000.0 / micros));
+        REQUIRE(sample.thumb_x > 0);
+        REQUIRE(sample.thumb_y > 0);
+      } else {
+        REQUIRE(sample.thumb_x == 0);
       }
+      const auto stopped = processor.Consume(
+          settings, true, initial + std::chrono::microseconds(micros + 1000));
+      REQUIRE(stopped.thumb_x == 0);
+      REQUIRE(stopped.thumb_y == 0);
     }
-    return sum / window;
   }
+}
 
- private:
-  std::deque<std::pair<double, double>> events_;
-};
-
-TEST_CASE("Fixed window reference preserves gain and has finite support",
+TEST_CASE("Preview runs independently and retains its peak until reset",
           "[kbm]") {
-  for (double interval : {0.001, 0.002, 0.008}) {
-    FixedWindowReference reference;
-    for (int event = 1; event <= 100; ++event) {
-      reference.Add(event * interval, 1000.0 * interval);
-    }
-    // Half an event interval avoids boundary ambiguity from floating point.
-    const double time = 99.5 * interval;
-    REQUIRE(reference.Snapshot(time, 0.016) == Approx(1000.0));
-    const double before = reference.Snapshot(time, 0.016);
-    reference.Snapshot(time + 0.0001, 0.016);
-    REQUIRE(reference.Snapshot(time, 0.016) == before);
-    REQUIRE(reference.Snapshot(100 * interval + 0.017, 0.016) == 0.0);
-  }
-}
-
-TEST_CASE("Same-time event batches preserve displacement in impulse estimator",
-          "[kbm]") {
-  MouseEventExponential batched(0.008), combined(0.008);
-  for (int i = 0; i < 8; ++i) {
-    batched.Add(0.010, {1.0, -1.0});
-  }
-  combined.Add(0.010, {8.0, -8.0});
-  REQUIRE(batched.Snapshot(0.011).x == combined.Snapshot(0.011).x);
-  REQUIRE(batched.Snapshot(0.011).y == combined.Snapshot(0.011).y);
-  combined.Add(0.012, {-8.0, 8.0});
-  REQUIRE(combined.Snapshot(0.012).x < 0.0);
-  REQUIRE(combined.Snapshot(0.012).y > 0.0);
-}
-
-TEST_CASE("Anti-deadzone cannot sustain an old filter tail", "[kbm]") {
-  REQUIRE(MouseCompensationActive(0.001, 0.1, 3000.0));
-  REQUIRE_FALSE(MouseCompensationActive(0.013, 0.1, 3000.0));
-  REQUIRE(MouseCompensationActive(0.020, 100.0, 3000.0));
-  REQUIRE_FALSE(MouseCompensationActive(0.050, 100000.0, 3000.0));
-  REQUIRE_FALSE(MouseCompensationActive(-0.001, 100.0, 3000.0));
-}
-
-TEST_CASE("Radial response preserves direction and bounds strength", "[kbm]") {
-  for (double exponent : {0.8, 0.9, 1.0, 1.2}) {
-    for (double speed : {0.0001, 100.0, 3000.0, 9000.0}) {
-      const MouseVector velocity{speed * 0.8, speed * 0.6};
-      const auto mapped = MapMouseRadial(velocity, 3000.0, exponent);
-      REQUIRE(mapped.y / mapped.x == Approx(0.75));
-      REQUIRE(std::hypot(mapped.x, mapped.y) <= 1.0 + 1e-12);
-      const auto reversed =
-          MapMouseRadial({-velocity.x, -velocity.y}, 3000.0, exponent);
-      REQUIRE(reversed.x == Approx(-mapped.x));
-      REQUIRE(reversed.y == Approx(-mapped.y));
-    }
-  }
-  REQUIRE(MapMouseRadial({}, 3000.0, 0.8).x == 0.0);
-  REQUIRE(MapMouseRadial({1500.0, 0.0}, 3000.0, 1.0).x == Approx(0.5));
-}
-
-TEST_CASE("Radial minimum response preserves direction", "[kbm]") {
-  const auto mapped = MapMouseRadial({3.0, 4.0}, 1000.0, 1.0, 0.30);
-  REQUIRE(mapped.y / mapped.x == Approx(4.0 / 3.0));
-  REQUIRE(std::hypot(mapped.x, mapped.y) >= 0.30);
-  REQUIRE(std::hypot(mapped.x, mapped.y) <= 1.0);
-  REQUIRE(MapMouseRadial({}, 1000.0, 1.0, 0.30).x == 0.0);
+  KbmMousePreview preview;
+  KbmMouseProcessor gameplay;
+  KbmMouseSettings settings;
+  const auto start = std::chrono::steady_clock::now();
+  gameplay.AddDelta(37, -19, start);
+  const auto sequence = gameplay.event_sequence();
+  preview.Start(start);
+  preview.AddDelta(40, -10, start + std::chrono::milliseconds(1));
+  preview.Sample(settings, start + std::chrono::milliseconds(15));
+  REQUIRE(preview.current() == 0.0);
+  preview.Sample(settings, start + std::chrono::milliseconds(16));
+  REQUIRE(preview.current() > 0.0);
+  const double peak = preview.peak();
+  preview.Sample(settings, start + std::chrono::milliseconds(32));
+  REQUIRE(preview.current() == 0.0);
+  REQUIRE(preview.peak() == peak);
+  preview.Stop();
+  REQUIRE(preview.peak() == peak);
+  preview.Reset(start + std::chrono::milliseconds(33));
+  REQUIRE(preview.peak() == 0.0);
+  REQUIRE(gameplay.pending_delta_x() == 37);
+  REQUIRE(gameplay.pending_delta_y() == -19);
+  REQUIRE(gameplay.event_sequence() == sequence);
 }
 
 TEST_CASE("Logical KBM input codes use stable v3 tokens", "[kbm]") {
@@ -135,67 +134,9 @@ TEST_CASE("Logical KBM chords preserve modifiers and display names", "[kbm]") {
   REQUIRE_FALSE(ParseKbmChord("Ctrl+F8", chord));
 }
 
-TEST_CASE("Event estimator snapshots do not consume state", "[kbm]") {
-  MouseEventExponential frequent(0.008), sparse(0.008);
-  for (int event = 1; event <= 100; ++event) {
-    const double now = event * 0.001;
-    frequent.Add(now, {1.0, -2.0});
-    sparse.Add(now, {1.0, -2.0});
-    for (int poll = 0; poll < 10; ++poll) {
-      frequent.Snapshot(now + poll * 0.0001);
-    }
-  }
-  REQUIRE(frequent.Snapshot(0.101).x == sparse.Snapshot(0.101).x);
-  REQUIRE(frequent.Snapshot(0.101).y == sparse.Snapshot(0.101).y);
-  frequent.Reset(0.102);
-  REQUIRE(frequent.Snapshot(0.103).x == 0.0);
-}
-
-TEST_CASE("Event impulse ripple depends on device interval", "[kbm]") {
-  for (double interval : {0.001, 0.002, 0.008}) {
-    MouseEventExponential estimator(0.008);
-    for (int i = 1; i <= 1000; ++i) {
-      estimator.Add(i * interval, {1000.0 * interval, 0.0});
-    }
-    const double peak = estimator.Snapshot(1000 * interval).x;
-    const double trough = estimator.Snapshot(1001 * interval).x;
-    const double ratio = interval / 0.008;
-    REQUIRE(peak / 1000 == Approx(ratio / -std::expm1(-ratio)));
-    REQUIRE(trough / 1000 == Approx(ratio / std::expm1(ratio)));
-  }
-}
-
-TEST_CASE("Mouse filter uses elapsed time rather than query count", "[kbm]") {
-  double repeated = 1000.0;
-  for (int i = 0; i < 20; ++i) {
-    repeated = FilterMouseDisplacement(0.0, 0.00005, 8.0, repeated);
-  }
-  REQUIRE(repeated == Approx(FilterMouseDisplacement(0.0, 0.001, 8.0, 1000.0)));
-  REQUIRE(repeated == Approx(1000.0 * std::exp(-0.001 / 0.008)));
-}
-
-TEST_CASE("Mouse filter handles zero time and unsmoothed input", "[kbm]") {
-  REQUIRE(FilterMouseDisplacement(3.0, 0.0, 8.0, 42.0) == 42.0);
-  REQUIRE(FilterMouseDisplacement(3.0, -1.0, 8.0, 42.0) == 42.0);
-  REQUIRE(FilterMouseDisplacement(3.0, 0.00005, 0.0, 42.0) == Approx(60000.0));
-  REQUIRE(FilterMouseDisplacement(0.0, 0.001, 0.0, 42.0) == 0.0);
-}
-
-TEST_CASE("Mouse filter preserves constant velocity and tiny intervals",
-          "[kbm]") {
-  for (double dt : {1e-12, 0.00005, 0.001, 0.008, 0.1}) {
-    REQUIRE(FilterMouseDisplacement(250.0 * dt, dt, 8.0, 250.0) ==
-            Approx(250.0));
-    REQUIRE(FilterMouseDisplacement(-250.0 * dt, dt, 8.0, -250.0) ==
-            Approx(-250.0));
-  }
-  REQUIRE(FilterMouseDisplacement(1.0, 1e-12, 8.0, 0.0) == Approx(125.0));
-}
-
 TEST_CASE("Raw mouse processor resets stale motion before mapping", "[kbm]") {
   KbmMouseProcessor processor;
   KbmMouseSettings settings;
-  settings.smoothing_time_ms = 0.0;
   const auto start = std::chrono::steady_clock::now();
   processor.Reset(start);
   const auto reset =
@@ -239,8 +180,8 @@ TEST_CASE("Short capture resets discard queued motion and filter history",
   REQUIRE(restored.raw_delta_y == 0);
   REQUIRE(restored.thumb_x == 0);
   REQUIRE(restored.thumb_y == 0);
-  REQUIRE(restored.filtered_velocity_x == 0.0);
-  REQUIRE(restored.filtered_velocity_y == 0.0);
+  REQUIRE(restored.velocity_x == 0.0);
+  REQUIRE(restored.velocity_y == 0.0);
 
   processor.AddDelta(12, -6, start + std::chrono::milliseconds(7));
   const auto resumed =
@@ -278,7 +219,6 @@ TEST_CASE("Same-time polls retain pending motion for the next advancing poll",
           "[kbm]") {
   KbmMouseProcessor processor;
   KbmMouseSettings settings;
-  settings.smoothing_time_ms = 0.0;
   const auto start = std::chrono::steady_clock::now();
   processor.Reset(start);
   processor.Consume(settings, true, start + std::chrono::milliseconds(1));
@@ -297,7 +237,7 @@ TEST_CASE("Same-time polls retain pending motion for the next advancing poll",
   REQUIRE(empty.thumb_x == 0);
 }
 
-TEST_CASE("Input reports retain the radial schema two contract", "[kbm]") {
+TEST_CASE("Input reports retain the radial schema three contract", "[kbm]") {
   const auto started = std::chrono::steady_clock::now();
   KbmInputSample sample;
   sample.time = started + std::chrono::milliseconds(8);
@@ -309,8 +249,9 @@ TEST_CASE("Input reports retain the radial schema two contract", "[kbm]") {
   event.kind = 2;
   const auto report =
       SerializeKbmInputReport({sample}, {event}, 0, 0, {}, started);
-  REQUIRE(report.poll_csv.find("mapper=radial") != std::string::npos);
-  REQUIRE(report.poll_csv.find("# schema=2") != std::string::npos);
+  REQUIRE(report.poll_csv.find("mapper=physical_linear_radial") !=
+          std::string::npos);
+  REQUIRE(report.poll_csv.find("# schema=3") != std::string::npos);
   REQUIRE(report.events_csv.find("kind: 0=motion,1=reset,2=initial_state") !=
           std::string::npos);
 }
@@ -349,6 +290,77 @@ TEST_CASE("Portable controller state composes KBM controls", "[kbm]") {
   AddKbmThumb(state.thumb_rx, 30000);
   AddKbmThumb(state.thumb_rx, 30000);
   REQUIRE(state.thumb_rx == 32767);
+}
+
+TEST_CASE("Nonadvancing polls retain buckets and Y inversion is applied once",
+          "[kbm]") {
+  for (bool invert : {false, true}) {
+    KbmMouseProcessor processor;
+    KbmMouseSettings settings;
+    settings.invert_y = invert;
+    const auto start = std::chrono::steady_clock::now();
+    processor.Reset(start);
+    const auto initial = start + std::chrono::microseconds(1);
+    processor.Consume(settings, true, initial);
+    processor.AddDelta(10, 10, initial);
+    const auto backwards = processor.Consume(settings, true, start);
+    REQUIRE(backwards.thumb_x == 0);
+    REQUIRE(backwards.raw_delta_x == 0);
+    REQUIRE(processor.pending_delta_x() == 10);
+    REQUIRE(processor.last_sample_time() == initial);
+    const auto sample = processor.Consume(
+        settings, true, initial + std::chrono::milliseconds(8));
+    REQUIRE(sample.raw_delta_y == 10);
+    REQUIRE((sample.thumb_y > 0) == invert);
+  }
+}
+
+TEST_CASE(
+    "Low-speed integer traces conserve counts across device and guest poll "
+    "rates",
+    "[kbm]") {
+  using Clock = std::chrono::steady_clock;
+  for (const int device_hz : {125, 500, 1000}) {
+    for (const int poll_hz : {30, 60, 120, 1000}) {
+      CAPTURE(device_hz, poll_hz);
+      KbmMouseProcessor processor;
+      KbmMouseSettings settings;
+      settings.deadzone_compensation = false;
+      const auto reset = Clock::now();
+      processor.Reset(reset);
+      const auto start = reset + std::chrono::microseconds(1);
+      processor.Consume(settings, true, start);
+      int event = 1, delivered = 0;
+      int64_t consumed = 0;
+      double integrated_output = 0.0;
+      for (int poll = 1; poll <= poll_hz; ++poll) {
+        const int64_t elapsed_ns = int64_t(poll) * 1000000000 / poll_hz;
+        while (event <= device_hz &&
+               int64_t(event) * 1000000000 / device_hz <= elapsed_ns) {
+          const int cumulative = event * 125 / device_hz;
+          if (cumulative != delivered) {
+            processor.AddDelta(
+                cumulative - delivered, 0,
+                start + std::chrono::nanoseconds(int64_t(event) * 1000000000 /
+                                                 device_hz));
+          }
+          delivered = cumulative;
+          ++event;
+        }
+        const auto value = processor.Consume(
+            settings, true, start + std::chrono::nanoseconds(elapsed_ns));
+        consumed += value.raw_delta_x;
+        integrated_output +=
+            double(value.thumb_x) / 32767.0 * value.elapsed_seconds;
+        if (!value.raw_delta_x) {
+          REQUIRE(value.thumb_x == 0);
+        }
+      }
+      REQUIRE(consumed == 125);
+      REQUIRE(std::abs(integrated_output - 125.0 / (800.0 * 10.0 / 2.54)) <
+              1.0 / 32767.0);
+    }
+  }
 }
 
 }  // namespace xe::hid::kbm

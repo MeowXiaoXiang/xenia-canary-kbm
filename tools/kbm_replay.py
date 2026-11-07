@@ -104,8 +104,81 @@ def check_event_buckets(rows, events):
     return {"available": True, "checked_polls": checked, "bucket_mismatches": mismatches}
 
 
+def analyze_physical(path, metadata, rows):
+    if metadata.get("mapper") != "physical_linear_radial" or metadata.get("estimator") != "poll_bucket_actual_time":
+        raise ValueError("unsupported physical KBM mapper or estimator")
+    dpi = float(metadata["dpi"])
+    speed = float(metadata["full_stick_speed_cm_s"])
+    minimum = float(metadata["minimum_response"])
+    if not (100 <= dpi <= 32000 and 1 <= speed <= 100 and 0 <= minimum <= .5):
+        raise ValueError("invalid physical KBM parameters")
+    for key in ("deadzone_compensation", "invert_y"):
+        if metadata[key] not in ("true", "false"):
+            raise ValueError(f"invalid {key}")
+    if metadata["deadzone_compensation"] == "false":
+        minimum = 0.0
+    threshold = dpi * speed / 2.54
+    invert = metadata["invert_y"] == "true"
+    sidecar = path.with_suffix(".events.csv")
+    event_check = {"available": False, "reason": "missing sidecar"}
+    previous = None
+    if sidecar.exists():
+        event_metadata, events = load_report(sidecar)
+        if event_metadata.get("schema") != "3":
+            raise ValueError("mismatched event sidecar schema")
+        if int(metadata["dropped_events"]) or int(metadata["dropped_samples"]):
+            event_check = {"available": False, "reason": "truncated recording"}
+        else:
+            event_check = check_event_buckets(rows, events)
+        if events and events[0]["kind"] == "2":
+            previous = float(events[0]["previous_poll_offset_ms"]) / 1000
+    errors, outputs, intervals, differences = [], [], [], []
+    short_empty = short_count = 0
+    for row in rows:
+        now = float(row["elapsed_ms"]) / 1000
+        dt = float(row["interval_ms"]) / 1000
+        actual_dt = dt if previous is None else now - previous
+        if dt > 0:
+            previous = now
+        raw = [int(row["raw_delta_x"]), int(row["raw_delta_y"])*(1 if invert else -1)]
+        active = row["input_active"] == "true"
+        reset = row["reset_sample"] == "true" or row["stale_sample"] == "true" or not active
+        velocity = [v/dt for v in raw] if dt > 0 and not reset else [0.0, 0.0]
+        errors.append(math.hypot(velocity[0]-float(row["velocity_x"]), velocity[1]-float(row["velocity_y"])))
+        def mapped(values):
+            magnitude = math.hypot(*values)
+            if magnitude == 0:
+                return [0.0, 0.0]
+            radius = minimum + (1-minimum)*min(magnitude/threshold, 1.0)
+            return [v/magnitude*radius for v in values]
+        expected = mapped(velocity)
+        actual = mapped([v/actual_dt for v in raw]) if actual_dt > 0 and not reset else [0.0,0.0]
+        outputs.append(100*math.hypot(expected[0]-int(row["thumb_x"])/32767, expected[1]-int(row["thumb_y"])/32767))
+        differences.append(100*math.hypot(expected[0]-actual[0], expected[1]-actual[1]))
+        if active and not reset and dt > 0:
+            intervals.append(dt*1000)
+            if dt < .001:
+                short_count += 1
+                short_empty += raw == [0, 0]
+    return {
+        "report": path.name, "schema": "3", "mapper": metadata["mapper"],
+        "effective_full_stick_axis_speed_cps": threshold,
+        "analyzed_samples": len(rows), "event_bucket_check": event_check,
+        "sub_ms_samples": short_count, "sub_ms_empty_samples": short_empty,
+        "actual_interval_ms_p50": percentile(intervals,.5),
+        "replay_velocity_error_cps_p99": percentile(errors,.99),
+        "replay_output_error_percentage_points_max": max(outputs,default=0),
+        "actual_time_output_difference_percentage_points_p99": percentile(differences,.99),
+        "limitations": "Physical poll-bucket replay; not camera response or gameplay frame time measurement.",
+    }
+
+
 def analyze(path):
     metadata, rows = load_report(path)
+    if metadata.get("schema") == "3":
+        return analyze_physical(path, metadata, rows)
+    if metadata.get("schema") not in (None, "1", "2"):
+        raise ValueError("unsupported KBM report schema")
     threshold = float(metadata["full_scale_velocity"]) / float(metadata["sensitivity"])
     curve = float(metadata["response_curve"])
     tau = float(metadata["smoothing_time_ms"]) / 1000

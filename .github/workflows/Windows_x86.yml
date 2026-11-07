@@ -83,6 +83,9 @@ jobs:
           ctest --test-dir build -C Release --output-on-failure --no-tests=error
           -R "^xenia-(hid-kbm-(core|config|lifecycle|sampling)-tests|app-localization-tests)$"
 
+      - name: Test KBM replay tools
+        run: python -m unittest discover -s tools -p "kbm_*test.py"
+
       - name: Prepare artifacts
         id: prepare_artifacts
         run: |-

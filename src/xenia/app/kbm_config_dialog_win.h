@@ -35,6 +35,9 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
  private:
   hid::kbm::KbmInputDriver* GetDriver() const;
   void ApplyDraft();
+  bool SaveDraft();
+  bool preview_failed_ = false;
+  bool focus_preview_stop_ = false;
   void RestoreOriginal();
   void StartBindingCapture(std::string* target, bool append);
   void CancelBindingCapture();

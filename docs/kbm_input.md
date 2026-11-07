@@ -44,23 +44,24 @@ separate from `xenia-canary.config.toml`. It does not import or migrate a
 previous `winkey.toml`; save the desired bindings again in the KBM Controller
 Settings dialog.
 
-New configurations use `schema_version = 3` and the current KBM defaults,
-including the 0.8 aim curve. The current format separates controller state,
-keyboard/mouse bindings, Raw Mouse behavior, and Raw Mouse tuning into
-`[HID.KBM.Controller]`, `[HID.KBM.Bindings]`, `[HID.KBM.RawMouse]`, and
-`[HID.KBM.RawMouse.Tuning]`. Incompatible files are intentionally not loaded
-or migrated: the settings page warns about them and leaves the file untouched
-until you choose **Restore defaults** and then **Save settings**.
+New configurations use `schema_version = 4`. The grouped controller, binding,
+Raw Mouse and tuning tables are retained. Grouped v3 files load compatible
+bindings, controller settings, Y inversion, capture and deadzone settings.
+Retired sensitivity, full-scale velocity, response curve and EMA settings are
+ignored. The new physical parameters start at 800 DPI and 10 cm/s; the settings
+page warns that recalibration is needed. Startup does not rewrite the v3 file.
+Saving creates an exact `kbm.toml.v3.bak` backup first (a numbered suffix protects
+a different existing backup), then publishes v4. A backup failure prevents the
+upgrade. Unsupported or malformed files are rejected without partial loading.
 
 ## Keyboard bindings
 
-The settings window keeps its save controls visible while the content scrolls.
-Edits apply immediately for testing, but only **Save settings** writes them to
-`kbm.toml`. Use **Save settings and close** to return to gameplay, or
-close the window to restore the settings that were active when the page opened.
-The status line distinguishes applied-but-unsaved changes, saved changes, and
-a save failure that left the file unchanged. **Restore defaults** applies the
-current KBM defaults for testing; save explicitly if you want to keep them.
+The settings window keeps its save controls visible while content scrolls.
+Edits, including **Restore defaults**, change a local draft and preview only.
+**Save settings** first publishes the draft to `kbm.toml`, then activates it.
+**Save settings and close** also returns to gameplay. Closing without saving
+discards changes since the last successful save. A failure preserves the active
+settings, saved file and draft so that the player can retry.
 
 Press Escape to cancel binding capture. Use the **Esc** button next to a binding
 to assign Escape itself. Multiple alternative keys for a stick direction count
@@ -79,8 +80,8 @@ failed write does not truncate the previously saved configuration.
 Controller state and keystrokes use the same evaluated bindings. Modifier
 chords work in either press order, and captured Raw Input mouse button
 transitions are retained even between polls. Settings loaded from disk and
-settings applied from the UI share range validation; non-finite sensitivity
-and curve values revert to defaults. A configuration with a wrong KBM value
+settings applied from the UI share range validation; non-finite physical tuning
+values revert to defaults. A configuration with a wrong KBM value
 type or invalid binding is rejected as a whole, so no partial settings are
 applied.
 
@@ -112,40 +113,83 @@ virtual controller with Raw Input mouse-to-right-stick support; use
 
 ## Raw Input mouse tuning
 
-Raw Input deltas are sampled as counts per second, optionally smoothed with a
-time-based velocity filter, multiplied by **Sensitivity**, shaped by **Aim
-curve** once over their combined X/Y speed, and converted to the right-stick
-range. This radial mapping preserves mouse direction and limits mouse output
-to a circle. The game still applies its own controller sensitivity, turn-speed,
-and deadzone behavior.
+Raw Input counts accumulated between guest controller polls are divided by
+the actual elapsed time. There is no EMA, response exponent, displacement debt,
+or guest-tick synchronization. The linear radial mapping preserves direction:
 
-- **Sensitivity** is a multiplier. **3600 DPI / 10x** is a starting point:
-  higher DPI usually needs a lower multiplier, while lower DPI can use a higher
-  one. The game's settings and controller limits still affect the result.
-- **Base full-stick speed** is the counts-per-second threshold at which the
-  emulated stick reaches full deflection at **1x sensitivity**. The default is
-  **24000 counts/s**; at 10x the effective threshold is **2400 counts/s**.
-  Lowering it reaches the game's maximum turn speed sooner; raising it leaves
-  more room for fine movement.
-- **Aim curve** defaults to **0.8**. It boosts low-speed output; **1.0** is
-  linear, and values above **1.0** slow small movements.
-- **Mouse smoothing** defaults to **8 ms**. **0 ms** applies no smoothing and
-  is most direct, but can expose input jitter. **4–12 ms** usually improves
-  fine adjustment; higher values add more lag.
-- **Minimum stick output** has a **0.0–0.5** range. Enable it only if the game
-  ignores subtle movement. Raising it can clear the game's deadzone, but too
-  much makes near-center adjustment difficult. Output returns to zero after
-  movement stops; a short filtered tail may be present before the motion gate
-  ends it.
-- Raw Mouse always uses radial mapping. Keyboard stick bindings still combine
-  with mouse output using per-axis saturation.
+```text
+full_scale_cps = dpi * full_stick_speed_cm_s / 2.54
+magnitude = clamp(hypot(dx, dy) / elapsed_seconds / full_scale_cps, 0, 1)
+```
 
-The velocity filter uses the actual elapsed controller-query time, including
-intervals below 1 ms. It does not detect or synchronize with a game's tick.
+The current starting settings are:
 
-Start from the defaults, adjust the game's own controller sensitivity, and
-then make small changes to the KBM Controller controls. DPI alone cannot predict the
-final turning distance because games map an analog stick differently.
+| Setting | Default | Range |
+|---|---:|---:|
+| Hardware DPI | 800; replace with the mouse's actual DPI | 100–32,000 |
+| Full-stick speed | 10 cm/s | 1–100 cm/s |
+| Stick anti-deadzone | On | On / Off |
+| Minimum stick output | 0.30 | 0–0.5; used only with anti-deadzone |
+
+These are product starting values, not detected hardware settings or a universal
+calibration for every game. Existing v3/v4 choices for anti-deadzone remain intact;
+the default applies to new settings and **Restore defaults**.
+
+- **Mouse hardware DPI** is manually entered, not automatically detected.
+  Enter the actual hardware value and keep it fixed while tuning. This field
+  changes the mapping scale; it does not change the mouse's hardware resolution.
+- **Full-stick speed** is physical mouse movement speed, not cm/360 degrees.
+  Lower values reach full stick more easily;
+  higher values require faster movement. At the defaults, full stick starts near
+  3149.6 counts/s. Defaults do not reproduce legacy tuning.
+- **Stick anti-deadzone** is on by default. When enabled, nonzero radial
+  output becomes `minimum + (1-minimum)*magnitude`. Minimum stick output defaults to
+  0.30 with a 0–0.5 range. Zero motion always produces zero output; there is no
+  smoothing tail. Compensation changes the otherwise linear output relationship.
+- Finite out-of-range values are clamped; NaN and infinity revert to defaults.
+  Reset/inactive samples and intervals over 100ms output zero. Nonpositive
+  intervals leave pending counts for the next advancing poll and output zero.
+
+### Tuning order and fine movement
+
+1. Set the mouse's hardware DPI, then enter that same value in KBM settings.
+2. Use the independent preview to adjust full-stick speed. Lower it for easier
+   full deflection, or raise it for more physical speed before saturation.
+3. Check the result in the game, whose own controller sensitivity, deadzone,
+   acceleration and maximum turn speed still apply. Change one setting at a time.
+4. Keep the minimum output at its starting value unless the game ignores small
+   movements or minimum movement is too strong. Use **Save settings** to activate
+   the draft; preview changes alone do not change gameplay settings.
+
+At low speeds, integer counts and different device/guest polling rates can
+produce alternating zero and nonzero samples. A DPI mismatch can magnify each
+count's output change. Anti-deadzone also introduces a minimum for each nonzero
+sample; whether the camera moves smoothly then depends on the game's deadzone.
+Entering the correct DPI does not itself add more hardware counts. A low-speed
+boost curve would change gain, not add resolution, and can amplify small steps.
+
+Use report replay to check the stick output sent by KBM. Reports do not record
+camera angle or angular velocity, so they cannot alone prove the cause of an
+in-game acceleration or a perceived change after a fast mouse movement.
+
+Keyboard stick bindings combine with mouse output using per-axis saturation.
+Removing smoothing can expose low-speed quantization and uneven device/poll
+timing; it does not establish better gameplay frame times.
+
+### Independent live preview
+
+Choose **Start test** to capture the cursor while host game input remains
+suspended. Move the mouse to see 0–100% output and the peak. Press Escape, Enter,
+Space or **Stop test** to release it. Focus loss and closing the dialog also
+stop the test; returning focus does not restart it. Stop retains the peak;
+**Reset peak**, a new test or a mapping edit clears it.
+
+Preview owns separate counts and a clock, sampled by the UI after at least
+16ms using actual elapsed time. It uses the gameplay mapping math without
+reading/clearing gameplay buckets or depending on guest polls. Consequently its
+instantaneous output may differ from a gameplay sample. It also works before a
+game is loaded and when the active configuration disables Raw Mouse. The F8
+gameplay capture request remains unchanged.
 
 ## Input sampling diagnostics
 
@@ -154,28 +198,32 @@ capture, close the settings window so guest input resumes, play normally, and
 open the settings again to see the saved report path. The CSV is stored beside
 `kbm.toml` as `kbm-input-report-<timestamp>.csv`.
 
-Each report includes the Raw Input delta, filtered velocity, mouse right-stick
+Each report includes the Raw Input delta, unfiltered velocity, mouse right-stick
 output, game input polling interval, capture state, and a summary of reset,
-stale, or dropped samples. New reports identify the fixed `mapper=radial` in
-their metadata. The report is written only when capture finishes, so recording
-does not add per-sample disk I/O.
+stale, or dropped samples. New reports identify `mapper=physical_linear_radial`
+and `estimator=poll_bucket_actual_time` in their metadata. Reports are published
+after recording ends, so recording does not add per-sample disk I/O.
 
-Schema 2 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
-accepted Raw Input events, reset markers, and the initial filter/bucket state.
+Schema 2 and 3 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
+accepted Raw Input events, reset markers, and the initial bucket state.
 The timestamps describe host processing, not hardware sampling. Event sequence
 numbers associate poll buckets with the event trace. The poll report is published
 last and marks a completed pair; a sidecar alone is not a complete report.
-Changing KBM settings finishes the current capture so its metadata stays valid.
+Activating changed KBM settings finishes the current capture so its metadata stays valid.
 
 Skip all leading `#` metadata comments when importing, rather than a fixed
-number of lines. Schema 2 intervals are actual elapsed times; older reports used
+number of lines. Schema 3 uses `mapper=physical_linear_radial` and
+`estimator=poll_bucket_actual_time`, with DPI and cm/s metadata and
+`velocity_x`/`velocity_y` columns. Schema 2 retains its legacy EMA interpretation.
+Both use actual elapsed intervals; older reports used
 a 1 ms floor. Dropped counters describe recorder capacity, not OS packet loss.
 The event buffer supports up to 600,000 entries and the poll buffer 120,000;
 reports expose truncation counts. Keep both files when sharing a new capture.
 
 For read-only poll replay, run `python tools/kbm_replay.py <report.csv>`.
-Its output compares timing calculations, not measured camera response. Legacy
-reports cannot reconstruct individual hardware or Raw Input events.
+Its output compares timing calculations, not measured camera response. Reports
+without event sidecars cannot reconstruct individual Raw Input arrivals, and
+host-processing timestamps do not establish hardware sampling times.
 
 ## Mouse capture
 
@@ -212,7 +260,10 @@ verify native Windows event ordering or a game's camera response.
 | Capture toggle | Move the mouse while repeatedly capturing and releasing with F8. | Cursor visibility and clipping match capture state; old movement does not reappear after capture resumes. |
 | Host dialogs | Open and close settings while moving or holding a control; repeat with another host dialog. | Guest input is suspended, the cursor is available, and closing the last dialog restores requested capture without stale input. |
 | Binding capture | Capture a key, mouse button, and modifier chord; cancel capture with Escape. | Correct binding names, working cancellation, and no unintended controller input while the dialog is open. |
-| Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Saved settings survive reopening; cancellation restores the settings active when the dialog opened. Existing builds apply edits immediately until canceled. |
+| Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Draft edits affect preview only; cancellation retains the last successfully activated settings. |
+| Live preview | Start a test before loading a game; move, stop, reset the peak, and change tuning. | Output updates without guest polls; stopping returns to zero, and reset or tuning changes clear the peak. |
+| Preview capture | Test Escape, Enter, Space, focus loss, binding capture and dialog closure. | Cursor is released; returning focus does not restart preview, and the gameplay F8 request is preserved. |
+| v3 migration | Open an existing grouped v3 file, cancel edits, then save. | Startup and Cancel leave the original file intact; Save creates its backup and publishes v4 while preserving compatible settings. |
 | XAM UI | Exercise game-requested XAM dialogs with short and long durations, with and without a controller connected. | No crash or false successful keystroke; no old mouse movement after the dialog closes. |
 | Diagnostic completion | Record a full 60-second gameplay sample while recording frame times. | Reports are readable; compare frame times around completion with a run without sampling. Track any completion stall separately from mouse mapping behavior. |
 
@@ -231,7 +282,8 @@ again after resume.
 Diagnostic completion transfers the completed buffers to one report worker.
 The controller query does not copy the buffers, serialize CSV, or write files.
 The worker publishes the event file first and the poll CSV last as the report
-pair's completion marker. CSV schema and mapping calculations are unchanged.
+pair's completion marker. New reports use schema 3; replay still recognizes
+legacy report math and rejects unknown schemas/models.
 
 The settings page shows a saving message until publication finishes. Another
 session can start after saving completes; a write failure is shown instead of a

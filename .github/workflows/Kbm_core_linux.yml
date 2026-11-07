@@ -31,5 +31,8 @@ jobs:
             -DCMAKE_CXX_FLAGS=-mmovdir64b
           cmake --build build-linux-kbm --target xenia-hid-kbm-core-tests xenia-hid-kbm-sampling-tests xenia-app-localization-tests
 
+      - name: Test KBM replay tools
+        run: python -m unittest discover -s tools -p "kbm_*test.py"
+
       - name: Run portable KBM core tests
         run: ctest --test-dir build-linux-kbm --output-on-failure --no-tests=error -R "^xenia-(hid-kbm-(core|sampling)-tests|app-localization-tests)$"

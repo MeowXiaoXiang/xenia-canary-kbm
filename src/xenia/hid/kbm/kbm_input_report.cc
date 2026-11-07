@@ -56,38 +56,36 @@ KbmInputReportContents SerializeKbmInputReport(
       samples.empty() ? 0.0 : total_interval_seconds * 1000.0 / samples.size(),
       longest_interval_seconds * 1000.0);
   output += fmt::format(
-      "# sensitivity={}, full_scale_velocity={}, response_curve={}, "
-      "smoothing_time_ms={}, deadzone_compensation={}, "
-      "minimum_response={}, invert_y={}, mapper=radial\n",
-      settings.sensitivity, settings.full_scale_velocity,
-      settings.response_curve, settings.smoothing_time_ms,
+      "# dpi={}, full_stick_speed_cm_s={}, deadzone_compensation={}, "
+      "minimum_response={}, invert_y={}, mapper=physical_linear_radial\n",
+      settings.dpi, settings.full_stick_speed_cm_s,
       settings.deadzone_compensation, settings.minimum_response,
       settings.invert_y);
   output += fmt::format(
-      "# schema=2, estimator=poll_ema_actual_time, "
+      "# schema=3, estimator=poll_bucket_actual_time, "
       "timestamp=host_processing_steady_clock, events={}, dropped_events={}\n",
       events.size(), dropped_events);
   output +=
       "elapsed_ms,interval_ms,input_active,capture_active,input_suspended,"
-      "raw_delta_x,raw_delta_y,filtered_velocity_x,filtered_velocity_y,"
+      "raw_delta_x,raw_delta_y,velocity_x,velocity_y,"
       "thumb_x,thumb_y,reset_sample,stale_sample,event_sequence,output_"
       "radius\n";
   for (const auto& sample : samples) {
     output += fmt::format(
-        "{:.6f},{:.6f},{},{},{},{},{},{:.9f},{:.9f},{},{},{},{},{},{:.9f}\n",
+        "{:.9f},{:.9f},{},{},{},{},{},{:.9f},{:.9f},{},{},{},{},{},{:.9f}\n",
         std::chrono::duration<double, std::milli>(sample.time - started)
             .count(),
         sample.elapsed_seconds * 1000.0, sample.input_active,
         sample.capture_active, sample.input_suspended, sample.raw_delta_x,
-        sample.raw_delta_y, sample.filtered_velocity_x,
-        sample.filtered_velocity_y, sample.thumb_x, sample.thumb_y,
-        sample.reset_sample, sample.stale_sample, sample.event_sequence,
+        sample.raw_delta_y, sample.velocity_x, sample.velocity_y,
+        sample.thumb_x, sample.thumb_y, sample.reset_sample,
+        sample.stale_sample, sample.event_sequence,
         std::hypot(double(sample.thumb_x), double(sample.thumb_y)) / 32767.0);
   }
 
   std::string& event_output = contents.events_csv;
   event_output =
-      "# schema=2, timestamp=host_processing_steady_clock; "
+      "# schema=3, timestamp=host_processing_steady_clock; "
       "kind: 0=motion,1=reset,2=initial_state\n"
       "event_elapsed_us,sequence,kind,delta_x,delta_y,velocity_x,velocity_y,"
       "previous_poll_offset_ms,capture_active,input_suspended,reset_pending\n";

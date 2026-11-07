@@ -93,7 +93,7 @@ TEST_CASE("Sampling snapshots retain initial state, settings and drop counts",
       {2, 3, 10ms});
   const auto now = Clock::now();
   auto report = Prepare(sampling, now);
-  report->settings.sensitivity = 13.25;
+  report->settings.dpi = 1325.0;
   report->events.front().delta_x = 123;
   REQUIRE(sampling.Start(report));
   REQUIRE_FALSE(report);
@@ -122,7 +122,7 @@ TEST_CASE("Sampling snapshots retain initial state, settings and drop counts",
   REQUIRE(written.events[0].kind == 2);
   REQUIRE(written.events[0].sequence == 42);
   REQUIRE(written.events[0].delta_x == 123);
-  REQUIRE(written.settings.sensitivity == 13.25);
+  REQUIRE(written.settings.dpi == 1325.0);
   REQUIRE(sampling.GetStatus().sample_count == 2);
   REQUIRE(sampling.GetStatus().dropped_sample_count == 2);
 }
@@ -174,11 +174,11 @@ TEST_CASE("Deadline handoff neither copies buffers nor waits for report I/O",
 TEST_CASE("Cancel and active restart do not publish discarded sessions",
           "[kbm][sampling]") {
   std::atomic<int> writes{0};
-  double sensitivity = 0;
+  double dpi = 0;
   KbmInputSampling sampling(
       [&](const auto& report) {
         ++writes;
-        sensitivity = report.settings.sensitivity;
+        dpi = report.settings.dpi;
         return KbmInputReportWriteResult{true, "latest.csv"};
       },
       {2, 3, 10ms});
@@ -191,13 +191,13 @@ TEST_CASE("Cancel and active restart do not publish discarded sessions",
   auto second = Prepare(sampling, Clock::now());
   REQUIRE(sampling.Start(second));
   auto third = Prepare(sampling, Clock::now());
-  third->settings.sensitivity = 17.5;
+  third->settings.dpi = 1750.0;
   REQUIRE(sampling.Start(third));
   REQUIRE(third);  // The UI caller disposes of the replaced session.
   REQUIRE(sampling.Finish());
   REQUIRE(WaitForWrite(sampling));
   REQUIRE(writes.load() == 1);
-  REQUIRE(sensitivity == 17.5);
+  REQUIRE(dpi == 1750.0);
 }
 
 TEST_CASE("Full-capacity automatic completion transfers the original buffers",

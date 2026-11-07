@@ -13,7 +13,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
 #include <optional>
+#include <sstream>
 #include <string_view>
 #include <vector>
 
@@ -43,37 +45,25 @@ DEFINE_transient_bool(
     "thumbstick. Requires kbm_enabled = true.",
     "HID.KBM");
 
-DEFINE_transient_double(raw_mouse_sensitivity, 10.0,
-                        "Raw mouse sensitivity multiplier.", "HID.KBM");
-
 DEFINE_transient_double(
-    raw_mouse_full_scale_velocity, 24000.0,
-    "Raw Input counts per second that produce full right-stick deflection "
-    "before applying the response curve.",
+    raw_mouse_dpi, 800.0,
+    "Mouse hardware DPI, entered manually; not auto-detected. [100, 32000].",
     "HID.KBM");
-
 DEFINE_transient_double(
-    raw_mouse_response_curve, 0.8,
-    "Raw mouse response exponent. 1 is linear, values above 1 add precision "
-    "near the center, and values below 1 boost low speeds.",
-    "HID.KBM");
-
-DEFINE_transient_double(
-    raw_mouse_smoothing_time_ms, 8.0,
-    "Time-based smoothing applied to Raw Input mouse velocity. Zero disables "
-    "smoothing.",
+    raw_mouse_full_stick_speed_cm_s, 10.0,
+    "Physical mouse speed for full stick in cm/s, not cm/360. [1, 100].",
     "HID.KBM");
 
 DEFINE_transient_bool(
-    raw_mouse_deadzone_compensation, false,
-    "Raise non-zero Raw Input mouse output above a configurable minimum "
-    "response. Off preserves the original mouse-to-stick translation.",
+    raw_mouse_deadzone_compensation, true,
+    "Enable stick anti-deadzone with a configurable minimum stick output. "
+    "Off uses pure linear radial output.",
     "HID.KBM");
 
 DEFINE_transient_double(
     raw_mouse_minimum_response, 0.30,
-    "Minimum absolute right-stick response applied only while Raw Input mouse "
-    "movement is non-zero and deadzone compensation is enabled.",
+    "Minimum radial stick output used by stick anti-deadzone. Zero mouse "
+    "movement still produces zero output.",
     "HID.KBM");
 
 DEFINE_transient_bool(raw_mouse_invert_y, false,
@@ -96,6 +86,41 @@ namespace {
 
 std::filesystem::path config_path;
 KbmConfigState config_state = KbmConfigState::kMissing;
+
+// Exclusive creation prevents deleting or truncating another writer's file.
+bool WriteNewConfigFile(const std::filesystem::path& path,
+                        const std::string& bytes) {
+  HANDLE handle = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  size_t offset = 0;
+  DWORD error = ERROR_SUCCESS;
+  while (offset < bytes.size()) {
+    DWORD written = 0;
+    const DWORD count =
+        static_cast<DWORD>(std::min<size_t>(bytes.size() - offset, MAXDWORD));
+    if (!WriteFile(handle, bytes.data() + offset, count, &written, nullptr) ||
+        !written) {
+      error = GetLastError();
+      if (!error) {
+        error = ERROR_WRITE_FAULT;
+      }
+      break;
+    }
+    offset += written;
+  }
+  if (!CloseHandle(handle) && !error) {
+    error = GetLastError();
+  }
+  if (error) {
+    DeleteFileW(path.c_str());
+    SetLastError(error);
+    return false;
+  }
+  return true;
+}
 
 struct KbmConfigEntry {
   std::string_view table;
@@ -130,17 +155,11 @@ std::optional<KbmConfigEntry> GetKbmConfigEntry(
   if (name == "raw_mouse_invert_y") {
     return {{"HID.KBM.RawMouse", "invert_y", 2}};
   }
-  if (name == "raw_mouse_sensitivity") {
-    return {{"HID.KBM.RawMouse.Tuning", "sensitivity", 3}};
+  if (name == "raw_mouse_dpi") {
+    return {{"HID.KBM.RawMouse.Tuning", "dpi", 3}};
   }
-  if (name == "raw_mouse_full_scale_velocity") {
-    return {{"HID.KBM.RawMouse.Tuning", "full_scale_velocity", 3}};
-  }
-  if (name == "raw_mouse_response_curve") {
-    return {{"HID.KBM.RawMouse.Tuning", "response_curve", 3}};
-  }
-  if (name == "raw_mouse_smoothing_time_ms") {
-    return {{"HID.KBM.RawMouse.Tuning", "smoothing_time_ms", 3}};
+  if (name == "raw_mouse_full_stick_speed_cm_s") {
+    return {{"HID.KBM.RawMouse.Tuning", "full_stick_speed_cm_s", 3}};
   }
   if (name == "raw_mouse_minimum_response") {
     return {{"HID.KBM.RawMouse.Tuning", "minimum_response", 3}};
@@ -189,10 +208,7 @@ bool IsBooleanSetting(std::string_view name) {
 }
 
 bool IsNumberSetting(std::string_view name) {
-  return name == "raw_mouse_sensitivity" ||
-         name == "raw_mouse_full_scale_velocity" ||
-         name == "raw_mouse_response_curve" ||
-         name == "raw_mouse_smoothing_time_ms" ||
+  return name == "raw_mouse_dpi" || name == "raw_mouse_full_stick_speed_cm_s" ||
          name == "raw_mouse_minimum_response";
 }
 
@@ -231,7 +247,8 @@ void LoadConfig() {
   }
 
   const auto schema_version = parsed.at_path("schema_version").value<int64_t>();
-  if (!IsKbmConfigSchemaVersionSupported(schema_version)) {
+  if (!IsKbmConfigSchemaVersionSupported(schema_version) &&
+      schema_version != 3) {
     config_state = KbmConfigState::kIncompatible;
     XELOGW(
         "kbm: ignored incompatible config '{}' (expected schema_version = "
@@ -248,6 +265,10 @@ void LoadConfig() {
     if (!entry) {
       continue;
     }
+    if (schema_version == 3 && (name == "raw_mouse_dpi" ||
+                                name == "raw_mouse_full_stick_speed_cm_s")) {
+      continue;
+    }
     const auto node = GetConfigNode(parsed, *entry);
     if (!node || !IsCompatibleConfigValue(*config_var, *node.node())) {
       config_state = KbmConfigState::kIncompatible;
@@ -257,9 +278,17 @@ void LoadConfig() {
       return;
     }
   }
+  if (schema_version == 3) {
+    OVERRIDE_double(raw_mouse_dpi, 800.0);
+    OVERRIDE_double(raw_mouse_full_stick_speed_cm_s, 10.0);
+  }
   for (const auto& [name, config_var] : *cvar::ConfigVars) {
     const auto entry = GetKbmConfigEntry(*config_var);
     if (!entry) {
+      continue;
+    }
+    if (schema_version == 3 && (name == "raw_mouse_dpi" ||
+                                name == "raw_mouse_full_stick_speed_cm_s")) {
       continue;
     }
     const auto node = GetConfigNode(parsed, *entry);
@@ -267,7 +296,9 @@ void LoadConfig() {
       config_var->LoadConfigValue(node.node());
     }
   }
-  config_state = KbmConfigState::kCompatible;
+  ApplySettingsToCvars(GetSettingsFromCvars());
+  config_state = schema_version == 3 ? KbmConfigState::kNeedsMigration
+                                     : KbmConfigState::kCompatible;
   XELOGI("kbm: loaded config '{}'.", config_path);
 }
 
@@ -292,7 +323,22 @@ KbmConfigState GetConfigState() { return config_state; }
 
 const std::filesystem::path& ConfigPath() { return config_path; }
 
-bool SaveConfig() {
+bool SaveConfig() { return SaveConfig(GetSettingsFromCvars()); }
+
+bool CommitKbmSettings(
+    KbmSettings& draft, const std::function<bool(const KbmSettings&)>& persist,
+    const std::function<void(const KbmSettings&)>& activate) {
+  const auto normalized = NormalizeSettings(draft);
+  if (!persist(normalized)) {
+    return false;
+  }
+  activate(normalized);
+  draft = normalized;
+  return true;
+}
+
+bool SaveConfig(const KbmSettings& source_settings) {
+  const auto settings = NormalizeSettings(source_settings);
   if (config_path.empty() || !cvar::ConfigVars) {
     return false;
   }
@@ -313,15 +359,68 @@ bool SaveConfig() {
                : a.entry.table_order < b.entry.table_order;
   });
 
-  xe::filesystem::CreateParentFolder(config_path);
-  auto temporary_path = config_path;
-  temporary_path += ".tmp";
-  FILE* file = xe::filesystem::OpenFile(temporary_path, "wb");
-  if (!file) {
-    XELOGE("kbm: failed to open '{}' for writing.", config_path);
+  // Preserve the original v3 bytes before any replacement. Never overwrite a
+  // prior backup, including a different v3 file copied into this directory.
+  if (config_state == KbmConfigState::kNeedsMigration) {
+    std::ifstream original(config_path, std::ios::binary);
+    if (!original) {
+      return false;
+    }
+    std::string bytes{std::istreambuf_iterator<char>(original), {}};
+    if (original.bad()) {
+      return false;
+    }
+    auto backup = config_path;
+    backup += ".v3.bak";
+    for (size_t suffix = 0;; ++suffix) {
+      auto candidate = backup;
+      if (suffix) {
+        candidate += "." + std::to_string(suffix);
+      }
+      if (WriteNewConfigFile(candidate, bytes)) {
+        break;
+      }
+      if (GetLastError() != ERROR_FILE_EXISTS &&
+          GetLastError() != ERROR_ALREADY_EXISTS) {
+        return false;
+      }
+      std::ifstream existing(candidate, std::ios::binary);
+      if (existing) {
+        std::string previous{std::istreambuf_iterator<char>(existing), {}};
+        if (!existing.bad() && previous == bytes) {
+          break;
+        }
+      }
+    }
+  }
+  std::error_code directory_error;
+  std::filesystem::create_directories(config_path.parent_path(),
+                                      directory_error);
+  if (directory_error) {
     return false;
   }
-
+  toml::table values;
+  values.insert("kbm_enabled", settings.enabled);
+  values.insert("kbm_user_index", settings.user_index);
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  values.insert("kbm_" #cvar_name, settings.cvar_name);
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
+  values.insert("raw_mouse", settings.raw_mouse);
+  values.insert("raw_mouse_dpi", settings.raw_mouse_dpi);
+  values.insert("raw_mouse_full_stick_speed_cm_s",
+                settings.raw_mouse_full_stick_speed_cm_s);
+  values.insert("raw_mouse_deadzone_compensation",
+                settings.raw_mouse_deadzone_compensation);
+  values.insert("raw_mouse_minimum_response",
+                settings.raw_mouse_minimum_response);
+  values.insert("raw_mouse_invert_y", settings.raw_mouse_invert_y);
+  values.insert("raw_mouse_capture_toggle_key",
+                settings.raw_mouse_capture_toggle_key);
+  values.insert("raw_mouse_capture_on_start",
+                settings.raw_mouse_capture_on_start);
+  auto temporary_path = config_path;
+  temporary_path += ".tmp";
   std::string output =
       "# KBM Controller keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n"
@@ -334,23 +433,25 @@ bool SaveConfig() {
       category = var.entry.table;
       output += "\n[" + category + "]\n";
     }
-    output +=
-        std::string(var.entry.key) + " = " + var.config_var->config_value();
+    std::ostringstream value;
+    value << toml::toml_formatter{*values.get(var.config_var->name()),
+                                  toml::format_flags::none};
+    output += std::string(var.entry.key) + " = " + value.str();
     if (!var.config_var->description().empty()) {
       output += " # " + var.config_var->description();
     }
     output += '\n';
   }
 
-  const bool written =
-      fwrite(output.data(), 1, output.size(), file) == output.size();
-  const bool closed = fclose(file) == 0;
-  if (!written || !closed ||
-      !MoveFileExW(temporary_path.c_str(), config_path.c_str(),
+  if (!WriteNewConfigFile(temporary_path, output)) {
+    XELOGE("kbm: failed to create configuration temporary file '{}'.",
+           temporary_path);
+    return false;
+  }
+  if (!MoveFileExW(temporary_path.c_str(), config_path.c_str(),
                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    std::error_code ignored;
-    std::filesystem::remove(temporary_path, ignored);
-    XELOGE("kbm: failed to write '{}'.", config_path);
+    DeleteFileW(temporary_path.c_str());
+    XELOGE("kbm: failed to replace config '{}'.", config_path);
     return false;
   }
   config_state = KbmConfigState::kCompatible;
@@ -365,18 +466,11 @@ KbmSettings NormalizeSettings(KbmSettings settings) {
     return std::clamp(std::isfinite(value) ? value : fallback, low, high);
   };
   settings.user_index = std::clamp(settings.user_index, 0, 3);
-  settings.raw_mouse_sensitivity =
-      finite_clamp(settings.raw_mouse_sensitivity,
-                   defaults.raw_mouse_sensitivity, 0.01, 256.0);
-  settings.raw_mouse_full_scale_velocity =
-      finite_clamp(settings.raw_mouse_full_scale_velocity,
-                   defaults.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
-  settings.raw_mouse_response_curve =
-      finite_clamp(settings.raw_mouse_response_curve,
-                   defaults.raw_mouse_response_curve, 0.1, 4.0);
-  settings.raw_mouse_smoothing_time_ms =
-      finite_clamp(settings.raw_mouse_smoothing_time_ms,
-                   defaults.raw_mouse_smoothing_time_ms, 0.0, 20.0);
+  settings.raw_mouse_dpi = finite_clamp(settings.raw_mouse_dpi,
+                                        defaults.raw_mouse_dpi, 100.0, 32000.0);
+  settings.raw_mouse_full_stick_speed_cm_s =
+      finite_clamp(settings.raw_mouse_full_stick_speed_cm_s,
+                   defaults.raw_mouse_full_stick_speed_cm_s, 1.0, 100.0);
   settings.raw_mouse_minimum_response =
       finite_clamp(settings.raw_mouse_minimum_response,
                    defaults.raw_mouse_minimum_response, 0.0, 0.5);
@@ -392,10 +486,9 @@ KbmSettings GetSettingsFromCvars() {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   settings.raw_mouse = cvars::raw_mouse;
-  settings.raw_mouse_sensitivity = cvars::raw_mouse_sensitivity;
-  settings.raw_mouse_full_scale_velocity = cvars::raw_mouse_full_scale_velocity;
-  settings.raw_mouse_response_curve = cvars::raw_mouse_response_curve;
-  settings.raw_mouse_smoothing_time_ms = cvars::raw_mouse_smoothing_time_ms;
+  settings.raw_mouse_dpi = cvars::raw_mouse_dpi;
+  settings.raw_mouse_full_stick_speed_cm_s =
+      cvars::raw_mouse_full_stick_speed_cm_s;
   settings.raw_mouse_deadzone_compensation =
       cvars::raw_mouse_deadzone_compensation;
   settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
@@ -414,15 +507,9 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
 #include "xenia/hid/kbm/kbm_binding_table.inc"
 #undef XE_HID_KBM_BINDING
   OVERRIDE_bool(raw_mouse, settings.raw_mouse);
-  OVERRIDE_double(raw_mouse_sensitivity,
-                  std::clamp(settings.raw_mouse_sensitivity, 0.01, 256.0));
-  OVERRIDE_double(
-      raw_mouse_full_scale_velocity,
-      std::clamp(settings.raw_mouse_full_scale_velocity, 1.0, 1000000.0));
-  OVERRIDE_double(raw_mouse_response_curve,
-                  std::clamp(settings.raw_mouse_response_curve, 0.1, 4.0));
-  OVERRIDE_double(raw_mouse_smoothing_time_ms,
-                  std::clamp(settings.raw_mouse_smoothing_time_ms, 0.0, 20.0));
+  OVERRIDE_double(raw_mouse_dpi, settings.raw_mouse_dpi);
+  OVERRIDE_double(raw_mouse_full_stick_speed_cm_s,
+                  settings.raw_mouse_full_stick_speed_cm_s);
   OVERRIDE_bool(raw_mouse_deadzone_compensation,
                 settings.raw_mouse_deadzone_compensation);
   OVERRIDE_double(raw_mouse_minimum_response,

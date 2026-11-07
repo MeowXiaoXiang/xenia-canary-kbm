@@ -32,12 +32,12 @@ and upstream contribution guidance belong to the
   and Raw Mouse tuning sections.
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
-- Raw Input mouse-to-right-stick translation with configurable sensitivity,
-  radial response curve, time-based smoothing, full-stick threshold, capture,
-  and optional minimum-output compensation.
+- Raw Input mouse-to-right-stick translation with manual DPI and physical
+  full-stick speed, linear radial mapping, independent live preview, and capture.
+  Configurable stick anti-deadzone defaults on with 0.30 minimum output.
 - Versioned `kbm.toml` storage using logical input tokens such as `Key.W` and
-  `Mouse.Left`, intentionally rejecting incompatible KBM settings rather than
-  silently mixing old mapping behavior with new input.
+  `Mouse.Left`. Compatible v3 fields load without rewriting the file; saving
+  backs up the original and upgrades to v4. Retired mouse tuning is not converted.
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 

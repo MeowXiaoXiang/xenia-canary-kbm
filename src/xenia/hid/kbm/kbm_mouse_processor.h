@@ -18,11 +18,9 @@
 namespace xe::hid::kbm {
 
 struct KbmMouseSettings {
-  double sensitivity = 10.0;
-  double full_scale_velocity = 24000.0;
-  double response_curve = 0.8;
-  double smoothing_time_ms = 8.0;
-  bool deadzone_compensation = false;
+  double dpi = 800.0;
+  double full_stick_speed_cm_s = 10.0;
+  bool deadzone_compensation = true;
   double minimum_response = 0.30;
   bool invert_y = false;
 };
@@ -33,8 +31,8 @@ struct KbmMouseSample {
   double elapsed_seconds = 0.0;
   int64_t raw_delta_x = 0;
   int64_t raw_delta_y = 0;
-  double filtered_velocity_x = 0.0;
-  double filtered_velocity_y = 0.0;
+  double velocity_x = 0.0;
+  double velocity_y = 0.0;
   int16_t thumb_x = 0;
   int16_t thumb_y = 0;
   bool input_active = false;
@@ -42,7 +40,7 @@ struct KbmMouseSample {
   bool stale_sample = false;
 };
 
-// Stateful Raw Mouse filter and mapper. Its caller serializes access so an
+// Stateful Raw Mouse bucket and mapper. Its caller serializes access so an
 // input event and a controller poll observe one coherent timeline.
 class KbmMouseProcessor {
  public:
@@ -56,7 +54,7 @@ class KbmMouseProcessor {
   int64_t pending_delta_x() const { return pending_delta_x_; }
   int64_t pending_delta_y() const { return pending_delta_y_; }
   bool reset_pending() const { return reset_pending_; }
-  MouseVector filtered_velocity() const { return filtered_velocity_; }
+  MouseVector velocity() const { return velocity_; }
   std::chrono::steady_clock::time_point last_sample_time() const {
     return last_sample_time_;
   }
@@ -67,12 +65,10 @@ class KbmMouseProcessor {
   uint64_t event_sequence_ = 0;
   int64_t pending_delta_x_ = 0;
   int64_t pending_delta_y_ = 0;
-  bool has_motion_ = false;
   bool reset_pending_ = true;
-  std::chrono::steady_clock::time_point last_motion_time_;
   std::chrono::steady_clock::time_point last_sample_time_ =
       std::chrono::steady_clock::now();
-  MouseVector filtered_velocity_;
+  MouseVector velocity_;
 };
 
 }  // namespace xe::hid::kbm

@@ -25,6 +25,7 @@ namespace xe::hid::kbm {
 // input state and report collection remain portable core concerns.
 class KbmPlatformInput final {
  public:
+  enum class CaptureMode { kNone, kGameplay, kPreview };
   struct Callbacks {
     std::function<void()> reset_raw_mouse_motion;
     std::function<void()> reset_mouse_buttons;
@@ -35,14 +36,24 @@ class KbmPlatformInput final {
   KbmPlatformInput(ui::Window& window, Callbacks callbacks);
   ~KbmPlatformInput();
 
-  bool RegisterRawMouse(bool exclusive_capture = false);
-  void UnregisterRawMouse();
+  bool RegisterRawMouse(bool exclusive_capture = false,
+                        bool reset_gameplay = true);
+  bool UnregisterRawMouse(bool preserve_gameplay = false);
 
   void SetCaptureRequested(bool requested) { capture_requested_ = requested; }
   bool capture_requested() const { return capture_requested_; }
   bool capture_active() const { return capture_active_; }
   bool raw_mouse_registered() const { return raw_mouse_registered_; }
 
+  bool BeginPreviewCapture();
+  void EndPreviewCapture();
+  bool preview_capture_active() const { return preview_capture_active_; }
+  bool preview_capture_failed() const { return preview_capture_failed_; }
+  CaptureMode capture_mode() const {
+    return preview_capture_active_ ? CaptureMode::kPreview
+           : capture_active_       ? CaptureMode::kGameplay
+                                   : CaptureMode::kNone;
+  }
   void SetInputSuspended(bool suspended);
   void ApplyCapture();
   void ReleaseCapture();
@@ -64,6 +75,7 @@ class KbmPlatformInput final {
   };
 
   bool UpdateClipRectangle();
+  bool RestorePreviewRegistration();
   bool CenterCursor();
   void NotifyCaptureState(bool active);
   void ResetRawMouseMotion();
@@ -75,6 +87,9 @@ class KbmPlatformInput final {
   ui::Window::CursorVisibility previous_cursor_visibility_ =
       ui::Window::CursorVisibility::kVisible;
   std::atomic<bool> raw_mouse_registered_{false};
+  bool preview_restore_registration_ = false;
+  bool preview_capture_failed_ = false;
+  std::atomic<bool> preview_capture_active_{false};
   uint32_t raw_mouse_registration_flags_ = 0;
   std::atomic<bool> capture_requested_{false};
   std::atomic<bool> capture_active_{false};

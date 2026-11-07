@@ -189,4 +189,35 @@ TEST_CASE("KBM binding capture works while host input is suspended",
   REQUIRE(fixture.State().gamepad.buttons == 0);
 }
 
+TEST_CASE("Draft bindings and failed publication leave driver output unchanged",
+          "[kbm][lifecycle]") {
+  DriverFixture fixture;
+  auto draft = fixture.driver.GetSettings();
+  draft.keybind_a = "Key.G";
+  draft.raw_mouse_dpi = 1600;
+  REQUIRE_FALSE(fixture.driver.StartMousePreview());
+  REQUIRE_FALSE(CommitKbmSettings(
+      draft, [](const auto&) { return false; },
+      [&](const auto& value) { fixture.driver.ApplySettings(value); }));
+  REQUIRE(fixture.driver.GetSettings().raw_mouse_dpi == 800);
+  fixture.window.Key(ui::VirtualKey::kSpace, true);
+  REQUIRE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
+  fixture.window.Key(ui::VirtualKey::kSpace, false);
+  bool persisted = false;
+  REQUIRE(CommitKbmSettings(
+      draft,
+      [&](const auto&) {
+        persisted = true;
+        return true;
+      },
+      [&](const auto& value) {
+        REQUIRE(persisted);
+        fixture.driver.ApplySettings(value);
+      }));
+  fixture.window.Key(ui::VirtualKey::kSpace, true);
+  REQUIRE_FALSE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
+  fixture.window.Key(ui::VirtualKey::kG, true);
+  REQUIRE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
+}
+
 }  // namespace xe::hid::kbm

@@ -11,6 +11,7 @@
 #define XENIA_HID_KBM_KBM_CONFIG_H_
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -19,11 +20,12 @@
 
 namespace xe::hid::kbm {
 
-inline constexpr int64_t kKbmConfigSchemaVersion = 3;
+inline constexpr int64_t kKbmConfigSchemaVersion = 4;
 
 enum class KbmConfigState {
   kMissing,
   kCompatible,
+  kNeedsMigration,
   kIncompatible,
 };
 
@@ -41,11 +43,9 @@ struct KbmSettings {
 #undef XE_HID_KBM_BINDING
 
   bool raw_mouse = true;
-  double raw_mouse_sensitivity = 10.0;
-  double raw_mouse_full_scale_velocity = 24000.0;
-  double raw_mouse_response_curve = 0.8;
-  double raw_mouse_smoothing_time_ms = 8.0;
-  bool raw_mouse_deadzone_compensation = false;
+  double raw_mouse_dpi = 800.0;
+  double raw_mouse_full_stick_speed_cm_s = 10.0;
+  bool raw_mouse_deadzone_compensation = true;
   double raw_mouse_minimum_response = 0.30;
   bool raw_mouse_invert_y = false;
   std::string raw_mouse_capture_toggle_key = "Key.F8";
@@ -58,6 +58,11 @@ bool ConfigExists();
 KbmConfigState GetConfigState();
 const std::filesystem::path& ConfigPath();
 bool SaveConfig();
+bool SaveConfig(const KbmSettings& settings);
+// Publish first; only a successful save may activate the draft.
+bool CommitKbmSettings(KbmSettings& draft,
+                       const std::function<bool(const KbmSettings&)>& persist,
+                       const std::function<void(const KbmSettings&)>& activate);
 
 KbmSettings GetSettingsFromCvars();
 KbmSettings NormalizeSettings(KbmSettings settings);

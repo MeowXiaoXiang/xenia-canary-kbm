@@ -30,6 +30,9 @@ KbmConfigDialog::KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
 }
 
 KbmConfigDialog::~KbmConfigDialog() {
+  if (auto* driver = GetDriver()) {
+    driver->StopMousePreview();
+  }
   CancelBindingCapture();
   if (!committed_or_restored_) {
     RestoreOriginal();
@@ -46,24 +49,46 @@ void KbmConfigDialog::ApplyDraft() {
   committed_or_restored_ = false;
   dirty_ = true;
   saved_ = false;
+  settings_ = hid::kbm::NormalizeSettings(settings_);
   if (auto* driver = GetDriver()) {
-    driver->ApplySettings(settings_);
-  } else {
-    hid::kbm::ApplySettingsToCvars(settings_);
+    driver->ResetMousePreview();
   }
 }
 
 void KbmConfigDialog::RestoreOriginal() {
   settings_ = original_settings_;
-  if (auto* driver = GetDriver()) {
-    driver->ApplySettings(settings_);
-  } else {
-    hid::kbm::ApplySettingsToCvars(settings_);
-  }
   committed_or_restored_ = true;
 }
 
+bool KbmConfigDialog::SaveDraft() {
+  CancelBindingCapture();
+  if (auto* driver = GetDriver()) {
+    driver->StopMousePreview();
+  }
+  const bool success = hid::kbm::CommitKbmSettings(
+      settings_,
+      [](const auto& settings) { return hid::kbm::SaveConfig(settings); },
+      [this](const auto& settings) {
+        if (auto* driver = GetDriver()) {
+          driver->ApplySettings(settings);
+        } else {
+          hid::kbm::ApplySettingsToCvars(settings);
+        }
+      });
+  save_failed_ = !success;
+  if (success) {
+    original_settings_ = settings_;
+    committed_or_restored_ = true;
+    dirty_ = false;
+    saved_ = true;
+  }
+  return success;
+}
+
 void KbmConfigDialog::StartBindingCapture(std::string* target, bool append) {
+  if (auto* driver = GetDriver()) {
+    driver->StopMousePreview();
+  }
   binding_capture_target_ = target;
   binding_capture_append_ = append;
   if (auto* driver = GetDriver()) {
@@ -123,6 +148,15 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
       fmt::format("{}###KbmSettings", tr(StringId::kKbmTitle));
   if (!ImGui::Begin(title.c_str(), &dialog_open, ImGuiWindowFlags_NoCollapse)) {
     ImGui::End();
+    if (!dialog_open) {
+      if (auto* driver = GetDriver()) {
+        driver->StopMousePreview();
+      }
+      CancelBindingCapture();
+      RestoreOriginal();
+      Close();
+      emulator_window_.ToggleKbmConfigDialog();
+    }
     return;
   }
 
@@ -137,6 +171,9 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
     ImGui::Spacing();
   }
 
+  if (hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kNeedsMigration) {
+    ImGui::TextWrapped("%s", tr(StringId::kKbmMigrationNotice));
+  }
   bool changed = HandleBindingCaptureResult();
   bool close_after_start_sampling = false;
   ImGui::TextWrapped("%s", tr(StringId::kKbmInputPaused));
@@ -261,35 +298,15 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
       ImGui::TextWrapped("%s", tr(StringId::kKbmRawMouseRequiresController));
     }
 
-    ImGui::BeginDisabled(!mouse_controls_available);
     ImGui::Spacing();
-    ImGui::TextUnformatted(tr(StringId::kKbmSensitivity));
-    float sensitivity = float(settings_.raw_mouse_sensitivity);
-    ImGui::SetNextItemWidth(
-        std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-    if (ImGui::SliderFloat(
-            "##MouseSensitivitySlider", &sensitivity, 0.01f, 256.0f, "%.3f x",
-            ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
-      settings_.raw_mouse_sensitivity = sensitivity;
-      changed = true;
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(90.0f);
-    if (ImGui::InputDouble("##MouseSensitivityInput",
-                           &settings_.raw_mouse_sensitivity, 0.0, 0.0, "%.3f",
-                           ImGuiInputTextFlags_CharsDecimal)) {
-      settings_.raw_mouse_sensitivity =
-          std::clamp(settings_.raw_mouse_sensitivity, 0.01, 256.0);
-      changed = true;
-    }
-    ImGui::SameLine();
-    const std::string reset_sensitivity =
-        fmt::format("{}##MouseSensitivity", tr(StringId::kPostReset));
-    if (ImGui::Button(reset_sensitivity.c_str())) {
-      settings_.raw_mouse_sensitivity = 10.0;
-      changed = true;
-    }
-    ImGui::TextWrapped("%s", tr(StringId::kKbmSensitivityGuide));
+    ImGui::TextUnformatted(tr(StringId::kKbmDpi));
+    changed |= ImGui::InputDouble("##MouseDpi", &settings_.raw_mouse_dpi, 100.0,
+                                  800.0, "%.0f");
+    ImGui::TextUnformatted(tr(StringId::kKbmPhysicalSpeed));
+    changed |= ImGui::InputDouble("##PhysicalSpeed",
+                                  &settings_.raw_mouse_full_stick_speed_cm_s,
+                                  1.0, 10.0, "%.2f");
+    ImGui::TextWrapped("%s", tr(StringId::kKbmPhysicalGuide));
 
     if (ImGui::Checkbox(tr(StringId::kKbmCompensateGameDeadzone),
                         &settings_.raw_mouse_deadzone_compensation)) {
@@ -329,56 +346,39 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
     draw_binding("CaptureToggle", settings_.raw_mouse_capture_toggle_key,
                  false);
 
-    if (ImGui::TreeNodeEx(tr(StringId::kKbmFineTuning),
-                          ImGuiTreeNodeFlags_Framed)) {
-      ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
-      float curve = float(settings_.raw_mouse_response_curve);
-      ImGui::SetNextItemWidth(
-          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-      if (ImGui::SliderFloat(
-              "##MouseCurve", &curve, 0.1f, 4.0f, "%.3f",
-              ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
-        settings_.raw_mouse_response_curve = curve;
-        changed = true;
+    ImGui::Separator();
+    ImGui::TextUnformatted(tr(StringId::kKbmLivePreview));
+    if (auto* driver = GetDriver()) {
+      const auto& preview = driver->SampleMousePreview(settings_);
+      if (preview.active()) {
+        ImGui::TextWrapped("%s", tr(StringId::kKbmPreviewExitHelp));
+        if (focus_preview_stop_) {
+          ImGui::SetKeyboardFocusHere();
+          focus_preview_stop_ = false;
+        }
+        if (ImGui::Button(tr(StringId::kKbmStopPreview)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
+          driver->StopMousePreview();
+        }
+      } else if (ImGui::Button(tr(StringId::kKbmStartPreview))) {
+        CancelBindingCapture();
+        preview_failed_ = !driver->StartMousePreview();
+        focus_preview_stop_ = !preview_failed_;
       }
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(90.0f);
-      if (ImGui::InputDouble("##MouseCurveInput",
-                             &settings_.raw_mouse_response_curve, 0.0, 0.0,
-                             "%.3f", ImGuiInputTextFlags_CharsDecimal)) {
-        settings_.raw_mouse_response_curve =
-            std::clamp(settings_.raw_mouse_response_curve, 0.1, 4.0);
-        changed = true;
+      const auto label = fmt::format("{:.1f}%", preview.current() * 100.0);
+      ImGui::ProgressBar(float(preview.current()), ImVec2(-1.0f, 0.0f),
+                         label.c_str());
+      ImGui::Text(tr(StringId::kKbmPreviewPeak), preview.peak() * 100.0);
+      if (ImGui::Button(tr(StringId::kKbmResetPreviewPeak))) {
+        driver->ResetMousePreview();
       }
-      ImGui::TextWrapped("%s", tr(StringId::kKbmAimCurveHelp));
-
-      ImGui::TextUnformatted(tr(StringId::kKbmMouseSmoothing));
-      float smoothing_time_ms = float(settings_.raw_mouse_smoothing_time_ms);
-      ImGui::SetNextItemWidth(
-          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-      if (ImGui::SliderFloat("##MouseSmoothing", &smoothing_time_ms, 0.0f,
-                             20.0f, "%.1f ms", ImGuiSliderFlags_AlwaysClamp)) {
-        settings_.raw_mouse_smoothing_time_ms = smoothing_time_ms;
-        changed = true;
+      if (preview_failed_ || driver->MousePreviewFailed()) {
+        ImGui::TextWrapped("%s", tr(StringId::kKbmPreviewFailed));
       }
-      ImGui::TextWrapped("%s", tr(StringId::kKbmMouseSmoothingHelp));
-
-      ImGui::TextUnformatted(tr(StringId::kKbmFullStickThreshold));
-      ImGui::SetNextItemWidth(220.0f);
-      if (ImGui::InputDouble(
-              "##FullScaleVelocity", &settings_.raw_mouse_full_scale_velocity,
-              100.0, 1000.0, "%.0f", ImGuiInputTextFlags_CharsDecimal)) {
-        settings_.raw_mouse_full_scale_velocity =
-            std::clamp(settings_.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
-        changed = true;
-      }
-      ImGui::TextWrapped(tr(StringId::kKbmFullStickHelp),
-                         settings_.raw_mouse_sensitivity,
-                         settings_.raw_mouse_full_scale_velocity /
-                             std::max(settings_.raw_mouse_sensitivity, 0.01));
-      ImGui::TreePop();
+    } else {
+      ImGui::TextDisabled("%s", tr(StringId::kKbmDiagnosticsUnavailable));
     }
-    ImGui::EndDisabled();
 
     if (ImGui::TreeNodeEx(tr(StringId::kKbmDiagnostics),
                           ImGuiTreeNodeFlags_Framed)) {
@@ -425,23 +425,13 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
           ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingWriting));
         } else {
           const bool save_and_start =
-              dirty_ || hid::kbm::GetConfigState() ==
-                            hid::kbm::KbmConfigState::kIncompatible;
+              dirty_ || hid::kbm::GetConfigState() !=
+                            hid::kbm::KbmConfigState::kCompatible;
           if (ImGui::Button(tr(save_and_start
                                    ? StringId::kKbmSaveAndStartInputSampling
                                    : StringId::kKbmStartInputSampling))) {
             if (save_and_start) {
-              CancelBindingCapture();
-              ApplyDraft();
-              if (hid::kbm::SaveConfig()) {
-                original_settings_ = settings_;
-                committed_or_restored_ = true;
-                save_failed_ = false;
-                dirty_ = false;
-                saved_ = true;
-              } else {
-                save_failed_ = true;
-              }
+              SaveDraft();
             }
             if (!save_failed_ && driver->StartInputSampling()) {
               committed_or_restored_ = true;
@@ -473,6 +463,9 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
   }
 
   if (close_after_start_sampling) {
+    if (auto* driver = GetDriver()) {
+      driver->StopMousePreview();
+    }
     Close();
     ImGui::End();
     emulator_window_.ToggleKbmConfigDialog();
@@ -492,24 +485,15 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
   ImGui::SameLine();
   const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
   if (save || save_and_close) {
-    CancelBindingCapture();
-    ApplyDraft();
-    if (hid::kbm::SaveConfig()) {
-      original_settings_ = settings_;
-      committed_or_restored_ = true;
-      save_failed_ = false;
-      dirty_ = false;
-      saved_ = true;
-      if (save_and_close) {
-        Close();
-        ImGui::End();
-        emulator_window_.ToggleKbmConfigDialog();
-        return;
-      }
-    } else {
-      save_failed_ = true;
+    if (SaveDraft() && save_and_close) {
+      Close();
+      ImGui::End();
+      emulator_window_.ToggleKbmConfigDialog();
+      return;
     }
   }
+  ImGui::SameLine();
+  const bool cancel = ImGui::Button(tr(StringId::kKbmCancel));
   ImGui::SameLine();
   if (ImGui::Button(tr(StringId::kKbmRestoreDefaults))) {
     CancelBindingCapture();
@@ -519,7 +503,10 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
   ImGui::TextDisabled("%s", tr(StringId::kKbmSettingsFile));
 
   ImGui::End();
-  if (!dialog_open) {
+  if (!dialog_open || cancel) {
+    if (auto* driver = GetDriver()) {
+      driver->StopMousePreview();
+    }
     CancelBindingCapture();
     RestoreOriginal();
     Close();
