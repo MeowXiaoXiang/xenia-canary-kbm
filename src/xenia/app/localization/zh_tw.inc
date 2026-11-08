@@ -128,6 +128,7 @@ XE_LOCALIZATION_STRING(
     "KBM 控制器 HID 後端尚未啟用。設定仍會儲存，但下次啟動時必須使用 hid "
     "= \"kbm\" 才能輸入。")
 XE_LOCALIZATION_STRING(kKbmPressBinding, "請按下按鍵或滑鼠按鈕...")
+XE_LOCALIZATION_STRING(kKbmPressCaptureKey, "請按下鍵盤按鍵...")
 XE_LOCALIZATION_STRING(kKbmBindingTooltip,
                        "點擊後按下鍵盤或滑鼠按鈕；按住 Ctrl、Alt、Shift 或 Win "
                        "可建立組合鍵。")
@@ -151,7 +152,7 @@ XE_LOCALIZATION_STRING(kKbmRawMouseRequiresController,
                        "啟用 KBM 控制器後才能設定 Raw Input 滑鼠控制。")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "反轉垂直視角")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart, "KBM 控制器啟動時啟用滑鼠鎖定")
-XE_LOCALIZATION_STRING(kKbmCaptureToggle, "滑鼠鎖定熱鍵：")
+XE_LOCALIZATION_STRING(kKbmCaptureToggle, "滑鼠鎖定熱鍵（限鍵盤）：")
 XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "搖桿反死區")
 XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最小搖桿輸出（0–50%）")
 XE_LOCALIZATION_STRING(kKbmMinimumResponseHelp,

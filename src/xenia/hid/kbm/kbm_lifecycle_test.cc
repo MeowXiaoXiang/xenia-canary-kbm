@@ -9,6 +9,8 @@
 
 #include "xenia/hid/kbm/kbm_input_driver.h"
 
+#include <utility>
+
 #include "third_party/catch/single_include/catch2/catch.hpp"
 #include "xenia/ui/window.h"
 #include "xenia/ui/windowed_app_context.h"
@@ -43,6 +45,12 @@ class TestWindow final : public ui::Window {
     } else {
       OnKeyUp(event, receiver);
     }
+  }
+
+  void MouseDown(ui::MouseEvent::Button button) {
+    ui::MouseEvent event(this, button, 0, 0);
+    WindowDestructionReceiver receiver(this);
+    OnMouseDown(event, receiver);
   }
 
  private:
@@ -81,6 +89,67 @@ class DriverFixture {
 };
 
 }  // namespace
+
+TEST_CASE("Capture hotkey binding ignores mouse buttons and keeps waiting",
+          "[kbm][lifecycle]") {
+  DriverFixture fixture;
+  fixture.driver.SetHostInputSuspended(true);
+  fixture.driver.BeginBindingCapture(false);
+  fixture.window.MouseDown(ui::MouseEvent::Button::kLeft);
+  REQUIRE(fixture.driver.ConsumeBindingCaptureResult().status ==
+          KbmInputDriver::BindingCaptureStatus::kNone);
+  fixture.window.Key(ui::VirtualKey::kF8, true);
+  const auto result = fixture.driver.ConsumeBindingCaptureResult();
+  REQUIRE(result.status == KbmInputDriver::BindingCaptureStatus::kCaptured);
+  REQUIRE(result.value == "Key.F8");
+
+  fixture.driver.BeginBindingCapture();
+  fixture.window.MouseDown(ui::MouseEvent::Button::kLeft);
+  REQUIRE(fixture.driver.ConsumeBindingCaptureResult().value == "Mouse.Left");
+  REQUIRE(fixture.State().gamepad.buttons == 0);
+}
+
+TEST_CASE("Unsupported keyboard keys do not clear a pending binding",
+          "[kbm][lifecycle]") {
+  DriverFixture fixture;
+  fixture.driver.SetHostInputSuspended(true);
+  fixture.driver.BeginBindingCapture();
+  fixture.window.Key(ui::VirtualKey::kOem1, true);
+  REQUIRE(fixture.driver.ConsumeBindingCaptureResult().status ==
+          KbmInputDriver::BindingCaptureStatus::kNone);
+  fixture.window.Key(ui::VirtualKey::kG, true);
+  const auto result = fixture.driver.ConsumeBindingCaptureResult();
+  REQUIRE(result.status == KbmInputDriver::BindingCaptureStatus::kCaptured);
+  REQUIRE(result.value == "Key.G");
+}
+
+TEST_CASE("Named navigation and numpad keys reach their controller bindings",
+          "[kbm][lifecycle]") {
+  const std::pair<ui::VirtualKey, const char*> cases[] = {
+      {ui::VirtualKey::kInsert, "Key.Insert"},
+      {ui::VirtualKey::kDelete, "Key.Delete"},
+      {ui::VirtualKey::kLWin, "Key.LeftSuper"},
+      {ui::VirtualKey::kRWin, "Key.RightSuper"},
+      {ui::VirtualKey::kApps, "Key.Menu"},
+      {ui::VirtualKey::kNumLock, "Key.NumLock"},
+      {ui::VirtualKey::kMultiply, "Key.NumpadMultiply"},
+      {ui::VirtualKey::kAdd, "Key.NumpadAdd"},
+      {ui::VirtualKey::kSubtract, "Key.NumpadSubtract"},
+      {ui::VirtualKey::kDecimal, "Key.NumpadDecimal"},
+      {ui::VirtualKey::kDivide, "Key.NumpadDivide"},
+  };
+  for (const auto& [key, token] : cases) {
+    CAPTURE(token);
+    DriverFixture fixture;
+    auto settings = fixture.driver.GetSettings();
+    settings.keybind_a = token;
+    fixture.driver.ApplySettings(settings);
+    fixture.window.Key(key, true);
+    REQUIRE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
+    fixture.window.Key(key, false);
+    REQUIRE_FALSE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
+  }
+}
 
 TEST_CASE("KBM focus loss clears held controls without a key-up event",
           "[kbm][lifecycle]") {

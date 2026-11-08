@@ -46,20 +46,17 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
   bool DrawBindings();
   bool DrawDiagnostics();
   bool DrawConfirmations();
-  void ApplyDraft();
+  void MarkDraftChanged();
   bool SaveDraft();
   bool CanSaveDraft() const;
   bool preview_failed_ = false;
   bool focus_preview_stop_ = false;
-  void RestoreOriginal();
   void StartBindingCapture(std::string* target, bool append, int index = -1);
   void CancelBindingCapture();
   bool HandleBindingCaptureResult();
 
   EmulatorWindow& emulator_window_;
-  hid::kbm::KbmSettings original_settings_;
   hid::kbm::KbmSettings settings_;
-  bool committed_or_restored_ = false;
   bool save_failed_ = false;
   bool dirty_ = false;
   bool saved_ = false;

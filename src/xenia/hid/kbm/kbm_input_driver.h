@@ -71,7 +71,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void ApplySettings(const KbmSettings& settings);
   Diagnostics GetDiagnostics() const;
   void SetHostInputSuspended(bool suspended);
-  void BeginBindingCapture();
+  void BeginBindingCapture(bool allow_mouse = true);
   BindingCaptureResult ConsumeBindingCaptureResult();
   void CancelBindingCapture();
   void SetCaptureStateCallback(CaptureStateCallback callback);
@@ -139,6 +139,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   mutable xe::global_critical_region settings_critical_region_;
   mutable xe::global_critical_region input_state_critical_region_;
   bool binding_capture_active_ = false;
+  bool binding_capture_allow_mouse_ = true;
   BindingCaptureResult binding_capture_result_;
   std::vector<KeyBinding> key_bindings_;
   KbmInputState input_state_;

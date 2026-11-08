@@ -12,34 +12,15 @@
 #include <algorithm>
 #include <bitset>
 #include <cmath>
-#include <filesystem>
-#include <limits>
 
 #include "xenia/base/logging.h"
 #include "xenia/base/platform_win.h"
-#include "xenia/hid/hid_flags.h"
 #include "xenia/hid/input_system.h"
 #include "xenia/hid/kbm/kbm_input_adapter.h"
 #include "xenia/hid/kbm/kbm_input_report_writer_win.h"
 #include "xenia/ui/virtual_key.h"
 #include "xenia/ui/window.h"
 #include "xenia/ui/windowed_app_context.h"
-
-#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
-  DECLARE_string(kbm_##cvar_name);
-#include "kbm_binding_table.inc"
-#undef XE_HID_KBM_BINDING
-
-DECLARE_bool(kbm_enabled);
-DECLARE_int32(kbm_user_index);
-DECLARE_bool(raw_mouse);
-DECLARE_double(raw_mouse_dpi);
-DECLARE_double(raw_mouse_full_stick_speed_cm_s);
-DECLARE_bool(raw_mouse_deadzone_compensation);
-DECLARE_double(raw_mouse_minimum_response);
-DECLARE_bool(raw_mouse_invert_y);
-DECLARE_string(raw_mouse_capture_toggle_key);
-DECLARE_bool(raw_mouse_capture_on_start);
 
 namespace xe {
 namespace hid {
@@ -182,8 +163,7 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
     auto lock = settings_critical_region_.Acquire();
     settings_changed = !AreSettingsEqual(settings_, settings);
   }
-  // The dialog reapplies identical settings when it closes. A report should
-  // end only when its mapping actually changes.
+  // Saving an unchanged draft should not end an active report.
   if (settings_changed) {
     StopInputSampling();
   }
@@ -355,10 +335,11 @@ void KbmInputDriver::RefreshRawMouseCapture() {
   platform_input_.RefreshCapture();
 }
 
-void KbmInputDriver::BeginBindingCapture() {
+void KbmInputDriver::BeginBindingCapture(bool allow_mouse) {
   StopMousePreview();
   auto lock = global_critical_region_.Acquire();
   binding_capture_active_ = true;
+  binding_capture_allow_mouse_ = allow_mouse;
   binding_capture_result_ = {};
 }
 
@@ -381,6 +362,13 @@ bool KbmInputDriver::CompleteBindingCapture(BindingCaptureStatus status,
   auto lock = global_critical_region_.Acquire();
   if (!binding_capture_active_) {
     return false;
+  }
+  if (status == BindingCaptureStatus::kCaptured) {
+    KbmChord chord;
+    if (!ParseKbmChord(value, chord) ||
+        (!binding_capture_allow_mouse_ && IsMouseInputCode(chord.input))) {
+      return false;
+    }
   }
   binding_capture_active_ = false;
   binding_capture_result_.status = status;

@@ -28,16 +28,15 @@ and upstream contribution guidance belong to the
 
 ## What this fork changes
 
-- Separate `kbm.toml` storage, grouped into controller, bindings, Raw Mouse,
-  and Raw Mouse tuning sections.
+- Versioned `kbm.toml` storage, grouped into controller, bindings, Raw Mouse,
+  and Raw Mouse tuning sections, with logical tokens such as `Key.W` and
+  `Mouse.Left`. Incompatible files require an explicit reset; they are not
+  migrated or backed up automatically.
 - Click-to-bind keyboard, mouse-button, alternative, and modifier-chord
   mappings for a virtual Xbox 360 controller.
 - Raw Input mouse-to-right-stick translation with manual DPI and physical
   full-stick speed, linear radial mapping, independent live preview, and capture.
   Configurable stick anti-deadzone defaults on with 0.30 minimum output.
-- Versioned `kbm.toml` storage using logical input tokens such as `Key.W` and
-  `Mouse.Left`. Incompatible versions are rejected as a whole; explicitly
-  restore defaults and save to replace the old file, without migration or backup.
 - A single-page KBM settings window with mouse preview, compact bindings,
   diagnostic recording, and shared Save all controls.
 - English and Traditional Chinese host UI. Technical terms remain English where

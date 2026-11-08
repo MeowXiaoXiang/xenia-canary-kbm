@@ -119,6 +119,18 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
     from = "a = \"Key.G\"";
     to = "a = \"VK_G\"";
   }
+  SECTION("Capture hotkey alternatives are not supported") {
+    from = "capture_toggle_key = \"Key.F8\"";
+    to = "capture_toggle_key = \"Key.F8 Key.F9\"";
+  }
+  SECTION("Capture hotkey case prefixes are not supported") {
+    from = "capture_toggle_key = \"Key.F8\"";
+    to = "capture_toggle_key = \"_Key.F8\"";
+  }
+  SECTION("Capture hotkey cannot be a mouse button") {
+    from = "capture_toggle_key = \"Key.F8\"";
+    to = "capture_toggle_key = \"Mouse.X1\"";
+  }
   SECTION("Wrong controller value type") {
     from = "user_index = 3";
     to = "user_index = true";
@@ -153,6 +165,73 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
   REQUIRE(retained.keybind_a == active.keybind_a);
   REQUIRE(retained.raw_mouse_dpi == active.raw_mouse_dpi);
   REQUIRE(ReadFile(ConfigPath()) == contents);
+}
+
+TEST_CASE("Controller slots clamp before conversion to the runtime integer",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  REQUIRE(SaveConfig());
+  auto contents = ReadFile(ConfigPath());
+  std::string value;
+  int32_t expected;
+  SECTION("Largest TOML integer") {
+    value = "9223372036854775807";
+    expected = 3;
+  }
+  SECTION("Smallest TOML integer") {
+    value = "-9223372036854775808";
+    expected = 0;
+  }
+  const auto offset = contents.find("user_index = 0");
+  REQUIRE(offset != std::string::npos);
+  contents.replace(offset, 14, "user_index = " + value);
+  {
+    std::ofstream file(ConfigPath(), std::ios::binary | std::ios::trunc);
+    file << contents;
+  }
+  auto active = KbmSettings();
+  active.user_index = 1;
+  ApplySettingsToCvars(active);
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  REQUIRE(GetSettingsFromCvars().user_index == expected);
+  REQUIRE(ReadFile(ConfigPath()) == contents);
+}
+
+TEST_CASE(
+    "Saving invalid bindings does not publish an unreadable configuration",
+    "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  REQUIRE(SaveConfig());
+  const auto original = ReadFile(ConfigPath());
+  auto draft = KbmSettings();
+  SECTION("Invalid controller binding") { draft.keybind_a = "VK_A"; }
+  SECTION("Multiple capture hotkeys") {
+    draft.raw_mouse_capture_toggle_key = "Key.F8 Key.F9";
+  }
+  SECTION("Mouse capture hotkey") {
+    draft.raw_mouse_capture_toggle_key = "Ctrl+Mouse.Left";
+  }
+  bool activated = false;
+  REQUIRE_FALSE(CommitKbmSettings(
+      draft, [](const auto& settings) { return SaveConfig(settings); },
+      [&](const auto&) { activated = true; }));
+  REQUIRE_FALSE(activated);
+  REQUIRE(ReadFile(ConfigPath()) == original);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+}
+
+TEST_CASE("An empty capture hotkey can be saved and reloaded", "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  auto settings = KbmSettings();
+  settings.raw_mouse_capture_toggle_key.clear();
+  REQUIRE(SaveConfig(settings));
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  REQUIRE(GetSettingsFromCvars().raw_mouse_capture_toggle_key.empty());
 }
 
 TEST_CASE("Failed KBM replacement preserves the previous saved file", "[kbm]") {

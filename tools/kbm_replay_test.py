@@ -14,6 +14,7 @@ class PhysicalReplayTests(unittest.TestCase):
             f"# schema={schema}, mapper=physical_linear_radial, estimator=poll_bucket_actual_time\n"
             "# dpi=800, full_stick_speed_cm_s=10, deadzone_compensation=false, minimum_response=0.3, invert_y=false\n"
             "# dropped_events=0, dropped_samples=0\n"
+            "# samples=4, events=3\n"
             "elapsed_ms,interval_ms,input_active,raw_delta_x,raw_delta_y,velocity_x,velocity_y,thumb_x,thumb_y,reset_sample,stale_sample,event_sequence\n"
             "10,10,true,10,0,1000,0,10404,0,false,false,2\n"
             "10,0,true,0,0,0,0,0,0,false,false,3\n"
@@ -61,6 +62,23 @@ class PhysicalReplayTests(unittest.TestCase):
             path.write_text(path.read_text().replace("dropped_events=0", "dropped_events=1"))
             self.assertFalse(analyze(path)["event_bucket_check"]["available"])
 
+    def test_missing_poll_rows_cannot_claim_complete_event_replay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.report(directory)
+            lines = path.read_text(encoding="utf-8").splitlines()
+            path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+            self.assertFalse(analyze(path)["event_bucket_check"]["available"])
+
+    def test_event_count_metadata_and_negative_counts_are_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.report(directory)
+            text = path.read_text(encoding="utf-8")
+            path.write_text(text.replace("events=3", "events=4"), encoding="utf-8")
+            self.assertFalse(analyze(path)["event_bucket_check"]["available"])
+            path.write_text(text.replace("dropped_samples=0", "dropped_samples=-1"), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                analyze(path)
+
     def test_schema_two_keeps_its_recorded_ema_model(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.csv"
@@ -71,6 +89,17 @@ class PhysicalReplayTests(unittest.TestCase):
             result = analyze(path)
             self.assertEqual(result["schema"], "2")
             self.assertEqual(result["replay_velocity_error_cps_p99"], 0)
+
+    def test_schema_two_rejects_a_schema_three_sidecar(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.csv"
+            path.write_text(
+                "# schema=2, mapper=radial, sensitivity=10, full_scale_velocity=24000, response_curve=0.8, smoothing_time_ms=8, deadzone_compensation=false, minimum_response=0.3\n"
+                "elapsed_ms,interval_ms,input_active,raw_delta_x,raw_delta_y,filtered_velocity_x,filtered_velocity_y,reset_sample,stale_sample\n",
+                encoding="utf-8")
+            path.with_suffix(".events.csv").write_text("# schema=3\nkind,sequence\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                analyze(path)
 
 
 class EventBucketTests(unittest.TestCase):
@@ -105,6 +134,20 @@ class EventBucketTests(unittest.TestCase):
         events = [dict(kind="2", sequence="5", delta_x="0", delta_y="0")]
         rows = [dict(event_sequence="6", interval_ms="1", raw_delta_x="0", raw_delta_y="0")]
         self.assertFalse(check_event_buckets(rows, events)["available"])
+
+    def test_unknown_event_kind_is_not_a_valid_empty_bucket(self):
+        events = [dict(kind="2", sequence="5", delta_x="0", delta_y="0"),
+                  dict(kind="99", sequence="6", delta_x="0", delta_y="0")]
+        rows = [dict(event_sequence="6", interval_ms="1", raw_delta_x="0", raw_delta_y="0")]
+        self.assertFalse(check_event_buckets(rows, events)["available"])
+
+    def test_trailing_events_are_checked_even_without_another_poll(self):
+        events = [dict(kind="2", sequence="5", delta_x="0", delta_y="0"),
+                  dict(kind="0", sequence="7", delta_x="1", delta_y="0")]
+        rows = [dict(event_sequence="5", interval_ms="1", raw_delta_x="0", raw_delta_y="0")]
+        self.assertFalse(check_event_buckets(rows, events)["available"])
+        events[1]["sequence"] = "6"
+        self.assertTrue(check_event_buckets(rows, events)["available"])
 
 
 if __name__ == "__main__":

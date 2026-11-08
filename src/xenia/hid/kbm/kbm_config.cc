@@ -213,6 +213,12 @@ bool IsNumberSetting(std::string_view name) {
 
 bool IsCompatibleConfigValue(const cvar::IConfigVar& config_var,
                              const toml::node& node) {
+  if (config_var.name() == "raw_mouse_capture_toggle_key") {
+    const auto binding = node.value<std::string>();
+    KbmChord chord;
+    return binding && (binding->empty() || (ParseKbmChord(*binding, chord) &&
+                                            !IsMouseInputCode(chord.input)));
+  }
   if (IsBindingConfigVar(config_var)) {
     const auto binding = node.value<std::string>();
     return binding && IsCanonicalBinding(*binding);
@@ -279,7 +285,15 @@ void LoadConfig() {
     }
     const auto node = GetConfigNode(parsed, *entry);
     if (node) {
-      config_var->LoadConfigValue(node.node());
+      if (name == "kbm_user_index") {
+        // TOML integers are 64-bit; clamp before the CVar's int32 conversion
+        // so overflow cannot silently retain an unrelated active value.
+        const toml::value<int64_t> user_index(
+            std::clamp(*node.value<int64_t>(), int64_t(0), int64_t(3)));
+        config_var->LoadConfigValue(&user_index);
+      } else {
+        config_var->LoadConfigValue(node.node());
+      }
     }
   }
   ApplySettingsToCvars(GetSettingsFromCvars());
@@ -371,6 +385,14 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
                 settings.raw_mouse_capture_toggle_key);
   values.insert("raw_mouse_capture_on_start",
                 settings.raw_mouse_capture_on_start);
+  for (const auto& var : vars) {
+    if (!IsCompatibleConfigValue(*var.config_var,
+                                 *values.get(var.config_var->name()))) {
+      XELOGE("kbm: refused to save invalid setting '{}'.",
+             var.config_var->name());
+      return false;
+    }
+  }
   auto temporary_path = config_path;
   temporary_path += ".tmp";
   std::string output =

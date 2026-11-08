@@ -71,6 +71,15 @@ def check_event_buckets(rows, events):
     """
     if not events or events[0].get("kind") != "2":
         return {"available": False, "reason": "missing initial state"}
+    # Motion may arrive after the last poll and before manual Stop. Validate
+    # that tail too, even though it cannot contribute to a recorded bucket.
+    expected_sequence = int(events[0]["sequence"])
+    for event in events[1:]:
+        expected_sequence += 1
+        if int(event["sequence"]) != expected_sequence:
+            return {"available": False, "reason": "event sequence gap"}
+        if event["kind"] not in ("0", "1"):
+            return {"available": False, "reason": "unknown event kind"}
     pending = [int(events[0]["delta_x"]), int(events[0]["delta_y"])]
     cursor = 1
     mismatches = 0
@@ -104,9 +113,22 @@ def check_event_buckets(rows, events):
     return {"available": True, "checked_polls": checked, "bucket_mismatches": mismatches}
 
 
+def check_recorded_events(metadata, rows, events):
+    if int(metadata.get("dropped_events", "0")) or int(metadata.get("dropped_samples", "0")):
+        return {"available": False, "reason": "truncated recording"}
+    # A file can be truncated after publication without changing its metadata.
+    for key, records in (("samples", rows), ("events", events)):
+        if key in metadata and int(metadata[key]) != len(records):
+            return {"available": False, "reason": "record count mismatch"}
+    return check_event_buckets(rows, events)
+
+
 def analyze_physical(path, metadata, rows):
     if metadata.get("mapper") != "physical_linear_radial" or metadata.get("estimator") != "poll_bucket_actual_time":
         raise ValueError("unsupported physical KBM mapper or estimator")
+    for key in ("samples", "events", "dropped_samples", "dropped_events"):
+        if int(metadata[key]) < 0:
+            raise ValueError(f"invalid {key}")
     dpi = float(metadata["dpi"])
     speed = float(metadata["full_stick_speed_cm_s"])
     minimum = float(metadata["minimum_response"])
@@ -126,10 +148,7 @@ def analyze_physical(path, metadata, rows):
         event_metadata, events = load_report(sidecar)
         if event_metadata.get("schema") != "3":
             raise ValueError("mismatched event sidecar schema")
-        if int(metadata["dropped_events"]) or int(metadata["dropped_samples"]):
-            event_check = {"available": False, "reason": "truncated recording"}
-        else:
-            event_check = check_event_buckets(rows, events)
+        event_check = check_recorded_events(metadata, rows, events)
         if events and events[0]["kind"] == "2":
             previous = float(events[0]["previous_poll_offset_ms"]) / 1000
     errors, outputs, intervals, differences = [], [], [], []
@@ -202,11 +221,10 @@ def analyze(path):
     sidecar = path.with_suffix(".events.csv")
     event_check = {"available": False, "reason": "legacy or missing sidecar"}
     if metadata.get("schema") == "2" and sidecar.exists():
-        _, events = load_report(sidecar)
-        if int(metadata.get("dropped_events", "0")) or int(metadata.get("dropped_samples", "0")):
-            event_check = {"available": False, "reason": "truncated recording"}
-        else:
-            event_check = check_event_buckets(rows, events)
+        event_metadata, events = load_report(sidecar)
+        if event_metadata.get("schema") != "2":
+            raise ValueError("mismatched event sidecar schema")
+        event_check = check_recorded_events(metadata, rows, events)
         if events and events[0]["kind"] == "2":
             initial = events[0]
             stored_state = [float(initial["velocity_x"]), float(initial["velocity_y"])]

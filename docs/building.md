@@ -1,8 +1,6 @@
 # Building
 
-You must have a 64-bit machine for building and running the project. Always
-run your system updater before building and make sure you have the latest
-drivers.
+You must have a 64-bit machine for building and running the project.
 
 This repository is a Windows-only KBM Controller fork. The Linux material is
 retained below as upstream reference for synchronization only; it is not a
@@ -18,15 +16,19 @@ The instructions below are for building from source.
 ### Windows
 
 * Windows 10 or later
-* [Visual Studio 2022 or later](https://www.visualstudio.com/downloads/)
-* CMake 3.10+ (or C++ CMake tools for Windows)
+* [Visual Studio 2022 or later](https://www.visualstudio.com/downloads/), or
+  its Build Tools, with the MSVC C++ tools installed
+* CMake 3.20+ and Ninja (the Visual Studio C++ CMake tools include both)
 * Windows 11 SDK version 10.0.22000.0 (for Visual Studio 2022, this or any newer version)
 * [Python 3.10+ 64-bit](https://www.python.org/downloads/)
   * Ensure Python is in PATH.
 * [Vulkan SDK](https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe)
   * The build script will automatically detect it if installed at `C:\VulkanSDK`
+  * Include `glslangValidator`, `spirv-opt`, and `spirv-dis` for shader generation.
+* clang-format 20 for formatting and lint, matching this fork's CI
+  * This is separate from the MSVC compiler used for the Windows build.
 
-```
+```powershell
 git clone https://github.com/MeowXiaoXiang/xenia-canary-kbm.git
 cd xenia-canary-kbm
 .\xb.bat setup
@@ -34,53 +36,24 @@ cd xenia-canary-kbm
 # Build a Release executable:
 .\xb.bat build --config=release
 
-# Run premake and open Visual Studio (run the 'xenia-app' project):
+# Generate CMake projects and open Visual Studio (requires the IDE):
 .\xb.bat devenv
 
-# Run premake to update the sln/vcproj's:
+# Configure CMake without building ('premake' is the compatibility command name):
 .\xb.bat premake
 
 # Format code to the style guide:
 .\xb.bat format
 
-# Build and run the unit tests:
-.\xb.bat test
+# Check formatting without changing files:
+python xenia-build.py lint --all
 ```
-<!--
-# Remove intermediate files and build outputs (doesn't work on Linux):
-xb clean
 
-# Check for lint errors with clang-format:
-xb lint
-
-# Run the style checker on all code:
-xb style
-
-# Remove all build/ output and do a hard git reset:
-xb nuke
-
-# Runs the clang-tidy checker on all code:
-xb tidy
-
-
-## Testing:
-
-# Generate tests:
-xb gentests
-
-# Run tests:
-xb test
-
-# Run GPU tests:
-xb gputest
-
-
-## Other:
-
-# Generate SPIR-V binaries and header files:
-xb genspirv
--->
-
+Normal command-line builds use CMake and Ninja. Build Tools alone are sufficient
+for those builds; `devenv` additionally needs the Visual Studio IDE. See the
+[KBM verification commands](kbm_input.md#build) for the five KBM/localization
+test suites and Python report-tool tests. The general `xb.bat test` command runs
+upstream base/CPU/kernel suites rather than those KBM suites.
 #### Debugging
 
 VS behaves oddly with the debug paths. Open the 'xenia-app' project properties

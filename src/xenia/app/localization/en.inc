@@ -137,6 +137,7 @@ XE_LOCALIZATION_STRING(
     "The KBM Controller HID backend is not active. These settings will "
     "be saved, but input requires hid = \"kbm\" on the next launch.")
 XE_LOCALIZATION_STRING(kKbmPressBinding, "Press a key or mouse button...")
+XE_LOCALIZATION_STRING(kKbmPressCaptureKey, "Press a keyboard key...")
 XE_LOCALIZATION_STRING(
     kKbmBindingTooltip,
     "Click, then press a key or mouse button. Hold Ctrl, Alt, Shift, or "
@@ -163,7 +164,8 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "Invert vertical look")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
-XE_LOCALIZATION_STRING(kKbmCaptureToggle, "Mouse capture hotkey:")
+XE_LOCALIZATION_STRING(kKbmCaptureToggle,
+                       "Mouse capture hotkey (keyboard only):")
 XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "Stick anti-deadzone")
 XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0–50%)")
 XE_LOCALIZATION_STRING(

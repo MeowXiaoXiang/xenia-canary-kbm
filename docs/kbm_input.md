@@ -33,8 +33,8 @@ revision.
 
 1. On Windows, KBM Controller is selected by default. You can also select it
    explicitly with `--hid=kbm`.
-2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
-   selected, or after a `kbm.toml` file already exists.
+2. Open **KBM Controller Settings** from the host menu. The menu appears when
+   KBM Controller is selected, or after a `kbm.toml` file already exists.
 3. Enable **KBM Controller**, select its controller slot, configure bindings,
    then choose **Save all**.
 
@@ -49,13 +49,20 @@ complete valid settings are accepted. Older versions (including v3), unknown
 versions and malformed files are rejected as a whole, including custom bindings.
 The old file is left untouched at startup and on Cancel.
 
-For an incompatible file, choose **Restore all defaults...** in the settings window to
-enable the save actions. This replaces the entire draft, including bindings,
-with current defaults; edits still affect preview only until saved. **Save all** then replaces the old file with v4. There is no configuration
-migration or automatic backup. A failed write preserves the old file and active
-settings so the draft can be retried. Existing backup files are not deleted.
+For an incompatible file, choose **Restore all defaults...** in the settings
+window to enable the save actions. This replaces the entire draft, including
+bindings, with current defaults; edits still affect preview only until saved.
+**Save all** then replaces the old file with v4. There is no configuration
+migration or automatic backup. Copy the old file yourself before saving if you
+want to keep it. A failed write preserves the old file and active settings so
+the draft can be retried. Existing backup files are not deleted.
 
-## Button bindings
+If input is inactive, check that the main configuration selects `hid = "kbm"`.
+An explicit `hid = "any"` selects general hardware backends and does not enable
+KBM. Use `hid = "keyboard"` for upstream keyboard passthrough and configure that
+driver separately. The old `winkey` selector is no longer supported.
+
+## Settings window
 
 The settings window keeps its save controls visible while content scrolls.
 Edits, including **Restore all defaults...**, change a local draft and preview only.
@@ -70,16 +77,13 @@ A failure preserves the active settings, saved file and draft so the player can 
 
 The settings window starts at its narrow 520-unit width with three main
 sections: **Button bindings**, **Mouse**, and **Advanced and diagnostics**,
-in that order. Mouse starts expanded and keeps tuning, startup capture, the capture hotkey,
-and an expandable live preview together. Button bindings and advanced tools
-start collapsed. Widening the window places the complete bindings section on
-the left and the complete mouse section on the right; advanced tools remain
+in that order. Mouse starts expanded and keeps tuning, startup capture, the
+capture hotkey, and an expandable live preview together. Button bindings and
+advanced tools start collapsed. Widening the window places bindings on the left
+and the complete mouse section on the right; advanced tools remain
 below both columns. Within the running process, section state is retained
 across reopening, resizing and host-language changes.
 
-The 25 bindings use one compact list: input name, content-sized binding chips,
-and a per-row actions menu. Alternative chips wrap when necessary. There are
-no repeated group table headers or full-width binding-value bars.
 Recording/writing opens the advanced section when it appears. Collapsing Mouse
 or its preview stops the test and releases the cursor; collapsing Mouse also
 cancels a pending capture-hotkey binding. Collapsing Button bindings cancels
@@ -91,12 +95,18 @@ control styling. The compact footer groups draft status with **Restore all
 defaults...** and keeps the save actions below. The settings filename is listed
 under **How these settings work**.
 
+### Button bindings
+
+The 25 bindings use one compact list: controller input name, binding chips,
+and a per-row actions menu. Alternative chips wrap when necessary.
 Press Escape to cancel binding capture. Click a binding chip to replace that
 alternative while preserving the others. The per-row **...** menu adds an
 alternative, assigns Escape, or clears the row. Multiple alternative keys for a
-stick direction count as one direction even when held together. Bindings use stable logical tokens in
-the saved file, not Windows virtual-key numbers: for example `Key.W`, `Key.F8`,
-`Key.ArrowUp`, `Key.LeftShift`, `Mouse.Left`, and `Mouse.X1`. Chords use the
+stick direction count as one direction even when held together.
+
+Bindings use stable logical tokens in the saved file, not Windows virtual-key
+numbers: for example `Key.W`, `Key.F8`, `Key.ArrowUp`, `Key.LeftShift`,
+`Mouse.Left`, and `Mouse.X1`. Chords use the
 canonical order `Ctrl+Alt+Shift+Super+Key.F8`; a modifier by itself uses its
 key token such as `Key.LeftShift`. The UI continues to display friendly names
 like `F8` and `Mouse Left`. `Key.K` and `Ctrl+Key.K` may both activate while
@@ -118,27 +128,8 @@ KBM bindings are stored under `[HID.KBM.Bindings]` in `kbm.toml`; their keys
 are concise names such as `a`, `left_trigger`, and `right_thumb_up` rather than
 the runtime `kbm_keybind_*` CVar names. The upstream `keybind_*` settings in
 the main configuration belong to the keyboard driver and do not control KBM.
-Earlier experimental KBM builds shared those names incorrectly; re-save your
-KBM bindings after updating.
-
-If input is inactive, check that the main configuration selects `hid = "kbm"`.
-An explicit `hid = "any"` selects general hardware backends and does not enable
-KBM. Use `hid = "keyboard"` for upstream keyboard passthrough. The old
-`winkey` selector is no longer supported.
 Close host dialogs and focus the emulator before pressing F8. The log records
 capture hotkey events, host UI suspension, and Raw Input capture transitions.
-
-KBM Controller maps host input to the selected virtual Xbox 360 controller
-slot. Click a binding field and press the desired key, mouse button, or
-modifier chord. Use the row's **...** menu to add an alternative or clear it.
-Bindings are displayed as names such as `F8` or `Ctrl+Shift+K`, rather than
-raw Windows virtual-key codes.
-
-KBM Controller does not expose keyboard passthrough. To expose a physical
-keyboard to the guest, start Xenia with `--hid=keyboard` and configure the
-upstream keyboard driver separately. `--hid=kbm` is the default Windows
-virtual controller with Raw Input mouse-to-right-stick support; use
-`--hid=any` for general hardware backend selection.
 
 ## Raw Input mouse tuning
 
@@ -161,8 +152,8 @@ The current starting settings are:
 | Minimum stick output | 0.30 | 0–0.5; used only with anti-deadzone |
 
 These are product starting values, not detected hardware settings or a universal
-calibration for every game. Existing valid v4 choices for anti-deadzone remain intact;
-the default applies to new settings and **Restore all defaults...**.
+calibration for every game. Existing valid v4 choices for anti-deadzone remain
+intact; the default applies to new settings and **Restore all defaults...**.
 
 - **Mouse hardware DPI** is manually entered, not automatically detected.
   Enter the actual hardware value and keep it fixed while tuning. This field
@@ -173,8 +164,9 @@ the default applies to new settings and **Restore all defaults...**.
   3149.6 counts/s. Defaults do not reproduce legacy tuning.
 - **Stick anti-deadzone** is on by default. When enabled, nonzero radial
   output becomes `minimum + (1-minimum)*magnitude`. Minimum stick output defaults to
-  0.30 with a 0–0.5 range (displayed as 30% and 0–50% in the UI). Zero motion always produces zero output; there is no
-  smoothing tail. Compensation changes the otherwise linear output relationship.
+  0.30 with a 0–0.5 range (displayed as 30% and 0–50% in the UI). Zero motion
+  always produces zero output; there is no smoothing tail. Anti-deadzone changes
+  the otherwise linear output relationship.
 - Finite out-of-range values are clamped; NaN and infinity revert to defaults.
   Reset/inactive samples and intervals over 100ms output zero. Nonpositive
   intervals leave pending counts for the next advancing poll and output zero.
@@ -222,8 +214,8 @@ gameplay capture request remains unchanged.
 
 ## Input sampling diagnostics
 
-The **Diagnostics** tool can record a 60-second gameplay sample. **Record
-60-second diagnostics** automatically closes settings so guest input resumes.
+The **Advanced and diagnostics** section can record a 60-second gameplay sample.
+**Record 60-second diagnostics** automatically closes settings so guest input resumes.
 When the draft has changes, **Save all and record for 60 seconds** saves them
 first; a save failure leaves the window open and does not start recording.
 Play normally, then reopen settings to see recording, writing or result status.
@@ -238,8 +230,13 @@ stale, or dropped samples. New reports identify `mapper=physical_linear_radial`
 and `estimator=poll_bucket_actual_time` in their metadata. Reports are published
 after recording ends, so recording does not add per-sample disk I/O.
 
-Schema 2 and 3 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
-accepted Raw Input events, reset markers, and the initial bucket state.
+Metadata snapshots the active DPI, full-stick speed, anti-deadzone switch,
+minimum output, and Y inversion when recording starts. These are active gameplay
+settings, not an unsaved preview draft or detected mouse hardware values.
+The report does not contain a complete copy of `kbm.toml` or the button bindings.
+
+Schema 2 and 3 reports also write `kbm-input-report-<timestamp>.events.csv`,
+containing accepted Raw Input events, reset markers, and the initial bucket state.
 The timestamps describe host processing, not hardware sampling. Event sequence
 numbers associate poll buckets with the event trace. The poll report is published
 last and marks a completed pair; a sidecar alone is not a complete report.
@@ -261,7 +258,9 @@ host-processing timestamps do not establish hardware sampling times.
 
 ## Mouse capture
 
-The default capture hotkey is **F8**, configurable as a key or modifier chord.
+The default capture hotkey is **F8**, configurable as one keyboard key or
+modifier chord. Mouse buttons, alternative hotkeys, and case prefixes are not
+supported in this field. Clear the binding to disable the hotkey.
 When capture is active, KBM Controller hides and clips the cursor, requests exclusive
 Raw Input, and sends a status notification. Press the hotkey again to release
 it. Losing focus releases capture; returning focus can restore a requested
@@ -294,6 +293,8 @@ verify native Windows event ordering or a game's camera response.
 | Capture toggle | Move the mouse while repeatedly capturing and releasing with F8. | Cursor visibility and clipping match capture state; old movement does not reappear after capture resumes. |
 | Host dialogs | Open and close settings while moving or holding a control; repeat with another host dialog. | Guest input is suspended, the cursor is available, and closing the last dialog restores requested capture without stale input. |
 | Binding capture | Capture a key, mouse button, and modifier chord; cancel capture with Escape. | Correct binding names, working cancellation, and no unintended controller input while the dialog is open. |
+| Capture hotkey binding | Start capturing the hotkey, click a mouse button, then press a keyboard key or chord. | Mouse buttons do not finish the hotkey capture; the supported keyboard input does. Regular controller bindings still accept mouse buttons. |
+| Unsupported binding key | While capturing a controller binding, press an unsupported key, then a supported key. | Capture keeps waiting after the unsupported key; the original binding is not silently cleared. |
 | Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Draft edits affect preview only; cancellation retains the last successfully activated settings. |
 | Live preview | Start a test before loading a game; move, stop, reset the peak, and change tuning. | Output updates without guest polls; stopping returns to zero, and reset or tuning changes clear the peak. |
 | Preview capture | Test Escape, Enter, Space, focus loss, binding capture and dialog closure. | Cursor is released; returning focus does not restart preview, and the gameplay F8 request is preserved. |
@@ -326,8 +327,8 @@ discards an active recording. A report already being saved is allowed to finish.
 Shutdown waits for an accepted report to finish and discards an unfinished
 recording. The Windows application explicitly shuts down sampling before its
 quick-exit path, which bypasses ordinary driver destruction. Frame-time
-comparisons during gameplay remain useful because moving
-work off the input thread does not eliminate all CPU and storage contention.
+comparisons during gameplay remain useful because moving work off the input
+thread does not eliminate all CPU and storage contention.
 
 Sampling buffers and the report worker belong to the sampling component. Buffer
 allocation and lazy worker startup happen on the UI path before input locks are
@@ -350,6 +351,7 @@ On a Windows development environment, the normal verification commands are:
 ```powershell
 .\xb.bat setup
 .\xb.bat build --config=release
+python xenia-build.py lint --all
 ```
 
 `xb.ps1` provides the same commands for PowerShell.
@@ -365,8 +367,8 @@ run `xb.bat build --config=release --force` once to replace objects whose header
 dependencies may be missing. Changing Windows language settings or installing
 an English compiler language pack is not required.
 
-To run the Windows KBM core, configuration, and localization regression tests
-from a developer environment:
+To run the five Windows KBM and localization regression suites from a developer
+environment:
 
 ```powershell
 .\xb.bat build --config=release --build-tests `
@@ -387,6 +389,18 @@ Sampling tests also cover worker handoff, capacity limits, cancellation,
 shutdown, writer failures, CSV compatibility and publication cleanup. Windows
 CI runs these five suites before preparing an artifact. Run the native Windows
 lifecycle checks above in addition to these automated tests.
+
+Run the report replay tools' Python tests separately; Windows and Linux KBM CI
+both include them:
+
+```powershell
+python -B -m unittest discover -s tools -p "kbm_*test.py"
+```
+
+Replay checks metadata record counts and event order, including events after
+the last poll. A truncated file, sequence gap, or unknown event kind cannot
+claim complete event-bucket verification. Reports without sidecars can still
+be analyzed as poll samples, with event verification marked unavailable.
 
 The dependency-prefix parser has separate Python regression tests:
 

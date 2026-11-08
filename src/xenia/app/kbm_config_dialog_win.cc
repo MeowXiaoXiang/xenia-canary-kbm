@@ -73,19 +73,10 @@ KbmConfigDialog::KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
                                  EmulatorWindow& emulator_window)
     : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
   settings_ = hid::kbm::GetSettingsFromCvars();
-  original_settings_ = settings_;
   saved_ = hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kCompatible;
 }
 
-KbmConfigDialog::~KbmConfigDialog() {
-  if (auto* driver = GetDriver()) {
-    driver->StopMousePreview();
-  }
-  CancelBindingCapture();
-  if (!committed_or_restored_) {
-    RestoreOriginal();
-  }
-}
+KbmConfigDialog::~KbmConfigDialog() { StopCapture(); }
 
 hid::kbm::KbmInputDriver* KbmConfigDialog::GetDriver() const {
   hid::InputSystem* input_system = emulator_window_.emulator()->input_system();
@@ -93,19 +84,13 @@ hid::kbm::KbmInputDriver* KbmConfigDialog::GetDriver() const {
                       : nullptr;
 }
 
-void KbmConfigDialog::ApplyDraft() {
-  committed_or_restored_ = false;
+void KbmConfigDialog::MarkDraftChanged() {
   dirty_ = true;
   saved_ = false;
   settings_ = hid::kbm::NormalizeSettings(settings_);
   if (auto* driver = GetDriver()) {
     driver->ResetMousePreview();
   }
-}
-
-void KbmConfigDialog::RestoreOriginal() {
-  settings_ = original_settings_;
-  committed_or_restored_ = true;
 }
 
 bool KbmConfigDialog::CanSaveDraft() const {
@@ -136,8 +121,6 @@ bool KbmConfigDialog::SaveDraft() {
   save_failed_ = !success;
   if (success) {
     reset_incompatible_ = false;
-    original_settings_ = settings_;
-    committed_or_restored_ = true;
     dirty_ = false;
     saved_ = true;
   }
@@ -153,7 +136,8 @@ void KbmConfigDialog::StartBindingCapture(std::string* target, bool append,
   binding_capture_append_ = append;
   binding_capture_index_ = index;
   if (auto* driver = GetDriver()) {
-    driver->BeginBindingCapture();
+    driver->BeginBindingCapture(target !=
+                                &settings_.raw_mouse_capture_toggle_key);
   }
 }
 
@@ -229,6 +213,9 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
   bool changed = false;
   ImGui::PushID(id);
   const bool capturing = binding_capture_target_ == &binding;
+  const auto capture_prompt = allow_alternatives
+                                  ? StringId::kKbmPressBinding
+                                  : StringId::kKbmPressCaptureKey;
   if (ImGui::BeginTable("Binding", 2, ImGuiTableFlags_SizingStretchProp)) {
     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
     const float actions_width =
@@ -240,8 +227,8 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
     auto tokens = BindingTokens(binding);
     ImGui::BeginDisabled(!GetDriver());
     if (tokens.empty() || (capturing && binding_capture_append_)) {
-      const char* label = capturing ? Tr(StringId::kKbmPressBinding)
-                                    : Tr(StringId::kKbmUnbound);
+      const char* label =
+          capturing ? Tr(capture_prompt) : Tr(StringId::kKbmUnbound);
       const float width = std::min(
           ImGui::GetContentRegionAvail().x,
           ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2);
@@ -256,7 +243,7 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
             capturing &&
             (binding_capture_index_ == int(i) || binding_capture_index_ < 0);
         const std::string label = capturing_token
-                                      ? Tr(StringId::kKbmPressBinding)
+                                      ? Tr(capture_prompt)
                                       : hid::kbm::FormatKbmBinding(tokens[i]);
         const float width =
             std::min(available, ImGui::CalcTextSize(label.c_str()).x +
@@ -319,11 +306,11 @@ void KbmConfigDialog::DrawMouseSection() {
     return;
   }
   if (DrawMouseSettings()) {
-    ApplyDraft();
+    MarkDraftChanged();
   }
   ImGui::Separator();
   if (DrawCaptureSettings()) {
-    ApplyDraft();
+    MarkDraftChanged();
   }
   ImGui::Separator();
   DrawPreview();
@@ -629,7 +616,7 @@ bool KbmConfigDialog::DrawConfirmations() {
       StopCapture();
       settings_ = hid::kbm::KbmSettings();
       reset_incompatible_ = true;
-      ApplyDraft();
+      MarkDraftChanged();
       ImGui::CloseCurrentPopup();
     }
     if (ImGui::Button(Tr(StringId::kKbmContinueEditing), ImVec2(-1, 0)) ||
@@ -692,7 +679,7 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
     header_changed |= ImGui::Combo(Tr(StringId::kKbmControllerSlot),
                                    &settings_.user_index, players, 4);
     if (header_changed) {
-      ApplyDraft();
+      MarkDraftChanged();
     }
     ImGui::TextWrapped("%s", Tr(StringId::kKbmInputPaused));
     ImGui::Separator();
@@ -758,7 +745,7 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
         auto bindings = [&] {
           if (BeginCard("Bindings")) {
             if (DrawBindings()) {
-              ApplyDraft();
+              MarkDraftChanged();
             }
           }
           ImGui::EndChild();
@@ -827,7 +814,7 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
     // cancel, save and close discard it before consuming a pending result;
     // wait through mouse-down until the active widget handles its release.
     if (!ImGui::IsAnyItemActive() && HandleBindingCaptureResult()) {
-      ApplyDraft();
+      MarkDraftChanged();
     }
     close |= DrawConfirmations();
     preview_was_active_ =
@@ -838,7 +825,6 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
   ImGui::End();
   if (close) {
     StopCapture();
-    RestoreOriginal();
     Close();
     emulator_window_.ToggleKbmConfigDialog();
   }
