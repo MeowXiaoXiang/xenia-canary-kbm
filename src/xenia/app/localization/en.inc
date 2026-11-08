@@ -143,7 +143,6 @@ XE_LOCALIZATION_STRING(
     "Win to create a chord.")
 XE_LOCALIZATION_STRING(kKbmAddAlternativeBinding, "Add alternative binding")
 XE_LOCALIZATION_STRING(kKbmClearBinding, "Clear binding")
-XE_LOCALIZATION_STRING(kKbmKeyboard, "KBM Controller")
 XE_LOCALIZATION_STRING(kKbmEnableController, "Enable KBM Controller")
 XE_LOCALIZATION_STRING(kKbmControllerSlot, "Controller slot")
 XE_LOCALIZATION_STRING(kKbmPlayer1, "Player 1")
@@ -152,8 +151,8 @@ XE_LOCALIZATION_STRING(kKbmPlayer3, "Player 3")
 XE_LOCALIZATION_STRING(kKbmPlayer4, "Player 4")
 XE_LOCALIZATION_STRING(
     kKbmBindingHelp,
-    "Click a binding and press the key or mouse button you want. Hold "
-    "Ctrl, Alt, Shift, or Win for a chord. Use + to add an alternative.")
+    "Click a binding to replace it. Use ... for alternatives, Bind Escape or "
+    "Clear. Hold Ctrl, Alt, Shift or Win for a chord; Escape cancels capture.")
 XE_LOCALIZATION_STRING(kKbmXboxInput, "Xbox 360 input")
 XE_LOCALIZATION_STRING(kKbmKeyboardMouse, "Keyboard / mouse")
 XE_LOCALIZATION_STRING(kKbmMouse, "Mouse")
@@ -166,15 +165,14 @@ XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
 XE_LOCALIZATION_STRING(kKbmCaptureToggle, "Mouse capture hotkey:")
 XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "Stick anti-deadzone")
-XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0.0–0.5):")
+XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0–50%)")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
     "Raises non-zero output to cross the game's stick deadzone. Too much "
     "minimum output makes fine adjustment difficult. Zero movement still "
     "produces zero output. Disable for pure linear output.")
-XE_LOCALIZATION_STRING(kKbmDiagnostics, "Diagnostics")
-XE_LOCALIZATION_STRING(kKbmLastStickOutput,
-                       "Latest right-stick output: {:.0f}%{}")
+XE_LOCALIZATION_STRING(kKbmDiagnostics, "Advanced and diagnostics")
+XE_LOCALIZATION_STRING(kKbmLastStickOutput, "Last game stick output: {:.0f}%{}")
 XE_LOCALIZATION_STRING(kKbmMaximum, " (maximum)")
 XE_LOCALIZATION_STRING(
     kKbmRawSpeed,
@@ -194,10 +192,10 @@ XE_LOCALIZATION_STRING(
     "open.")
 XE_LOCALIZATION_STRING(kKbmDiagnosticsUnavailable,
                        "Runtime diagnostics are unavailable.")
-XE_LOCALIZATION_STRING(kKbmSave, "Save settings")
-XE_LOCALIZATION_STRING(kKbmCancel, "Cancel")
-XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "Restore defaults")
-XE_LOCALIZATION_STRING(kKbmSaveClose, "Save settings and close")
+XE_LOCALIZATION_STRING(kKbmSave, "Save all")
+XE_LOCALIZATION_STRING(kKbmCancel, "Cancel and close")
+XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "Restore all defaults...")
+XE_LOCALIZATION_STRING(kKbmSaveClose, "Save all and close")
 XE_LOCALIZATION_STRING(kKbmSettingsFile, "Settings file: kbm.toml")
 XE_LOCALIZATION_STRING(kKbmAppliedUnsaved,
                        "Draft changes affect preview only; save to activate.")
@@ -207,23 +205,24 @@ XE_LOCALIZATION_STRING(
     "Saving failed. The active settings and kbm.toml were not changed.")
 XE_LOCALIZATION_STRING(
     kKbmConfigIncompatible,
-    "kbm.toml is incompatible and was not loaded. Restore defaults, then "
-    "Save settings to replace it with the current KBM configuration.")
+    "kbm.toml is incompatible and was not loaded, including its bindings. "
+    "Confirm Restore all defaults to enable saving. Save replaces the old file "
+    "without a backup; Cancel leaves it untouched.")
 XE_LOCALIZATION_STRING(kKbmUnbound, "Unbound")
 XE_LOCALIZATION_STRING(kKbmBindEscape, "Bind Escape")
 XE_LOCALIZATION_STRING(kKbmCancelCapture, "Cancel capture")
 XE_LOCALIZATION_STRING(
     kKbmSnapshot, "Last gameplay sample (not live while this window is open)")
 XE_LOCALIZATION_STRING(kKbmInputSampling, "Input sampling")
-XE_LOCALIZATION_STRING(kKbmStartInputSampling, "Start 60-second capture")
+XE_LOCALIZATION_STRING(kKbmStartInputSampling, "Record 60-second diagnostics")
 XE_LOCALIZATION_STRING(kKbmSaveAndStartInputSampling,
-                       "Save settings and start 60-second capture")
+                       "Save all and record for 60 seconds")
 XE_LOCALIZATION_STRING(kKbmStopAndSaveInputSampling, "Stop and save report")
 XE_LOCALIZATION_STRING(kKbmCancelInputSampling, "Cancel sampling")
 XE_LOCALIZATION_STRING(
     kKbmInputSamplingHelp,
-    "Starting a capture closes this window so KBM input can resume. "
-    "Unsaved settings are saved first.")
+    "Recording closes settings and resumes game input. Draft changes are saved "
+    "first; the report records the active mouse parameters.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingProgress,
                        "Recording: %.0f s remaining | %zu samples")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportSaved, "Report saved: %s")
@@ -356,7 +355,7 @@ XE_LOCALIZATION_STRING(kGuestLanguageNorwegian, "Norwegian")
 XE_LOCALIZATION_STRING(kGuestLanguageDutch, "Dutch")
 XE_LOCALIZATION_STRING(kGuestLanguageSimplifiedChinese, "Simplified Chinese")
 
-XE_LOCALIZATION_STRING(kKbmDpi, "Mouse hardware DPI (100–32,000)")
+XE_LOCALIZATION_STRING(kKbmDpi, "Mouse DPI")
 
 XE_LOCALIZATION_STRING(kKbmPhysicalSpeed, "Full-stick speed (1–100 cm/s)")
 
@@ -365,11 +364,6 @@ XE_LOCALIZATION_STRING(
     "Enter your mouse DPI manually; it is not detected. Full-stick speed is "
     "physical mouse speed, not cm/360 degrees. Lower values reach full stick "
     "more easily. Defaults do not reproduce legacy tuning.")
-
-XE_LOCALIZATION_STRING(kKbmMigrationNotice,
-                       "Legacy v3 bindings were loaded. Mouse tuning now uses "
-                       "DPI and physical speed and needs recalibration. Saving "
-                       "upgrades to v4 after backing up the original file.")
 
 XE_LOCALIZATION_STRING(kKbmLivePreview, "Independent live stick preview")
 
@@ -388,3 +382,36 @@ XE_LOCALIZATION_STRING(kKbmResetPreviewPeak, "Reset peak")
 XE_LOCALIZATION_STRING(
     kKbmPreviewFailed,
     "Preview capture failed. The cursor has been released; check the log.")
+
+XE_LOCALIZATION_STRING(kKbmBindingActions, "Binding actions")
+XE_LOCALIZATION_STRING(
+    kKbmDpiHelp, "Manually enter actual DPI (100–32,000); not auto-detected.")
+XE_LOCALIZATION_STRING(
+    kKbmSpeedDirection,
+    "Lower: easier full stick. Higher: faster motion required.")
+XE_LOCALIZATION_STRING(kKbmTuningHelp, "How these settings work")
+XE_LOCALIZATION_STRING(
+    kKbmPreviewDraft, "Uses this window's draft only. Game input stays paused.")
+XE_LOCALIZATION_STRING(kKbmCaptureOptions, "Mouse capture options")
+XE_LOCALIZATION_STRING(kKbmKeyboardBindings, "Button bindings")
+XE_LOCALIZATION_STRING(kKbmTechnicalDetails,
+                       "Technical details · last game sample")
+XE_LOCALIZATION_STRING(
+    kKbmInputSamplingStartFailed,
+    "Could not start recording. Check the log and try again.")
+XE_LOCALIZATION_STRING(kKbmUnsavedTitle, "Unsaved changes")
+XE_LOCALIZATION_STRING(
+    kKbmUnsavedHelp,
+    "Mouse, bindings and controller options share one draft. Save all changes, "
+    "discard them, or continue editing.")
+XE_LOCALIZATION_STRING(kKbmDiscardClose, "Discard changes and close")
+XE_LOCALIZATION_STRING(kKbmContinueEditing, "Continue editing")
+XE_LOCALIZATION_STRING(kKbmResetTitle, "Restore all defaults?")
+XE_LOCALIZATION_STRING(
+    kKbmResetHelp,
+    "Reset every binding, mouse and controller option in this draft. The "
+    "active settings and file change only after Save all.")
+XE_LOCALIZATION_STRING(kKbmResetConfirm, "Reset the entire draft")
+XE_LOCALIZATION_STRING(kKbmSharedDraft,
+                       "One draft for mouse, bindings and controller options. "
+                       "Save all to activate.")

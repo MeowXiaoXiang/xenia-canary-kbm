@@ -1787,7 +1787,7 @@ void EmulatorWindow::ToggleKbmConfigDialog() {
   } else if (kbm_config_dialog_->IsClosing()) {
     kbm_config_dialog_.release();
   } else {
-    kbm_config_dialog_.reset();
+    kbm_config_dialog_->RequestClose();
   }
 }
 #endif  // XE_PLATFORM_WIN32

@@ -235,8 +235,7 @@ minimum_response = 0.23
 )toml";
 }
 
-TEST_CASE("Grouped v3 loads compatible values without changing the file",
-          "[kbm]") {
+TEST_CASE("Grouped v3 is rejected until explicit reset and save", "[kbm]") {
   ScopedConfigDirectory directory;
   const auto path = directory.path() / "kbm.toml";
   {
@@ -244,33 +243,41 @@ TEST_CASE("Grouped v3 loads compatible values without changing the file",
     file << kLegacyV3;
   }
   SetupConfig(directory.path(), true);
-  REQUIRE(GetConfigState() == KbmConfigState::kNeedsMigration);
+  REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
   REQUIRE(ReadFile(path) == kLegacyV3);
-  const auto loaded = GetSettingsFromCvars();
-  REQUIRE(loaded.user_index == 2);
-  REQUIRE(loaded.keybind_a == "Ctrl+Key.G");
-  REQUIRE(loaded.raw_mouse_capture_toggle_key == "Alt+Key.F9");
-  REQUIRE(loaded.raw_mouse_invert_y);
-  REQUIRE(loaded.raw_mouse_deadzone_compensation);
-  REQUIRE(loaded.raw_mouse_minimum_response == Approx(0.23));
-  REQUIRE(loaded.raw_mouse_dpi == 800.0);
-  REQUIRE(loaded.raw_mouse_full_stick_speed_cm_s == 10.0);
-  KbmSettings draft = loaded;
-  draft.raw_mouse_dpi = 1600;
-  REQUIRE(GetSettingsFromCvars().raw_mouse_dpi == 800);
-  const auto backup = directory.path() / "kbm.toml.v3.bak";
-  {
-    std::ofstream previous(backup);
-    previous << "an older backup";
-  }
-  REQUIRE(SaveConfig(draft));
-  REQUIRE(ReadFile(backup) == "an older backup");
-  REQUIRE(ReadFile(directory.path() / "kbm.toml.v3.bak.1") == kLegacyV3);
-  REQUIRE(GetSettingsFromCvars().raw_mouse_dpi == 800);
-  SetupConfig(directory.path(), false);
+  const auto active = GetSettingsFromCvars();
+  const KbmSettings defaults;
+  REQUIRE(active.user_index == defaults.user_index);
+  REQUIRE(active.raw_mouse_invert_y == defaults.raw_mouse_invert_y);
+  REQUIRE(active.raw_mouse_capture_toggle_key ==
+          defaults.raw_mouse_capture_toggle_key);
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  REQUIRE(active.cvar_name == defaults.cvar_name);
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
+  REQUIRE_FALSE(CanSaveKbmConfig(GetConfigState(), false));
+  REQUIRE_FALSE(SaveConfig());
+  REQUIRE_FALSE(SaveConfig(defaults));
+  REQUIRE(ReadFile(path) == kLegacyV3);
+  auto draft = defaults;
+  bool activated = false;
+  REQUIRE_FALSE(CommitKbmSettings(
+      draft, [](const auto& value) { return SaveConfig(value); },
+      [&](const auto&) { activated = true; }));
+  REQUIRE_FALSE(activated);
+  REQUIRE(CanSaveKbmConfig(GetConfigState(), true));
+  REQUIRE(CommitKbmSettings(
+      draft, [](const auto& value) { return SaveConfig(value, true); },
+      [&](const auto& value) {
+        activated = true;
+        ApplySettingsToCvars(value);
+      }));
+  REQUIRE(activated);
   REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
-  REQUIRE(GetSettingsFromCvars().raw_mouse_dpi == 1600);
-  REQUIRE(GetSettingsFromCvars().keybind_a == loaded.keybind_a);
+  REQUIRE(ReadFile(path).find("schema_version = 4") != std::string::npos);
+  REQUIRE_FALSE(std::filesystem::exists(directory.path() / "kbm.toml.v3.bak"));
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetSettingsFromCvars().keybind_a == defaults.keybind_a);
 }
 
 TEST_CASE("Draft commit activates only after successful publication", "[kbm]") {
@@ -311,7 +318,7 @@ TEST_CASE("Physical settings clamp finite values and default non-finite values",
   REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s == 100);
 }
 
-TEST_CASE("Migration backup and temporary-file failures never activate a draft",
+TEST_CASE("Failed reset publication preserves the incompatible original",
           "[kbm]") {
   ScopedConfigDirectory directory;
   const auto path = directory.path() / "kbm.toml";
@@ -320,29 +327,22 @@ TEST_CASE("Migration backup and temporary-file failures never activate a draft",
     file << kLegacyV3;
   }
   SetupConfig(directory.path(), false);
-  const auto loaded = GetSettingsFromCvars();
-  auto draft = loaded;
-  draft.raw_mouse_dpi = 1600;
-  SECTION("Backup cannot be created") {
-    REQUIRE(std::filesystem::create_directory(directory.path() /
-                                              "kbm.toml.v3.bak"));
+  const auto temporary = directory.path() / "kbm.toml.tmp";
+  {
+    std::ofstream file(temporary);
+    file << "another writer";
   }
-  SECTION("Temporary file belongs to another writer") {
-    std::ofstream temporary(directory.path() / "kbm.toml.tmp");
-    temporary << "another writer";
-  }
+  KbmSettings draft;
   bool activated = false;
   REQUIRE_FALSE(CommitKbmSettings(
-      draft, [](const auto& value) { return SaveConfig(value); },
-      [&](const auto& value) {
-        activated = true;
-        ApplySettingsToCvars(value);
-      }));
+      draft, [](const auto& value) { return SaveConfig(value, true); },
+      [&](const auto&) { activated = true; }));
   REQUIRE_FALSE(activated);
-  REQUIRE(GetSettingsFromCvars().raw_mouse_dpi == loaded.raw_mouse_dpi);
-  REQUIRE(draft.raw_mouse_dpi == 1600);
   REQUIRE(ReadFile(path) == kLegacyV3);
-  REQUIRE(GetConfigState() == KbmConfigState::kNeedsMigration);
+  REQUIRE(ReadFile(temporary) == "another writer");
+  REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
+  REQUIRE_FALSE(CanSaveKbmConfig(GetConfigState(), false));
+  REQUIRE_FALSE(std::filesystem::exists(directory.path() / "kbm.toml.v3.bak"));
 }
 
 TEST_CASE("Malformed v3 values and unknown versions never partially load",
@@ -377,14 +377,6 @@ TEST_CASE("Anti-deadzone defaults on without overriding explicit saved choices",
     auto settings = KbmSettings();
     settings.raw_mouse_deadzone_compensation = false;
     REQUIRE(SaveConfig(settings));
-  }
-  SECTION("Explicit v3 off remains off during migration") {
-    std::string legacy = kLegacyV3;
-    const std::string original = "deadzone_compensation = true";
-    legacy.replace(legacy.find(original), original.size(),
-                   "deadzone_compensation = false");
-    std::ofstream file(directory.path() / "kbm.toml", std::ios::binary);
-    file << legacy;
   }
   SetupConfig(directory.path(), false);
   REQUIRE_FALSE(GetSettingsFromCvars().raw_mouse_deadzone_compensation);

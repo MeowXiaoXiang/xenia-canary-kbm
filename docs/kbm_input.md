@@ -36,7 +36,7 @@ revision.
 2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
    selected, or after a `kbm.toml` file already exists.
 3. Enable **KBM Controller**, select its controller slot, configure bindings,
-   then choose **Save settings**.
+   then choose **Save all**.
 
 When KBM Controller is selected for the first time, the backend creates
 `kbm.toml` in Xenia's storage root. This file intentionally remains
@@ -44,28 +44,57 @@ separate from `xenia-canary.config.toml`. It does not import or migrate a
 previous `winkey.toml`; save the desired bindings again in the KBM Controller
 Settings dialog.
 
-New configurations use `schema_version = 4`. The grouped controller, binding,
-Raw Mouse and tuning tables are retained. Grouped v3 files load compatible
-bindings, controller settings, Y inversion, capture and deadzone settings.
-Retired sensitivity, full-scale velocity, response curve and EMA settings are
-ignored. The new physical parameters start at 800 DPI and 10 cm/s; the settings
-page warns that recalibration is needed. Startup does not rewrite the v3 file.
-Saving creates an exact `kbm.toml.v3.bak` backup first (a numbered suffix protects
-a different existing backup), then publishes v4. A backup failure prevents the
-upgrade. Unsupported or malformed files are rejected without partial loading.
+New configurations use `schema_version = 4`. Only the current schema and
+complete valid settings are accepted. Older versions (including v3), unknown
+versions and malformed files are rejected as a whole, including custom bindings.
+The old file is left untouched at startup and on Cancel.
 
-## Keyboard bindings
+For an incompatible file, choose **Restore all defaults...** in the settings window to
+enable the save actions. This replaces the entire draft, including bindings,
+with current defaults; edits still affect preview only until saved. **Save all** then replaces the old file with v4. There is no configuration
+migration or automatic backup. A failed write preserves the old file and active
+settings so the draft can be retried. Existing backup files are not deleted.
+
+## Button bindings
 
 The settings window keeps its save controls visible while content scrolls.
-Edits, including **Restore defaults**, change a local draft and preview only.
-**Save settings** first publishes the draft to `kbm.toml`, then activates it.
-**Save settings and close** also returns to gameplay. Closing without saving
-discards changes since the last successful save. A failure preserves the active
-settings, saved file and draft so that the player can retry.
+Edits, including **Restore all defaults...**, change a local draft and preview only.
+**Save all** first publishes the draft to `kbm.toml`, then activates it.
+**Save all and close** also returns to gameplay. Closing without saving
+discards changes since the last successful save. The title-bar close button,
+Escape (outside text editing, binding capture or preview), and reopening the
+host menu entry ask whether to save, discard, or continue when the draft has
+changes. **Cancel and close** explicitly discards the draft. Restoring defaults
+requires confirmation and resets the entire draft, not just the visible section.
+A failure preserves the active settings, saved file and draft so the player can retry.
 
-Press Escape to cancel binding capture. Use the **Esc** button next to a binding
-to assign Escape itself. Multiple alternative keys for a stick direction count
-as one direction even when held together. Bindings use stable logical tokens in
+The settings window starts at its narrow 520-unit width with three main
+sections: **Button bindings**, **Mouse**, and **Advanced and diagnostics**,
+in that order. Mouse starts expanded and keeps tuning, startup capture, the capture hotkey,
+and an expandable live preview together. Button bindings and advanced tools
+start collapsed. Widening the window places the complete bindings section on
+the left and the complete mouse section on the right; advanced tools remain
+below both columns. Within the running process, section state is retained
+across reopening, resizing and host-language changes.
+
+The 25 bindings use one compact list: input name, content-sized binding chips,
+and a per-row actions menu. Alternative chips wrap when necessary. There are
+no repeated group table headers or full-width binding-value bars.
+Recording/writing opens the advanced section when it appears. Collapsing Mouse
+or its preview stops the test and releases the cursor; collapsing Mouse also
+cancels a pending capture-hotkey binding. Collapsing Button bindings cancels
+its pending capture.
+All sections share one draft and the fixed **Save all** controls. Speed and
+minimum-output sliders share a row with their precise numeric inputs; DPI is
+entered numerically. The window inherits Xenia's shared colors, padding and
+control styling. The compact footer groups draft status with **Restore all
+defaults...** and keeps the save actions below. The settings filename is listed
+under **How these settings work**.
+
+Press Escape to cancel binding capture. Click a binding chip to replace that
+alternative while preserving the others. The per-row **...** menu adds an
+alternative, assigns Escape, or clears the row. Multiple alternative keys for a
+stick direction count as one direction even when held together. Bindings use stable logical tokens in
 the saved file, not Windows virtual-key numbers: for example `Key.W`, `Key.F8`,
 `Key.ArrowUp`, `Key.LeftShift`, `Mouse.Left`, and `Mouse.X1`. Chords use the
 canonical order `Ctrl+Alt+Shift+Super+Key.F8`; a modifier by itself uses its
@@ -101,7 +130,7 @@ capture hotkey events, host UI suspension, and Raw Input capture transitions.
 
 KBM Controller maps host input to the selected virtual Xbox 360 controller
 slot. Click a binding field and press the desired key, mouse button, or
-modifier chord. Use **+** to add an alternative binding and **x** to clear one.
+modifier chord. Use the row's **...** menu to add an alternative or clear it.
 Bindings are displayed as names such as `F8` or `Ctrl+Shift+K`, rather than
 raw Windows virtual-key codes.
 
@@ -132,8 +161,8 @@ The current starting settings are:
 | Minimum stick output | 0.30 | 0–0.5; used only with anti-deadzone |
 
 These are product starting values, not detected hardware settings or a universal
-calibration for every game. Existing v3/v4 choices for anti-deadzone remain intact;
-the default applies to new settings and **Restore defaults**.
+calibration for every game. Existing valid v4 choices for anti-deadzone remain intact;
+the default applies to new settings and **Restore all defaults...**.
 
 - **Mouse hardware DPI** is manually entered, not automatically detected.
   Enter the actual hardware value and keep it fixed while tuning. This field
@@ -144,7 +173,7 @@ the default applies to new settings and **Restore defaults**.
   3149.6 counts/s. Defaults do not reproduce legacy tuning.
 - **Stick anti-deadzone** is on by default. When enabled, nonzero radial
   output becomes `minimum + (1-minimum)*magnitude`. Minimum stick output defaults to
-  0.30 with a 0–0.5 range. Zero motion always produces zero output; there is no
+  0.30 with a 0–0.5 range (displayed as 30% and 0–50% in the UI). Zero motion always produces zero output; there is no
   smoothing tail. Compensation changes the otherwise linear output relationship.
 - Finite out-of-range values are clamped; NaN and infinity revert to defaults.
   Reset/inactive samples and intervals over 100ms output zero. Nonpositive
@@ -158,7 +187,7 @@ the default applies to new settings and **Restore defaults**.
 3. Check the result in the game, whose own controller sensitivity, deadzone,
    acceleration and maximum turn speed still apply. Change one setting at a time.
 4. Keep the minimum output at its starting value unless the game ignores small
-   movements or minimum movement is too strong. Use **Save settings** to activate
+   movements or minimum movement is too strong. Use **Save all** to activate
    the draft; preview changes alone do not change gameplay settings.
 
 At low speeds, integer counts and different device/guest polling rates can
@@ -193,9 +222,14 @@ gameplay capture request remains unchanged.
 
 ## Input sampling diagnostics
 
-The **Diagnostics** section can record a 60-second gameplay sample. Start the
-capture, close the settings window so guest input resumes, play normally, and
-open the settings again to see the saved report path. The CSV is stored beside
+The **Diagnostics** tool can record a 60-second gameplay sample. **Record
+60-second diagnostics** automatically closes settings so guest input resumes.
+When the draft has changes, **Save all and record for 60 seconds** saves them
+first; a save failure leaves the window open and does not start recording.
+Play normally, then reopen settings to see recording, writing or result status.
+Technical details are collapsed separately and show the last gameplay sample,
+not live preview output. Both displays measure radial stick magnitude, clamped
+to 100%. The CSV is stored beside
 `kbm.toml` as `kbm-input-report-<timestamp>.csv`.
 
 Each report includes the Raw Input delta, unfiltered velocity, mouse right-stick
@@ -263,7 +297,7 @@ verify native Windows event ordering or a game's camera response.
 | Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Draft edits affect preview only; cancellation retains the last successfully activated settings. |
 | Live preview | Start a test before loading a game; move, stop, reset the peak, and change tuning. | Output updates without guest polls; stopping returns to zero, and reset or tuning changes clear the peak. |
 | Preview capture | Test Escape, Enter, Space, focus loss, binding capture and dialog closure. | Cursor is released; returning focus does not restart preview, and the gameplay F8 request is preserved. |
-| v3 migration | Open an existing grouped v3 file, cancel edits, then save. | Startup and Cancel leave the original file intact; Save creates its backup and publishes v4 while preserving compatible settings. |
+| Incompatible configuration | Open a v3 or unknown-version file; cancel, reopen, restore defaults and save. | No old fields load; save actions require confirmed Restore all defaults. Cancel preserves the file; successful Save replaces it with v4 without a backup. |
 | XAM UI | Exercise game-requested XAM dialogs with short and long durations, with and without a controller connected. | No crash or false successful keystroke; no old mouse movement after the dialog closes. |
 | Diagnostic completion | Record a full 60-second gameplay sample while recording frame times. | Reports are readable; compare frame times around completion with a run without sampling. Track any completion stall separately from mouse mapping behavior. |
 

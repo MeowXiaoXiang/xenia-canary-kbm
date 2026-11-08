@@ -36,8 +36,10 @@ and upstream contribution guidance belong to the
   full-stick speed, linear radial mapping, independent live preview, and capture.
   Configurable stick anti-deadzone defaults on with 0.30 minimum output.
 - Versioned `kbm.toml` storage using logical input tokens such as `Key.W` and
-  `Mouse.Left`. Compatible v3 fields load without rewriting the file; saving
-  backs up the original and upgrades to v4. Retired mouse tuning is not converted.
+  `Mouse.Left`. Incompatible versions are rejected as a whole; explicitly
+  restore defaults and save to replace the old file, without migration or backup.
+- A single-page KBM settings window with mouse preview, compact bindings,
+  diagnostic recording, and shared Save all controls.
 - English and Traditional Chinese host UI. Technical terms remain English where
   that is clearer.
 

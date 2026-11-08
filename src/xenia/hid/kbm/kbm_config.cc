@@ -13,7 +13,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <fstream>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -247,8 +246,7 @@ void LoadConfig() {
   }
 
   const auto schema_version = parsed.at_path("schema_version").value<int64_t>();
-  if (!IsKbmConfigSchemaVersionSupported(schema_version) &&
-      schema_version != 3) {
+  if (!IsKbmConfigSchemaVersionSupported(schema_version)) {
     config_state = KbmConfigState::kIncompatible;
     XELOGW(
         "kbm: ignored incompatible config '{}' (expected schema_version = "
@@ -265,10 +263,6 @@ void LoadConfig() {
     if (!entry) {
       continue;
     }
-    if (schema_version == 3 && (name == "raw_mouse_dpi" ||
-                                name == "raw_mouse_full_stick_speed_cm_s")) {
-      continue;
-    }
     const auto node = GetConfigNode(parsed, *entry);
     if (!node || !IsCompatibleConfigValue(*config_var, *node.node())) {
       config_state = KbmConfigState::kIncompatible;
@@ -278,17 +272,9 @@ void LoadConfig() {
       return;
     }
   }
-  if (schema_version == 3) {
-    OVERRIDE_double(raw_mouse_dpi, 800.0);
-    OVERRIDE_double(raw_mouse_full_stick_speed_cm_s, 10.0);
-  }
   for (const auto& [name, config_var] : *cvar::ConfigVars) {
     const auto entry = GetKbmConfigEntry(*config_var);
     if (!entry) {
-      continue;
-    }
-    if (schema_version == 3 && (name == "raw_mouse_dpi" ||
-                                name == "raw_mouse_full_stick_speed_cm_s")) {
       continue;
     }
     const auto node = GetConfigNode(parsed, *entry);
@@ -297,8 +283,7 @@ void LoadConfig() {
     }
   }
   ApplySettingsToCvars(GetSettingsFromCvars());
-  config_state = schema_version == 3 ? KbmConfigState::kNeedsMigration
-                                     : KbmConfigState::kCompatible;
+  config_state = KbmConfigState::kCompatible;
   XELOGI("kbm: loaded config '{}'.", config_path);
 }
 
@@ -337,9 +322,10 @@ bool CommitKbmSettings(
   return true;
 }
 
-bool SaveConfig(const KbmSettings& source_settings) {
+bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
   const auto settings = NormalizeSettings(source_settings);
-  if (config_path.empty() || !cvar::ConfigVars) {
+  if (config_path.empty() || !cvar::ConfigVars ||
+      !CanSaveKbmConfig(config_state, reset_incompatible)) {
     return false;
   }
 
@@ -359,40 +345,6 @@ bool SaveConfig(const KbmSettings& source_settings) {
                : a.entry.table_order < b.entry.table_order;
   });
 
-  // Preserve the original v3 bytes before any replacement. Never overwrite a
-  // prior backup, including a different v3 file copied into this directory.
-  if (config_state == KbmConfigState::kNeedsMigration) {
-    std::ifstream original(config_path, std::ios::binary);
-    if (!original) {
-      return false;
-    }
-    std::string bytes{std::istreambuf_iterator<char>(original), {}};
-    if (original.bad()) {
-      return false;
-    }
-    auto backup = config_path;
-    backup += ".v3.bak";
-    for (size_t suffix = 0;; ++suffix) {
-      auto candidate = backup;
-      if (suffix) {
-        candidate += "." + std::to_string(suffix);
-      }
-      if (WriteNewConfigFile(candidate, bytes)) {
-        break;
-      }
-      if (GetLastError() != ERROR_FILE_EXISTS &&
-          GetLastError() != ERROR_ALREADY_EXISTS) {
-        return false;
-      }
-      std::ifstream existing(candidate, std::ios::binary);
-      if (existing) {
-        std::string previous{std::istreambuf_iterator<char>(existing), {}};
-        if (!existing.bad() && previous == bytes) {
-          break;
-        }
-      }
-    }
-  }
   std::error_code directory_error;
   std::filesystem::create_directories(config_path.parent_path(),
                                       directory_error);

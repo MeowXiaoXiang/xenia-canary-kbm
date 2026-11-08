@@ -25,7 +25,6 @@ inline constexpr int64_t kKbmConfigSchemaVersion = 4;
 enum class KbmConfigState {
   kMissing,
   kCompatible,
-  kNeedsMigration,
   kIncompatible,
 };
 
@@ -58,7 +57,11 @@ bool ConfigExists();
 KbmConfigState GetConfigState();
 const std::filesystem::path& ConfigPath();
 bool SaveConfig();
-bool SaveConfig(const KbmSettings& settings);
+// Replacing an incompatible file requires explicit Restore defaults consent.
+bool SaveConfig(const KbmSettings& settings, bool reset_incompatible = false);
+inline bool CanSaveKbmConfig(KbmConfigState state, bool reset_incompatible) {
+  return state != KbmConfigState::kIncompatible || reset_incompatible;
+}
 // Publish first; only a successful save may activate the draft.
 bool CommitKbmSettings(KbmSettings& draft,
                        const std::function<bool(const KbmSettings&)>& persist,

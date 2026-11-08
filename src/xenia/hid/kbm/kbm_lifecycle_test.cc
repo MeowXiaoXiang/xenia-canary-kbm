@@ -189,6 +189,31 @@ TEST_CASE("KBM binding capture works while host input is suspended",
   REQUIRE(fixture.State().gamepad.buttons == 0);
 }
 
+TEST_CASE("Cancelling binding capture discards an unconsumed result",
+          "[kbm][lifecycle]") {
+  DriverFixture fixture;
+  fixture.driver.SetHostInputSuspended(true);
+  fixture.driver.BeginBindingCapture();
+  fixture.window.Key(ui::VirtualKey::kSpace, true);
+  // A UI action can cancel after the native event queued a result, before
+  // the dialog has accepted it into its draft.
+  fixture.driver.CancelBindingCapture();
+  auto result = fixture.driver.ConsumeBindingCaptureResult();
+  REQUIRE(result.status == KbmInputDriver::BindingCaptureStatus::kNone);
+  REQUIRE(result.value.empty());
+  REQUIRE(fixture.State().gamepad.buttons == 0);
+  fixture.window.Key(ui::VirtualKey::kSpace, false);
+  fixture.driver.BeginBindingCapture();
+  fixture.window.Key(ui::VirtualKey::kG, true);
+  result = fixture.driver.ConsumeBindingCaptureResult();
+  REQUIRE(result.status == KbmInputDriver::BindingCaptureStatus::kCaptured);
+  REQUIRE(result.value == "Key.G");
+  REQUIRE(fixture.driver.ConsumeBindingCaptureResult().status ==
+          KbmInputDriver::BindingCaptureStatus::kNone);
+  fixture.driver.SetHostInputSuspended(false);
+  REQUIRE(fixture.State().gamepad.buttons == 0);
+}
+
 TEST_CASE("Draft bindings and failed publication leave driver output unchanged",
           "[kbm][lifecycle]") {
   DriverFixture fixture;
