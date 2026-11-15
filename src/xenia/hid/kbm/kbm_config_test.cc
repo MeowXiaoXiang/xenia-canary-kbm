@@ -12,6 +12,7 @@
 #include <chrono>
 #include <fstream>
 #include <limits>
+#include <sstream>
 
 #include "third_party/catch/single_include/catch2/catch.hpp"
 #include "xenia/base/platform_win.h"
@@ -66,6 +67,12 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   saved_settings.raw_mouse_dpi = 1325.0;
   saved_settings.raw_mouse_deadzone_compensation = true;
   saved_settings.raw_mouse_capture_toggle_key = "Ctrl+Key.F8";
+  const auto saved_mode = GENERATE(KbmMouseMode::kFixedWindow,
+                                   KbmMouseMode::kEma, KbmMouseMode::kDirect);
+  const bool saved_old_defaults = saved_mode == KbmMouseMode::kFixedWindow;
+  saved_settings.mouse_processing =
+      saved_old_defaults ? KbmMouseProcessing{saved_mode, 8, 8}
+                         : KbmMouseProcessing{saved_mode, 23.76, 11.76};
   ApplySettingsToCvars(saved_settings);
 
   REQUIRE(SaveConfig());
@@ -88,6 +95,42 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   REQUIRE(loaded_settings.raw_mouse_dpi == Approx(1325.0));
   REQUIRE(loaded_settings.raw_mouse_deadzone_compensation);
   REQUIRE(loaded_settings.raw_mouse_capture_toggle_key == "Ctrl+Key.F8");
+  REQUIRE(loaded_settings.mouse_processing.mode == saved_mode);
+  REQUIRE(loaded_settings.mouse_processing.fixed_window_ms ==
+          (saved_old_defaults ? 8.0 : 24.0));
+  REQUIRE(loaded_settings.mouse_processing.ema_tau_ms ==
+          (saved_old_defaults ? 8.0 : 12.0));
+}
+
+TEST_CASE("Earlier grouped v4 configs default missing processing fields",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  KbmSettings settings;
+  settings.keybind_a = "Key.G";
+  settings.raw_mouse_dpi = 3200;
+  settings.mouse_processing = {KbmMouseMode::kEma, 13, 7.5};
+  ApplySettingsToCvars(settings);
+  REQUIRE(SaveConfig(settings));
+  std::istringstream input(ReadFile(ConfigPath()));
+  std::string older;
+  for (std::string line; std::getline(input, line);) {
+    if (!line.starts_with("processing_mode") &&
+        !line.starts_with("fixed_window_ms") &&
+        !line.starts_with("ema_tau_ms")) {
+      older += line + "\n";
+    }
+  }
+  std::ofstream(ConfigPath(), std::ios::binary) << older;
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  const auto loaded = GetSettingsFromCvars();
+  REQUIRE(loaded.mouse_processing.mode == KbmMouseMode::kFixedWindow);
+  REQUIRE(loaded.mouse_processing.fixed_window_ms == 16.0);
+  REQUIRE(loaded.mouse_processing.ema_tau_ms == 4.0);
+  REQUIRE(loaded.keybind_a == "Key.G");
+  REQUIRE(loaded.raw_mouse_dpi == 3200);
+  REQUIRE(ReadFile(ConfigPath()) == older);
 }
 
 TEST_CASE("Flat v4 KBM configurations are rejected", "[kbm]") {
@@ -110,6 +153,7 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
   disk_settings.user_index = 3;
   disk_settings.keybind_a = "Key.G";
   disk_settings.raw_mouse_dpi = 1325.0;
+  disk_settings.mouse_processing.ema_tau_ms = 6.5;
   ApplySettingsToCvars(disk_settings);
   REQUIRE(SaveConfig());
   std::string contents = ReadFile(ConfigPath());
@@ -138,6 +182,14 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
   SECTION("Wrong mouse value type") {
     from = "dpi = 1325.0";
     to = "dpi = \"fast\"";
+  }
+  SECTION("Unknown processing mode") {
+    from = "processing_mode = \"fixed_window\"";
+    to = "processing_mode = \"unknown\"";
+  }
+  SECTION("Wrong processing time type") {
+    from = "ema_tau_ms = 6.5";
+    to = "ema_tau_ms = \"slow\"";
   }
   SECTION("Malformed TOML") {
     from = "schema_version = 4";
@@ -261,11 +313,17 @@ TEST_CASE("Non-finite KBM tuning values normalize to safe defaults", "[kbm]") {
   settings.raw_mouse_dpi = std::numeric_limits<double>::quiet_NaN();
   settings.raw_mouse_full_stick_speed_cm_s =
       std::numeric_limits<double>::infinity();
+  settings.mouse_processing.fixed_window_ms =
+      std::numeric_limits<double>::quiet_NaN();
+  settings.mouse_processing.ema_tau_ms =
+      std::numeric_limits<double>::infinity();
   const auto normalized = NormalizeSettings(settings);
   const KbmSettings defaults;
   REQUIRE(normalized.raw_mouse_dpi == defaults.raw_mouse_dpi);
   REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s ==
           defaults.raw_mouse_full_stick_speed_cm_s);
+  REQUIRE(normalized.mouse_processing.fixed_window_ms == 16.0);
+  REQUIRE(normalized.mouse_processing.ema_tau_ms == 4.0);
 }
 
 namespace {

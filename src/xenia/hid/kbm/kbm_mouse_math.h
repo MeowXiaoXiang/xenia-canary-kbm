@@ -20,29 +20,39 @@ struct MouseVector {
   double y = 0.0;
 };
 
-// Physical speed mapper shared by gameplay and the independent UI preview.
+inline constexpr double kCentimetersPerInch = 2.54;
+
 inline double NormalizeMouseNumber(double value, double fallback, double low,
                                    double high) {
   return std::clamp(std::isfinite(value) ? value : fallback, low, high);
 }
 
+inline double NormalizeMouseDpi(double dpi) {
+  return NormalizeMouseNumber(dpi, 800.0, 100.0, 32000.0);
+}
+
+inline double FullStickCountsPerSecond(double dpi, double speed_cm_s) {
+  return NormalizeMouseDpi(dpi) *
+         NormalizeMouseNumber(speed_cm_s, 10.0, 1.0, 100.0) /
+         kCentimetersPerInch;
+}
+
+// Physical speed mapper shared by gameplay and the independent UI preview.
 inline MouseVector MapMousePhysical(MouseVector velocity, double dpi,
                                     double full_stick_speed_cm_s,
                                     double minimum = 0.0) {
   if (!std::isfinite(velocity.x) || !std::isfinite(velocity.y)) {
     return {};
   }
-  dpi = NormalizeMouseNumber(dpi, 800.0, 100.0, 32000.0);
-  full_stick_speed_cm_s =
-      NormalizeMouseNumber(full_stick_speed_cm_s, 10.0, 1.0, 100.0);
   minimum = NormalizeMouseNumber(minimum, 0.30, 0.0, 0.5);
   const double speed = std::hypot(velocity.x, velocity.y);
   if (speed == 0.0 || !std::isfinite(speed)) {
     return {};
   }
+  const double full_scale =
+      FullStickCountsPerSecond(dpi, full_stick_speed_cm_s);
   const double radius =
-      minimum + (1.0 - minimum) *
-                    std::min(speed / (dpi * full_stick_speed_cm_s / 2.54), 1.0);
+      minimum + (1.0 - minimum) * std::min(speed / full_scale, 1.0);
   return {velocity.x / speed * radius, velocity.y / speed * radius};
 }
 

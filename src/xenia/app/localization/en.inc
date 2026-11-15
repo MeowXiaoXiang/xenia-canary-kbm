@@ -157,10 +157,15 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmXboxInput, "Xbox 360 input")
 XE_LOCALIZATION_STRING(kKbmKeyboardMouse, "Keyboard / mouse")
 XE_LOCALIZATION_STRING(kKbmMouse, "Mouse")
-XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "Enable Raw Input mouse control")
+XE_LOCALIZATION_STRING(kKbmEnableRawMouse,
+                       "Use mouse to control the right stick")
+XE_LOCALIZATION_STRING(
+    kKbmEnableRawMouseTooltip,
+    "Uses Raw Input, independent of Windows pointer settings.\n"
+    "Uncheck to disable mouse movement on the right stick.")
 XE_LOCALIZATION_STRING(
     kKbmRawMouseRequiresController,
-    "Enable KBM Controller to configure Raw Input mouse control.")
+    "Enable KBM Controller to configure mouse control of the right stick.")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "Invert vertical look")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
@@ -171,8 +176,8 @@ XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0–50%)")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
     "Raises non-zero output to cross the game's stick deadzone. Too much "
-    "minimum output makes fine adjustment difficult. Zero movement still "
-    "produces zero output. Disable for pure linear output.")
+    "minimum output makes fine adjustment difficult. A speed estimate of "
+    "zero produces zero output. Disable for pure linear output.")
 XE_LOCALIZATION_STRING(kKbmDiagnostics, "Advanced and diagnostics")
 XE_LOCALIZATION_STRING(kKbmLastStickOutput, "Last game stick output: {:.0f}%{}")
 XE_LOCALIZATION_STRING(kKbmMaximum, " (maximum)")
@@ -360,12 +365,25 @@ XE_LOCALIZATION_STRING(kGuestLanguageSimplifiedChinese, "Simplified Chinese")
 XE_LOCALIZATION_STRING(kKbmDpi, "Mouse DPI")
 
 XE_LOCALIZATION_STRING(kKbmPhysicalSpeed, "Full-stick speed (1–100 cm/s)")
+XE_LOCALIZATION_STRING(kKbmMouseMode, "Mouse processing")
+XE_LOCALIZATION_STRING(kKbmModeDirect, "Direct")
+XE_LOCALIZATION_STRING(kKbmModeFixedWindow, "Fixed window (recommended)")
+XE_LOCALIZATION_STRING(kKbmModeEma, "EMA smoothing")
+XE_LOCALIZATION_STRING(kKbmWindowLength, "Window length (ms)")
+XE_LOCALIZATION_STRING(kKbmEmaTau, "Smoothing time constant (ms)")
+XE_LOCALIZATION_STRING(
+    kKbmProcessingHelp,
+    "Fixed window uses the most recent motion for the selected duration. "
+    "EMA smooths the Direct estimate. Direct uses motion between game queries. "
+    "Longer times can make stopping or reversing feel slower. The preview "
+    "peak is the highest sampled output. A brief motion can expire from the "
+    "fixed window between preview samples.")
 
 XE_LOCALIZATION_STRING(
     kKbmPhysicalGuide,
-    "Enter your mouse DPI manually; it is not detected. Full-stick speed is "
-    "physical mouse speed, not cm/360 degrees. Lower values reach full stick "
-    "more easily. Defaults do not reproduce legacy tuning.")
+    "Match the active DPI in your mouse software. Changing full-stick speed "
+    "from 10 to 5 cm/s halves the mouse speed needed for full stick. Try slow "
+    "and fast movements in the live preview to see when it reaches 100%.")
 
 XE_LOCALIZATION_STRING(kKbmLivePreview, "Independent live stick preview")
 
@@ -377,6 +395,8 @@ XE_LOCALIZATION_STRING(kKbmPreviewExitHelp,
                        "Move the mouse to test. Press Escape, Enter or Space "
                        "to release the cursor. Game input remains paused.")
 
+XE_LOCALIZATION_STRING(kKbmPreviewSpeed,
+                       "Est. mouse speed %.1f cm/s | Full stick at %.2f cm/s")
 XE_LOCALIZATION_STRING(kKbmPreviewPeak, "Peak: %.1f%%")
 
 XE_LOCALIZATION_STRING(kKbmResetPreviewPeak, "Reset peak")
@@ -390,7 +410,8 @@ XE_LOCALIZATION_STRING(
     kKbmDpiHelp, "Manually enter actual DPI (100–32,000); not auto-detected.")
 XE_LOCALIZATION_STRING(
     kKbmSpeedDirection,
-    "Lower: easier full stick. Higher: faster motion required.")
+    "The right stick reaches full deflection when the estimated mouse speed "
+    "reaches this value. Lower values make it easier to reach full stick.")
 XE_LOCALIZATION_STRING(kKbmTuningHelp, "How these settings work")
 XE_LOCALIZATION_STRING(
     kKbmPreviewDraft, "Uses this window's draft only. Game input stays paused.")

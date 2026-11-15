@@ -89,7 +89,7 @@ void KbmConfigDialog::MarkDraftChanged() {
   saved_ = false;
   settings_ = hid::kbm::NormalizeSettings(settings_);
   if (auto* driver = GetDriver()) {
-    driver->ResetMousePreview();
+    driver->ResetMousePreview(settings_);
   }
 }
 
@@ -321,9 +321,58 @@ bool KbmConfigDialog::DrawMouseSettings() {
   ImGui::BeginDisabled(!settings_.enabled);
   changed |=
       ImGui::Checkbox(Tr(StringId::kKbmEnableRawMouse), &settings_.raw_mouse);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s", Tr(StringId::kKbmEnableRawMouseTooltip));
+  }
   ImGui::EndDisabled();
   if (!settings_.enabled) {
     ImGui::TextWrapped("%s", Tr(StringId::kKbmRawMouseRequiresController));
+  }
+  auto& processing = settings_.mouse_processing;
+  using hid::kbm::KbmMouseMode;
+  const char* modes[] = {Tr(StringId::kKbmModeFixedWindow),
+                         Tr(StringId::kKbmModeEma),
+                         Tr(StringId::kKbmModeDirect)};
+  int mode = static_cast<int>(processing.mode);
+  if (ImGui::Combo(Tr(StringId::kKbmMouseMode), &mode, modes, 3)) {
+    processing.mode = static_cast<KbmMouseMode>(mode);
+    changed = true;
+  }
+  if (processing.mode != KbmMouseMode::kDirect) {
+    const bool fixed = processing.mode == KbmMouseMode::kFixedWindow;
+    ImGui::PushID(mode);
+    ImGui::TextUnformatted(
+        Tr(fixed ? StringId::kKbmWindowLength : StringId::kKbmEmaTau));
+    double& time_ms =
+        fixed ? processing.fixed_window_ms : processing.ema_tau_ms;
+    const int low =
+        int((fixed ? hid::kbm::kMinFixedWindowMs : hid::kbm::kMinEmaTauMs) * 2);
+    const int high =
+        int((fixed ? hid::kbm::kMaxFixedWindowMs : hid::kbm::kMaxEmaTauMs) * 2);
+    int half_ms = int(time_ms * 2);
+    const auto label = fmt::format("{:.1f} ms", time_ms);
+    const float input_width = ImGui::GetFontSize() * 5.5f;
+    ImGui::SetNextItemWidth(std::max(ImGui::GetFontSize() * 4,
+                                     ImGui::GetContentRegionAvail().x -
+                                         input_width -
+                                         ImGui::GetStyle().ItemSpacing.x));
+    if (ImGui::SliderInt("##ProcessingTime", &half_ms, low, high, label.c_str(),
+                         ImGuiSliderFlags_NoInput)) {
+      time_ms = half_ms * 0.5;
+      changed = true;
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(input_width);
+    double entered = time_ms;
+    if (ImGui::InputDouble("##ProcessingTimeInput", &entered, 0.0, 0.0,
+                           "%.1f")) {
+      auto updated = processing;
+      (fixed ? updated.fixed_window_ms : updated.ema_tau_ms) = entered;
+      updated = hid::kbm::NormalizeMouseProcessing(updated);
+      changed |= updated != processing;
+      processing = updated;
+    }
+    ImGui::PopID();
   }
   ImGui::Spacing();
   ImGui::AlignTextToFramePadding();
@@ -384,6 +433,8 @@ bool KbmConfigDialog::DrawMouseSettings() {
                         Tr(StringId::kKbmTuningHelp))) {
     ImGui::TextWrapped("%s", Tr(StringId::kKbmPhysicalGuide));
     ImGui::Spacing();
+    ImGui::TextWrapped("%s", Tr(StringId::kKbmProcessingHelp));
+    ImGui::Spacing();
     ImGui::TextWrapped("%s", Tr(StringId::kKbmMinimumResponseHelp));
     ImGui::TextDisabled("%s", Tr(StringId::kKbmSettingsFile));
     ImGui::TreePop();
@@ -415,11 +466,14 @@ void KbmConfigDialog::DrawPreview(bool visible) {
   const auto label = fmt::format("{:.1f}%", preview.current() * 100);
   ImGui::ProgressBar(float(preview.current()),
                      ImVec2(-1, ImGui::GetFrameHeight()), label.c_str());
+  ImGui::TextWrapped(Tr(StringId::kKbmPreviewSpeed),
+                     preview.speed_cm_s(settings_.raw_mouse_dpi),
+                     settings_.raw_mouse_full_stick_speed_cm_s);
   ImGui::AlignTextToFramePadding();
   ImGui::Text(Tr(StringId::kKbmPreviewPeak), preview.peak() * 100);
   NextButton(ButtonWidth(StringId::kKbmResetPreviewPeak));
   if (ImGui::Button(Tr(StringId::kKbmResetPreviewPeak))) {
-    driver->ResetMousePreview();
+    driver->ResetMousePreview(settings_);
   }
   if (preview.active()) {
     ImGui::TextWrapped("%s", Tr(StringId::kKbmPreviewExitHelp));
@@ -435,7 +489,7 @@ void KbmConfigDialog::DrawPreview(bool visible) {
     }
   } else if (ImGui::Button(Tr(StringId::kKbmStartPreview), ImVec2(-1, 0))) {
     CancelBindingCapture();
-    preview_failed_ = !driver->StartMousePreview();
+    preview_failed_ = !driver->StartMousePreview(settings_);
     focus_preview_stop_ = !preview_failed_;
   }
   if (preview_failed_ || driver->MousePreviewFailed()) {

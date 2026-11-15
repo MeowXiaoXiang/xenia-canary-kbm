@@ -18,16 +18,18 @@ namespace xe::hid::kbm {
 class KbmMousePreview {
  public:
   using Time = std::chrono::steady_clock::time_point;
-  void Start(Time now) {
+  void Start(Time now, KbmMouseProcessing processing = {}) {
     active_ = true;
-    Reset(now);
+    Reset(now, processing);
   }
   void Stop() {
     active_ = false;
     current_ = 0.0;
   }
-  void Reset(Time now) {
-    processor_.Reset(now);
+  void Reset(Time now, KbmMouseProcessing processing = {}) {
+    if (!processor_.Configure(processing, now)) {
+      processor_.Reset(now);
+    }
     // Prime only this preview's reset marker, before any preview motion
     // arrives.
     processor_.Consume({}, false, now + std::chrono::steady_clock::duration(1));
@@ -51,6 +53,14 @@ class KbmMousePreview {
     peak_ = std::max(peak_, current_);
   }
   bool active() const { return active_; }
+  double speed_cm_s(double dpi) const {
+    if (!active_) {
+      return 0.0;
+    }
+    const auto velocity = processor_.velocity();
+    return std::hypot(velocity.x, velocity.y) * kCentimetersPerInch /
+           NormalizeMouseDpi(dpi);
+  }
   double current() const { return current_; }
   double peak() const { return peak_; }
 

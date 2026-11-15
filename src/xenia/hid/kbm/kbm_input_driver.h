@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <optional>
 #include <vector>
 
 #include "xenia/base/mutex.h"
@@ -82,9 +83,9 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool StopInputSampling();
   void CancelInputSampling();
   void ShutdownInputSampling();
-  bool StartMousePreview();
+  bool StartMousePreview(const KbmSettings& draft = {});
   void StopMousePreview();
-  void ResetMousePreview();
+  void ResetMousePreview(const KbmSettings& draft);
   bool MousePreviewFailed() const {
     return platform_input_.preview_capture_failed();
   }
@@ -125,7 +126,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
                               std::string value = {});
   void ToggleRawMouseCapture();
   void NotifyCaptureState(bool active);
-  void ResetRawMouseMotion();
+  void ResetRawMouseMotion(std::optional<KbmMouseProcessing> processing = {});
   void ResetMouseInputState();
   void ResetInputState();
   KbmInputState GetInputStateSnapshot() const;

@@ -62,8 +62,10 @@ KbmInputReportContents SerializeKbmInputReport(
       settings.deadzone_compensation, settings.minimum_response,
       settings.invert_y);
   output += fmt::format(
-      "# schema=3, estimator=poll_bucket_actual_time, "
+      "# schema=4, processing_mode={}, fixed_window_ms={}, ema_tau_ms={}, "
       "timestamp=host_processing_steady_clock, events={}, dropped_events={}\n",
+      MouseModeName(settings.processing.mode),
+      settings.processing.fixed_window_ms, settings.processing.ema_tau_ms,
       events.size(), dropped_events);
   output +=
       "elapsed_ms,interval_ms,input_active,capture_active,input_suspended,"
@@ -85,7 +87,7 @@ KbmInputReportContents SerializeKbmInputReport(
 
   std::string& event_output = contents.events_csv;
   event_output =
-      "# schema=3, timestamp=host_processing_steady_clock; "
+      "# schema=4, timestamp=host_processing_steady_clock; "
       "kind: 0=motion,1=reset,2=initial_state\n"
       "event_elapsed_us,sequence,kind,delta_x,delta_y,velocity_x,velocity_y,"
       "previous_poll_offset_ms,capture_active,input_suspended,reset_pending\n";

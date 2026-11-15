@@ -289,11 +289,14 @@ TEST_CASE("Draft bindings and failed publication leave driver output unchanged",
   auto draft = fixture.driver.GetSettings();
   draft.keybind_a = "Key.G";
   draft.raw_mouse_dpi = 1600;
+  draft.mouse_processing = {KbmMouseMode::kFixedWindow, 6.5, 3.0};
   REQUIRE_FALSE(fixture.driver.StartMousePreview());
   REQUIRE_FALSE(CommitKbmSettings(
       draft, [](const auto&) { return false; },
       [&](const auto& value) { fixture.driver.ApplySettings(value); }));
   REQUIRE(fixture.driver.GetSettings().raw_mouse_dpi == 800);
+  REQUIRE(fixture.driver.GetSettings().mouse_processing ==
+          KbmMouseProcessing{});
   fixture.window.Key(ui::VirtualKey::kSpace, true);
   REQUIRE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
   fixture.window.Key(ui::VirtualKey::kSpace, false);
@@ -308,6 +311,8 @@ TEST_CASE("Draft bindings and failed publication leave driver output unchanged",
         REQUIRE(persisted);
         fixture.driver.ApplySettings(value);
       }));
+  REQUIRE(fixture.driver.GetSettings().mouse_processing ==
+          draft.mouse_processing);
   fixture.window.Key(ui::VirtualKey::kSpace, true);
   REQUIRE_FALSE(fixture.State().gamepad.buttons & X_INPUT_GAMEPAD_A);
   fixture.window.Key(ui::VirtualKey::kG, true);

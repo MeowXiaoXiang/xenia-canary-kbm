@@ -10,6 +10,7 @@ import argparse
 import csv
 import json
 import math
+from collections import deque
 from pathlib import Path
 
 
@@ -123,6 +124,160 @@ def check_recorded_events(metadata, rows, events):
     return check_event_buckets(rows, events)
 
 
+class PhysicalEstimator:
+    """Reconstruct a processor from ordered host events and query intervals."""
+
+    def __init__(self, mode, window_ms, tau_ms, threshold, invert_y):
+        self.mode = mode
+        self.width_ns = round(window_ms * 1_000_000)
+        self.tau = tau_ms / 1000
+        self.threshold = threshold
+        self.y_sign = 1 if invert_y else -1
+        self.clear()
+
+    def clear(self):
+        self.events = deque()
+        self.x = self.y = 0
+        self.last_dropped = None
+        self.last_motion = None
+        self.ema = (0.0, 0.0)
+
+    def _pop(self):
+        t, x, y = self.events.popleft()
+        self.x -= x
+        self.y -= y
+        return t
+
+    def _expire(self, now):
+        cutoff = now - self.width_ns
+        while self.events and self.events[0][0] <= cutoff:
+            self._pop()
+        if self.last_dropped is not None and self.last_dropped <= cutoff:
+            self.last_dropped = None
+
+    def event(self, time_ns, x, y):
+        if self.mode == "fixed_window":
+            self._expire(time_ns)
+            if x or y:
+                if len(self.events) == 1024:
+                    self.last_dropped = self._pop()
+                self.events.append((time_ns, x, y))
+                self.x += x
+                self.y += y
+        elif self.mode == "ema" and (x or y):
+            self.last_motion = time_ns
+
+    def sample(self, time_ns, dt, dx, dy, valid):
+        if dt <= 0:
+            return (0.0, 0.0)
+        if not valid:
+            self.clear()
+            return (0.0, 0.0)
+        if self.mode == "fixed_window":
+            self._expire(time_ns)
+            if self.last_dropped is not None:
+                return (0.0, 0.0)
+            dt = self.width_ns / 1e9
+            dx, dy = self.x, self.y
+        elif self.mode == "ema":
+            self.ema = tuple(filter_delta(d, dt, self.tau, prev)
+                             for d, prev in zip((dx, dy), self.ema))
+            quiet = time_ns - self.last_motion if self.last_motion is not None else math.inf
+            if quiet >= 50_000_000 or (quiet >= 12_000_000 and
+                                      math.hypot(*self.ema) <= 0.02 * self.threshold):
+                self.ema = (0.0, 0.0)
+            return (self.ema[0], self.ema[1] * self.y_sign)
+        return (dx / dt, dy / dt * self.y_sign)
+
+
+def map_physical(velocity, threshold, minimum):
+    magnitude = math.hypot(*velocity)
+    if magnitude == 0:
+        return (0.0, 0.0)
+    radius = minimum + (1 - minimum) * min(magnitude / threshold, 1.0)
+    return tuple(v / magnitude * radius for v in velocity)
+
+
+def processing_parameters(metadata):
+    mode = metadata["processing_mode"]
+    window = float(metadata["fixed_window_ms"])
+    tau = float(metadata["ema_tau_ms"])
+    if (mode not in ("direct", "fixed_window", "ema") or
+            not (4 <= window <= 24 and 2 <= tau <= 12) or
+            not (window * 2).is_integer() or not (tau * 2).is_integer()):
+        raise ValueError("invalid KBM processing mode or duration")
+    return mode, window, tau
+
+
+def recorded_estimates(rows, events, estimator):
+    cursor = 1
+    for row in rows:
+        sequence = int(row["event_sequence"])
+        dt = float(row["interval_ms"]) / 1000
+        while cursor < len(events) and int(events[cursor]["sequence"]) <= sequence:
+            event = events[cursor]
+            cursor += 1
+            if event["kind"] == "1":
+                estimator.clear()
+            else:
+                estimator.event(round(float(event["event_elapsed_us"]) * 1000),
+                                int(event["delta_x"]), int(event["delta_y"]))
+        valid = (row["input_active"] == "true" and
+                 row["reset_sample"] == row["stale_sample"] == "false")
+        yield estimator.sample(round(float(row["elapsed_ms"]) * 1e6), dt,
+                               int(row["raw_delta_x"]), int(row["raw_delta_y"]), valid)
+
+
+def analyze_modes(path, metadata, rows):
+    if metadata["mapper"] != "physical_linear_radial":
+        raise ValueError("unsupported physical KBM mapper")
+    mode, window, tau = processing_parameters(metadata)
+    dpi = float(metadata["dpi"])
+    speed = float(metadata["full_stick_speed_cm_s"])
+    minimum = float(metadata["minimum_response"])
+    if not (100 <= dpi <= 32000 and 1 <= speed <= 100 and 0 <= minimum <= .5):
+        raise ValueError("invalid physical KBM parameters")
+    if any(metadata[k] not in ("true", "false") for k in ("deadzone_compensation", "invert_y")):
+        raise ValueError("invalid KBM mapping flag")
+    if metadata["deadzone_compensation"] == "false":
+        minimum = 0.0
+    threshold = dpi * speed / 2.54
+    for key in ("samples", "events", "dropped_samples", "dropped_events"):
+        if int(metadata[key]) < 0:
+            raise ValueError(f"invalid {key}")
+    result = {"report": path.name, "schema": "4", "processing_mode": mode,
+              "fixed_window_ms": window, "ema_tau_ms": tau,
+              "analyzed_samples": len(rows)}
+    sidecar = path.with_suffix(".events.csv")
+    if not sidecar.exists():
+        result["event_bucket_check"] = {"available": False, "reason": "missing sidecar"}
+        return result
+    event_metadata, events = load_report(sidecar)
+    if event_metadata.get("schema") != "4":
+        raise ValueError("mismatched event sidecar schema")
+    check = check_recorded_events(metadata, rows, events)
+    result["event_bucket_check"] = check
+    if not check["available"] or check["bucket_mismatches"]:
+        return result
+    initial = events[0]
+    if (initial["reset_pending"] != "true" or
+            any(float(initial[k]) for k in ("delta_x", "delta_y", "velocity_x",
+                                             "velocity_y", "previous_poll_offset_ms"))):
+        raise ValueError("schema 4 requires a clean initial processor state")
+    estimator = PhysicalEstimator(mode, window, tau, threshold, metadata["invert_y"] == "true")
+    velocity_errors, output_errors = [], []
+    for row, velocity in zip(rows, recorded_estimates(rows, events, estimator)):
+        velocity_errors.append(math.hypot(
+            velocity[0] - float(row["velocity_x"]), velocity[1] - float(row["velocity_y"])))
+        expected = map_physical(velocity, threshold, minimum)
+        output_errors.append(100 * math.hypot(
+            expected[0] - int(row["thumb_x"]) / 32767,
+            expected[1] - int(row["thumb_y"]) / 32767))
+    result["replay_velocity_error_cps_p99"] = percentile(velocity_errors, .99)
+    result["replay_output_error_percentage_points_max"] = max(output_errors, default=0)
+    return result
+
+
 def analyze_physical(path, metadata, rows):
     if metadata.get("mapper") != "physical_linear_radial" or metadata.get("estimator") != "poll_bucket_actual_time":
         raise ValueError("unsupported physical KBM mapper or estimator")
@@ -194,6 +349,8 @@ def analyze_physical(path, metadata, rows):
 
 def analyze(path):
     metadata, rows = load_report(path)
+    if metadata.get("schema") == "4":
+        return analyze_modes(path, metadata, rows)
     if metadata.get("schema") == "3":
         return analyze_physical(path, metadata, rows)
     if metadata.get("schema") not in (None, "1", "2"):

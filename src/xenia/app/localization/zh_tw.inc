@@ -147,9 +147,12 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmXboxInput, "Xbox 360 輸入")
 XE_LOCALIZATION_STRING(kKbmKeyboardMouse, "鍵盤／滑鼠")
 XE_LOCALIZATION_STRING(kKbmMouse, "滑鼠")
-XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "啟用 Raw Input 滑鼠控制")
+XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "用滑鼠控制右搖桿")
+XE_LOCALIZATION_STRING(kKbmEnableRawMouseTooltip,
+                       "使用 Raw Input，不受 Windows 的指標設定影響。\n"
+                       "取消勾選後，移動滑鼠就不會帶動右搖桿。")
 XE_LOCALIZATION_STRING(kKbmRawMouseRequiresController,
-                       "啟用 KBM 控制器後才能設定 Raw Input 滑鼠控制。")
+                       "啟用 KBM 控制器後，才能設定滑鼠對右搖桿的控制。")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "反轉垂直視角")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart, "KBM 控制器啟動時啟用滑鼠鎖定")
 XE_LOCALIZATION_STRING(kKbmCaptureToggle, "滑鼠鎖定熱鍵（限鍵盤）：")
@@ -158,7 +161,7 @@ XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最小搖桿輸出（0–50%）")
 XE_LOCALIZATION_STRING(kKbmMinimumResponseHelp,
                        "提高非零輸出的最低幅度，協助越過遊戲內建的搖桿死區。最"
                        "小輸出過高會讓微調變粗。"
-                       "零位移仍輸出零；關閉後使用純線性輸出。")
+                       "估算鼠速歸零時，搖桿輸出也歸零。關閉後使用純線性輸出。")
 XE_LOCALIZATION_STRING(kKbmDiagnostics, "進階與診斷")
 XE_LOCALIZATION_STRING(kKbmLastStickOutput, "上次遊戲搖桿輸出：{:.0f}%{}")
 XE_LOCALIZATION_STRING(kKbmMaximum, "（最大值）")
@@ -330,12 +333,23 @@ XE_LOCALIZATION_STRING(kGuestLanguageSimplifiedChinese, "簡體中文")
 XE_LOCALIZATION_STRING(kKbmDpi, "滑鼠 DPI")
 
 XE_LOCALIZATION_STRING(kKbmPhysicalSpeed, "滿桿速度（1–100 cm/s）")
+XE_LOCALIZATION_STRING(kKbmMouseMode, "滑鼠處理模式")
+XE_LOCALIZATION_STRING(kKbmModeDirect, "直接")
+XE_LOCALIZATION_STRING(kKbmModeFixedWindow, "固定視窗（建議）")
+XE_LOCALIZATION_STRING(kKbmModeEma, "EMA 平滑")
+XE_LOCALIZATION_STRING(kKbmWindowLength, "視窗長度（ms）")
+XE_LOCALIZATION_STRING(kKbmEmaTau, "平滑時間常數（ms）")
+XE_LOCALIZATION_STRING(
+    kKbmProcessingHelp,
+    "固定視窗使用指定時間內最近的位移。EMA 平滑會讓直接模式估算的鼠速變化更"
+    "平順。直接模式使用遊戲兩次查詢間的位移。時間設得越長，停手或反向時"
+    "可能越慢。預覽峰值是取樣到的最高輸出。短促移動可能在兩次取樣之間就離"
+    "開固定視窗。")
 
 XE_LOCALIZATION_STRING(
     kKbmPhysicalGuide,
-    "DPI "
-    "請依滑鼠硬體設定手動輸入，並非自動偵測。滿桿速度是滑鼠的實際移動速度，不是"
-    " cm/360°；數值越低越容易滿桿。預設值不保證與舊版手感相同。")
+    "請填入滑鼠軟體目前使用的 DPI。滿桿速度從 10 降到 5 cm/s，推滿右搖桿所需"
+    "的滑鼠速度就減半。可以在即時預覽中試著慢移和快移，看看什麼時候到達 100%。")
 
 XE_LOCALIZATION_STRING(kKbmLivePreview, "獨立即時搖桿預覽")
 
@@ -347,6 +361,8 @@ XE_LOCALIZATION_STRING(
     kKbmPreviewExitHelp,
     "移動滑鼠進行測試；按 Escape、Enter 或空白鍵釋放游標。遊戲輸入仍維持暫停。")
 
+XE_LOCALIZATION_STRING(kKbmPreviewSpeed,
+                       "估算鼠速 %.1f cm/s｜滿桿速度 %.2f cm/s")
 XE_LOCALIZATION_STRING(kKbmPreviewPeak, "峰值：%.1f%%")
 
 XE_LOCALIZATION_STRING(kKbmResetPreviewPeak, "重設峰值")
@@ -357,7 +373,9 @@ XE_LOCALIZATION_STRING(kKbmPreviewFailed,
 XE_LOCALIZATION_STRING(kKbmBindingActions, "綁定操作")
 XE_LOCALIZATION_STRING(kKbmDpiHelp,
                        "手動填入實際 DPI（100–32,000），非自動偵測。")
-XE_LOCALIZATION_STRING(kKbmSpeedDirection, "越低越容易滿桿；越高需要更快移動。")
+XE_LOCALIZATION_STRING(
+    kKbmSpeedDirection,
+    "估算鼠速達到這個數值時，右搖桿推滿。數值越低，越容易推滿。")
 XE_LOCALIZATION_STRING(kKbmTuningHelp, "參數說明")
 XE_LOCALIZATION_STRING(kKbmPreviewDraft,
                        "僅測試此視窗的草稿，遊戲輸入維持暫停。")

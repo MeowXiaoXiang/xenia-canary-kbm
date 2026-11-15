@@ -12,8 +12,11 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 
 #include "xenia/hid/kbm/kbm_mouse_math.h"
+#include "xenia/hid/kbm/kbm_mouse_processing.h"
+#include "xenia/hid/kbm/kbm_mouse_window.h"
 
 namespace xe::hid::kbm {
 
@@ -23,6 +26,7 @@ struct KbmMouseSettings {
   bool deadzone_compensation = true;
   double minimum_response = 0.30;
   bool invert_y = false;
+  KbmMouseProcessing processing;
 };
 
 struct KbmMouseSample {
@@ -44,6 +48,9 @@ struct KbmMouseSample {
 // input event and a controller poll observe one coherent timeline.
 class KbmMouseProcessor {
  public:
+  // A changed processing configuration starts a new input history.
+  bool Configure(KbmMouseProcessing processing,
+                 std::chrono::steady_clock::time_point time);
   void AddDelta(int64_t delta_x, int64_t delta_y,
                 std::chrono::steady_clock::time_point time);
   void Reset(std::chrono::steady_clock::time_point time);
@@ -53,7 +60,6 @@ class KbmMouseProcessor {
   uint64_t event_sequence() const { return event_sequence_; }
   int64_t pending_delta_x() const { return pending_delta_x_; }
   int64_t pending_delta_y() const { return pending_delta_y_; }
-  bool reset_pending() const { return reset_pending_; }
   MouseVector velocity() const { return velocity_; }
   std::chrono::steady_clock::time_point last_sample_time() const {
     return last_sample_time_;
@@ -61,6 +67,9 @@ class KbmMouseProcessor {
 
  private:
   static constexpr double kMaximumSampleIntervalSeconds = 0.1;
+  void ClearEstimator();
+  MouseVector Estimate(const KbmMouseSettings& settings,
+                       const KbmMouseSample& sample);
 
   uint64_t event_sequence_ = 0;
   int64_t pending_delta_x_ = 0;
@@ -69,6 +78,12 @@ class KbmMouseProcessor {
   std::chrono::steady_clock::time_point last_sample_time_ =
       std::chrono::steady_clock::now();
   MouseVector velocity_;
+  KbmMouseProcessing processing_;
+  KbmMouseWindow window_;
+  KbmMouseWindow::Duration window_width_{
+      int64_t(kDefaultFixedWindowMs * 1000.0)};
+  MouseVector ema_velocity_;
+  std::optional<std::chrono::steady_clock::time_point> last_motion_time_;
 };
 
 }  // namespace xe::hid::kbm

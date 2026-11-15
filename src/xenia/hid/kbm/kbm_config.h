@@ -17,6 +17,7 @@
 
 #include "xenia/base/cvar.h"
 #include "xenia/hid/kbm/kbm_binding.h"
+#include "xenia/hid/kbm/kbm_mouse_processing.h"
 
 namespace xe::hid::kbm {
 
@@ -49,6 +50,7 @@ struct KbmSettings {
   bool raw_mouse_invert_y = false;
   std::string raw_mouse_capture_toggle_key = "Key.F8";
   bool raw_mouse_capture_on_start = false;
+  KbmMouseProcessing mouse_processing;
 };
 
 void SetupConfig(const std::filesystem::path& storage_root,

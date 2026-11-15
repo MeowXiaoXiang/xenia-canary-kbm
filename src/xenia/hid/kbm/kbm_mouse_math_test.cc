@@ -51,8 +51,9 @@ TEST_CASE("Physical poll buckets use actual duration and stop without a tail",
       KbmMouseProcessor processor;
       KbmMouseSettings settings;
       settings.deadzone_compensation = compensation;
+      settings.processing.mode = KbmMouseMode::kDirect;
       const auto start = std::chrono::steady_clock::now();
-      processor.Reset(start);
+      processor.Configure(settings.processing, start);
       const auto initial = start + std::chrono::microseconds(1);
       processor.Consume(settings, true, initial);
       processor.AddDelta(1, -1, initial);
@@ -80,26 +81,143 @@ TEST_CASE("Preview runs independently and retains its peak until reset",
   KbmMousePreview preview;
   KbmMouseProcessor gameplay;
   KbmMouseSettings settings;
+  settings.processing.mode = KbmMouseMode::kDirect;
   const auto start = std::chrono::steady_clock::now();
   gameplay.AddDelta(37, -19, start);
   const auto sequence = gameplay.event_sequence();
-  preview.Start(start);
+  preview.Start(start, settings.processing);
   preview.AddDelta(40, -10, start + std::chrono::milliseconds(1));
   preview.Sample(settings, start + std::chrono::milliseconds(15));
   REQUIRE(preview.current() == 0.0);
+  REQUIRE(preview.speed_cm_s(settings.dpi) == 0.0);
   preview.Sample(settings, start + std::chrono::milliseconds(16));
   REQUIRE(preview.current() > 0.0);
+  REQUIRE(preview.speed_cm_s(settings.dpi) ==
+          Approx(std::hypot(40.0, 10.0) * 2.54 / (800.0 * 0.016)));
   const double peak = preview.peak();
   preview.Sample(settings, start + std::chrono::milliseconds(32));
   REQUIRE(preview.current() == 0.0);
+  REQUIRE(preview.speed_cm_s(settings.dpi) == 0.0);
   REQUIRE(preview.peak() == peak);
+  preview.AddDelta(100, 0, start + std::chrono::milliseconds(33));
+  preview.Sample(settings, start + std::chrono::milliseconds(48));
+  REQUIRE(preview.current() == 1.0);
+  REQUIRE(preview.speed_cm_s(settings.dpi) == Approx(19.84375));
   preview.Stop();
-  REQUIRE(preview.peak() == peak);
-  preview.Reset(start + std::chrono::milliseconds(33));
+  REQUIRE(preview.speed_cm_s(settings.dpi) == 0.0);
+  REQUIRE(preview.peak() == 1.0);
+  preview.Reset(start + std::chrono::milliseconds(49), settings.processing);
   REQUIRE(preview.peak() == 0.0);
   REQUIRE(gameplay.pending_delta_x() == 37);
   REQUIRE(gameplay.pending_delta_y() == -19);
   REQUIRE(gameplay.event_sequence() == sequence);
+}
+
+TEST_CASE(
+    "Fixed window expires the left boundary and retains motion across polls",
+    "[kbm]") {
+  using namespace std::chrono_literals;
+  const auto now = KbmMouseWindow::Time{} + 1s;
+  KbmMouseProcessor mouse;
+  KbmMouseSettings settings;
+  REQUIRE(settings.processing.mode == KbmMouseMode::kFixedWindow);
+  REQUIRE(settings.processing.fixed_window_ms == 16.0);
+  mouse.Reset(now);
+  mouse.Consume(settings, true, now + 1ms);
+  mouse.AddDelta(12, -3, now + 2ms);
+  mouse.AddDelta(4, -1, now + 2ms);
+  auto poll = mouse.Consume(settings, true, now + 3ms);
+  REQUIRE(poll.raw_delta_x == 16);
+  REQUIRE(poll.velocity_x == Approx(1000));
+  REQUIRE(poll.velocity_y == Approx(250));
+  REQUIRE(mouse.Consume(settings, true, now + 3ms).velocity_x == 0);
+  REQUIRE(mouse.Consume(settings, true, now + 2ms).velocity_x == 0);
+  poll = mouse.Consume(settings, true, now + 17ms);
+  REQUIRE(poll.raw_delta_x == 0);
+  REQUIRE(poll.velocity_x == Approx(1000));
+  REQUIRE(mouse.Consume(settings, true, now + 18ms).velocity_x == 0);
+
+  mouse.AddDelta(30, 0, now + 200ms);
+  REQUIRE(mouse.Consume(settings, true, now + 201ms).stale_sample);
+  REQUIRE(mouse.Consume(settings, true, now + 202ms).velocity_x == 0);
+  mouse.AddDelta(20, 0, now + 203ms);
+  settings.processing.mode = KbmMouseMode::kDirect;
+  REQUIRE(mouse.Configure(settings.processing, now + 204ms));
+  REQUIRE(mouse.pending_delta_x() == 0);
+  REQUIRE(mouse.Consume(settings, true, now + 205ms).velocity_x == 0);
+}
+
+TEST_CASE("Fixed window recovers when the last dropped event expires",
+          "[kbm]") {
+  using namespace std::chrono_literals;
+  KbmMouseWindow window;
+  const auto now = KbmMouseWindow::Time{} + 1s;
+  for (size_t i = 0; i < KbmMouseWindow::kCapacity; ++i) {
+    window.Add(1, -1, now, 8ms);
+  }
+  REQUIRE(window.Read(now, 8ms).x == Approx(128000));
+  window.Add(7, 2, now + 1ms, 8ms);
+  REQUIRE(window.Read(now + 7999us, 8ms).x == 0);
+  const auto recovered = window.Read(now + 8ms, 8ms);
+  REQUIRE(recovered.x == Approx(875));
+  REQUIRE(recovered.y == Approx(250));
+  window.Reset();
+  REQUIRE(window.Read(now + 8ms, 8ms).x == 0);
+}
+
+TEST_CASE("EMA uses actual time, reverses, and clears at the stop gates",
+          "[kbm]") {
+  using namespace std::chrono_literals;
+  const auto now = KbmMouseWindow::Time{} + 1s;
+  KbmMouseProcessor mouse;
+  KbmMouseSettings settings;
+  settings.processing.mode = KbmMouseMode::kEma;
+  REQUIRE(settings.processing.ema_tau_ms == 4.0);
+  settings.processing.ema_tau_ms = 8.0;
+  settings.deadzone_compensation = GENERATE(false, true);
+  REQUIRE(mouse.Configure(settings.processing, now));
+  mouse.Consume(settings, true, now + 1ms);
+  mouse.AddDelta(8, 0, now + 5ms);
+  const double first = 2000 * -std::expm1(-0.5);
+  REQUIRE(mouse.Consume(settings, true, now + 5ms).velocity_x == Approx(first));
+  REQUIRE(mouse.Consume(settings, true, now + 5ms).velocity_x == 0);
+  mouse.AddDelta(-16, 0, now + 13ms);
+  const double reversed = first * std::exp(-1.0) + 2000 * std::expm1(-1.0);
+  REQUIRE(reversed < 0);
+  REQUIRE(mouse.Consume(settings, true, now + 13ms).velocity_x ==
+          Approx(reversed));
+  REQUIRE(mouse.Consume(settings, true, now + 24ms).thumb_x < 0);
+  REQUIRE(mouse.Consume(settings, true, now + 45ms).thumb_x == 0);
+  mouse.AddDelta(8, 0, now + 49ms);
+  REQUIRE(mouse.Consume(settings, true, now + 49ms).velocity_x ==
+          Approx(first));
+
+  mouse.AddDelta(1000000, 0, now + 50ms);
+  mouse.Consume(settings, true, now + 50ms);
+  REQUIRE(mouse.Consume(settings, true, now + 99ms).thumb_x > 0);
+  REQUIRE(mouse.Consume(settings, true, now + 100ms).thumb_x == 0);
+}
+
+TEST_CASE("Preview uses the selected estimator without reading gameplay",
+          "[kbm]") {
+  using namespace std::chrono_literals;
+  const auto now = KbmMouseWindow::Time{} + 1s;
+  KbmMousePreview preview;
+  KbmMouseProcessor gameplay;
+  KbmMouseSettings settings;
+  settings.processing.mode =
+      GENERATE(KbmMouseMode::kFixedWindow, KbmMouseMode::kEma);
+  preview.Start(now, settings.processing);
+  gameplay.AddDelta(20, 0, now + 2ms);
+  preview.AddDelta(8, 0, now + 15ms);
+  preview.Sample(settings, now + 16ms);
+  REQUIRE(preview.speed_cm_s(settings.dpi) > 0);
+  REQUIRE(gameplay.pending_delta_x() == 20);
+  preview.Reset(now + 17ms, {});
+  REQUIRE(preview.speed_cm_s(settings.dpi) == 0);
+  REQUIRE(preview.peak() == 0);
+  preview.Sample({}, now + 34ms);
+  REQUIRE(preview.current() == 0);
 }
 
 TEST_CASE("Logical KBM input codes use stable v3 tokens", "[kbm]") {
@@ -142,7 +260,7 @@ TEST_CASE("Raw mouse processor resets stale motion before mapping", "[kbm]") {
   const auto reset =
       processor.Consume(settings, true, start + std::chrono::milliseconds(1));
   REQUIRE(reset.reset_sample);
-  processor.AddDelta(240, -120, start + std::chrono::milliseconds(2));
+  processor.AddDelta(240, -120, start + std::chrono::milliseconds(11));
   const auto sample =
       processor.Consume(settings, true, start + std::chrono::milliseconds(12));
   REQUIRE(sample.raw_delta_x == 240);
@@ -219,8 +337,9 @@ TEST_CASE("Same-time polls retain pending motion for the next advancing poll",
           "[kbm]") {
   KbmMouseProcessor processor;
   KbmMouseSettings settings;
+  settings.processing.mode = KbmMouseMode::kDirect;
   const auto start = std::chrono::steady_clock::now();
-  processor.Reset(start);
+  processor.Configure(settings.processing, start);
   processor.Consume(settings, true, start + std::chrono::milliseconds(1));
   processor.AddDelta(12, -6, start + std::chrono::milliseconds(1));
   const auto same_time =
@@ -237,7 +356,8 @@ TEST_CASE("Same-time polls retain pending motion for the next advancing poll",
   REQUIRE(empty.thumb_x == 0);
 }
 
-TEST_CASE("Input reports retain the radial schema three contract", "[kbm]") {
+TEST_CASE("Input reports identify the configured schema four processor",
+          "[kbm]") {
   const auto started = std::chrono::steady_clock::now();
   KbmInputSample sample;
   sample.time = started + std::chrono::milliseconds(8);
@@ -247,11 +367,16 @@ TEST_CASE("Input reports retain the radial schema three contract", "[kbm]") {
   KbmRawInputSample event;
   event.time = started;
   event.kind = 2;
+  KbmInputReportSettings settings;
+  settings.processing = {KbmMouseMode::kEma, 8.5, 4.5};
   const auto report =
-      SerializeKbmInputReport({sample}, {event}, 0, 0, {}, started);
+      SerializeKbmInputReport({sample}, {event}, 0, 0, settings, started);
   REQUIRE(report.poll_csv.find("mapper=physical_linear_radial") !=
           std::string::npos);
-  REQUIRE(report.poll_csv.find("# schema=3") != std::string::npos);
+  REQUIRE(report.poll_csv.find("# schema=4") != std::string::npos);
+  REQUIRE(report.poll_csv.find("processing_mode=ema, fixed_window_ms=8.5, "
+                               "ema_tau_ms=4.5") != std::string::npos);
+  REQUIRE(report.events_csv.find("# schema=4") != std::string::npos);
   REQUIRE(report.events_csv.find("kind: 0=motion,1=reset,2=initial_state") !=
           std::string::npos);
 }
@@ -309,7 +434,7 @@ TEST_CASE("Nonadvancing polls retain buckets and Y inversion is applied once",
     REQUIRE(processor.pending_delta_x() == 10);
     REQUIRE(processor.last_sample_time() == initial);
     const auto sample = processor.Consume(
-        settings, true, initial + std::chrono::milliseconds(8));
+        settings, true, initial + std::chrono::milliseconds(7));
     REQUIRE(sample.raw_delta_y == 10);
     REQUIRE((sample.thumb_y > 0) == invert);
   }
@@ -326,8 +451,9 @@ TEST_CASE(
       KbmMouseProcessor processor;
       KbmMouseSettings settings;
       settings.deadzone_compensation = false;
+      settings.processing.mode = KbmMouseMode::kDirect;
       const auto reset = Clock::now();
-      processor.Reset(reset);
+      processor.Configure(settings.processing, reset);
       const auto start = reset + std::chrono::microseconds(1);
       processor.Consume(settings, true, start);
       int event = 1, delivered = 0;

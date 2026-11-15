@@ -32,9 +32,12 @@ bool static IsKbmForUserEnabled(const KbmSettings& settings,
 }
 
 KbmMouseSettings GetMouseSettings(const KbmSettings& settings) {
-  return {settings.raw_mouse_dpi, settings.raw_mouse_full_stick_speed_cm_s,
+  return {settings.raw_mouse_dpi,
+          settings.raw_mouse_full_stick_speed_cm_s,
           settings.raw_mouse_deadzone_compensation,
-          settings.raw_mouse_minimum_response, settings.raw_mouse_invert_y};
+          settings.raw_mouse_minimum_response,
+          settings.raw_mouse_invert_y,
+          settings.mouse_processing};
 }
 
 static bool ModifiersMatch(bool required_shift, bool required_ctrl,
@@ -47,6 +50,7 @@ static bool ModifiersMatch(bool required_shift, bool required_ctrl,
 static bool AreSettingsEqual(const KbmSettings& lhs, const KbmSettings& rhs) {
   if (lhs.enabled != rhs.enabled || lhs.user_index != rhs.user_index ||
       lhs.raw_mouse != rhs.raw_mouse ||
+      lhs.mouse_processing != rhs.mouse_processing ||
       lhs.raw_mouse_dpi != rhs.raw_mouse_dpi ||
       lhs.raw_mouse_full_stick_speed_cm_s !=
           rhs.raw_mouse_full_stick_speed_cm_s ||
@@ -125,6 +129,8 @@ KbmInputDriver::KbmInputDriver(xe::ui::Window* window, size_t window_z_order)
                [this](bool active) { NotifyCaptureState(active); }}),
       input_sampling_(WriteKbmInputSamplingReport) {
   settings_ = GetSettingsFromCvars();
+  raw_mouse_processor_.Configure(settings_.mouse_processing,
+                                 std::chrono::steady_clock::now());
   RebuildKeyBindings(settings_);
   ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
                 raw_mouse_capture_toggle_);
@@ -158,19 +164,16 @@ KbmSettings KbmInputDriver::GetSettings() const {
 
 void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
   KbmSettings settings = NormalizeSettings(source_settings);
-  bool settings_changed = false;
   {
     auto lock = settings_critical_region_.Acquire();
-    settings_changed = !AreSettingsEqual(settings_, settings);
-  }
-  // Saving an unchanged draft should not end an active report.
-  if (settings_changed) {
-    StopInputSampling();
-  }
-
-  {
-    auto lock = settings_critical_region_.Acquire();
+    const bool settings_changed = !AreSettingsEqual(settings_, settings);
+    if (settings_changed) {
+      StopInputSampling();
+    }
     settings_ = settings;
+    if (settings_changed) {
+      ResetRawMouseMotion(settings_.mouse_processing);
+    }
     RebuildKeyBindings(settings_);
     if (!ParseKbmChord(settings_.raw_mouse_capture_toggle_key,
                        raw_mouse_capture_toggle_)) {
@@ -180,9 +183,6 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
                settings_.raw_mouse_capture_toggle_key);
       }
     }
-  }
-  if (settings_changed) {
-    ResetRawMouseMotion();
   }
   ApplySettingsToCvars(settings);
 
@@ -210,6 +210,10 @@ KbmInputDriver::Diagnostics KbmInputDriver::GetDiagnostics() const {
 }
 
 bool KbmInputDriver::StartInputSampling() {
+  // Starting from the settings dialog gives replay a clean estimator history.
+  if (!host_input_suspended_) {
+    return false;
+  }
   auto report = input_sampling_.Prepare();
   if (!report) {
     return false;
@@ -219,28 +223,23 @@ bool KbmInputDriver::StartInputSampling() {
     auto settings_lock = settings_critical_region_.Acquire();
     auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
     const auto now = std::chrono::steady_clock::now();
+    raw_mouse_processor_.Reset(now);
     report->started = now;
-    report->settings = {
-        settings_.raw_mouse_dpi, settings_.raw_mouse_full_stick_speed_cm_s,
-        settings_.raw_mouse_deadzone_compensation,
-        settings_.raw_mouse_minimum_response, settings_.raw_mouse_invert_y};
+    report->settings = {settings_.raw_mouse_dpi,
+                        settings_.raw_mouse_full_stick_speed_cm_s,
+                        settings_.raw_mouse_deadzone_compensation,
+                        settings_.raw_mouse_minimum_response,
+                        settings_.raw_mouse_invert_y,
+                        settings_.mouse_processing};
     if (!ConfigPath().empty()) {
       report->directory = ConfigPath().parent_path();
     }
-    RawInputSample initial;
+    // Reset leaves an empty processor at the report start time.
+    RawInputSample initial{};
     initial.time = now;
     initial.kind = 2;
     initial.sequence = raw_mouse_processor_.event_sequence();
-    initial.reset_pending = raw_mouse_processor_.reset_pending();
-    initial.delta_x = raw_mouse_processor_.pending_delta_x();
-    initial.delta_y = raw_mouse_processor_.pending_delta_y();
-    const auto velocity = raw_mouse_processor_.velocity();
-    initial.velocity_x = velocity.x;
-    initial.velocity_y = velocity.y;
-    initial.previous_poll_offset_seconds =
-        std::chrono::duration<double>(raw_mouse_processor_.last_sample_time() -
-                                      now)
-            .count();
+    initial.reset_pending = true;
     initial.capture_active = platform_input_.capture_active();
     initial.suspended = host_input_suspended_;
     report->events.push_back(initial);
@@ -276,12 +275,13 @@ void KbmInputDriver::ShutdownInputSampling() {
   XELOGI("kbm: input sampling shut down.");
 }
 
-bool KbmInputDriver::StartMousePreview() {
+bool KbmInputDriver::StartMousePreview(const KbmSettings& draft) {
   CancelBindingCapture();
   if (!host_input_suspended_ || !platform_input_.BeginPreviewCapture()) {
     return false;
   }
-  mouse_preview_.Start(std::chrono::steady_clock::now());
+  mouse_preview_.Start(std::chrono::steady_clock::now(),
+                       draft.mouse_processing);
   return true;
 }
 
@@ -290,8 +290,9 @@ void KbmInputDriver::StopMousePreview() {
   mouse_preview_.Stop();
 }
 
-void KbmInputDriver::ResetMousePreview() {
-  mouse_preview_.Reset(std::chrono::steady_clock::now());
+void KbmInputDriver::ResetMousePreview(const KbmSettings& draft) {
+  mouse_preview_.Reset(std::chrono::steady_clock::now(),
+                       draft.mouse_processing);
 }
 
 const KbmMousePreview& KbmInputDriver::SampleMousePreview(
@@ -705,11 +706,15 @@ void KbmInputDriver::ToggleRawMouseCapture() {
   }
 }
 
-void KbmInputDriver::ResetRawMouseMotion() {
+void KbmInputDriver::ResetRawMouseMotion(
+    std::optional<KbmMouseProcessing> processing) {
   auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
   RawInputSample sample;
   sample.time = std::chrono::steady_clock::now();
-  raw_mouse_processor_.Reset(sample.time);
+  if (!processing ||
+      !raw_mouse_processor_.Configure(*processing, sample.time)) {
+    raw_mouse_processor_.Reset(sample.time);
+  }
   sample.kind = 1;
   sample.sequence = raw_mouse_processor_.event_sequence();
   sample.reset_pending = true;

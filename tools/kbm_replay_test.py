@@ -2,9 +2,12 @@
 
 import unittest
 import tempfile
+import math
 from pathlib import Path
 
-from kbm_replay import analyze, check_event_buckets, uses_radial_mapper
+from kbm_replay import (analyze, check_event_buckets, processing_parameters,
+                        uses_radial_mapper)
+from kbm_compare_modes import compare_trace, simulate, synthetic_schedule
 
 
 class PhysicalReplayTests(unittest.TestCase):
@@ -27,12 +30,81 @@ class PhysicalReplayTests(unittest.TestCase):
             "2,1,0,0,0\n0,2,10,0,0\n0,3,1,0,0\n", encoding="utf-8")
         return path
 
+    def schema_four_report(self, directory, mode, velocities):
+        path = Path(directory) / "report.csv"
+        data = (
+            f"# schema=4, processing_mode={mode}, fixed_window_ms=8, ema_tau_ms=8\n"
+            "# mapper=physical_linear_radial, dpi=800, full_stick_speed_cm_s=10\n"
+            "# deadzone_compensation=false, minimum_response=0.3, invert_y=false\n"
+            "# samples=6, events=2, dropped_samples=0, dropped_events=0\n"
+            "elapsed_ms,interval_ms,input_active,raw_delta_x,raw_delta_y,velocity_x,"
+            "velocity_y,thumb_x,thumb_y,reset_sample,stale_sample,event_sequence\n"
+            "1,1,true,0,0,0,0,0,0,true,false,1\n"
+        )
+        threshold = 800 * 10 / 2.54
+        for (t, dt, dx), velocity in zip(((9, 8, 8), (14, 5, 0), (17, 3, 0),
+                                           (21, 4, 0)), velocities):
+            thumb = round(velocity / threshold * 32767)
+            data += f"{t},{dt},true,{dx},0,{velocity},0,{thumb},0,false,false,2\n"
+        data += "59,38,true,0,0,0,0,0,0,false,false,2\n"
+        path.write_text(data, encoding="utf-8")
+        path.with_suffix(".events.csv").write_text(
+            "# schema=4\n"
+            "kind,sequence,event_elapsed_us,delta_x,delta_y,velocity_x,velocity_y,"
+            "previous_poll_offset_ms,reset_pending\n"
+            "2,1,0,0,0,0,0,0,true\n0,2,8000,8,0,0,0,0,false\n",
+            encoding="utf-8")
+        return path
+
     def test_physical_replay_and_nonadvancing_bucket(self):
         with tempfile.TemporaryDirectory() as directory:
             result = analyze(self.report(directory))
             self.assertEqual(result["event_bucket_check"]["bucket_mismatches"], 0)
             self.assertEqual(result["replay_velocity_error_cps_p99"], 0)
             self.assertLess(result["replay_output_error_percentage_points_max"], .003)
+
+    def test_schema_four_accepts_new_processing_limits(self):
+        metadata = {"processing_mode": "ema", "fixed_window_ms": "24",
+                    "ema_tau_ms": "12"}
+        self.assertEqual(processing_parameters(metadata), ("ema", 24, 12))
+        for key, invalid in (("fixed_window_ms", "24.5"), ("ema_tau_ms", "12.5")):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                processing_parameters({**metadata, key: invalid})
+
+    def test_schema_four_reconstructs_each_processor(self):
+        alpha = -math.expm1(-1)
+        # The event is still in the fixed window at 14 ms and expires at 16 ms.
+        # EMA retains motion in the later empty buckets until its quiet gate.
+        velocities = {
+            "direct": (1000, 0, 0, 0),
+            "fixed_window": (1000, 1000, 0, 0),
+            "ema": (1000 * alpha, 1000 * alpha * math.exp(-.625),
+                    1000 * alpha * math.exp(-1), 1000 * alpha * math.exp(-1.5)),
+        }
+        for mode, speeds in velocities.items():
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                result = analyze(self.schema_four_report(directory, mode, speeds))
+                self.assertEqual(result["event_bucket_check"]["bucket_mismatches"], 0)
+                self.assertAlmostEqual(result["replay_velocity_error_cps_p99"], 0)
+                self.assertLess(result["replay_output_error_percentage_points_max"], .003)
+
+    def test_schema_four_comparison_rejects_inconsistent_event_timing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.schema_four_report(directory, "fixed_window", (1000, 1000, 0, 0))
+            self.assertIn("recorded", compare_trace(path)["schedules"])
+
+            # The first bucket still consumes eight counts, but at 14 ms the
+            # modified event is now outside the 8 ms window.
+            events = path.with_suffix(".events.csv")
+            text = events.read_text(encoding="utf-8")
+            events.write_text(text.replace(",8000,", ",2000,"), encoding="utf-8")
+
+            report = analyze(path)
+            self.assertTrue(report["event_bucket_check"]["available"])
+            self.assertEqual(report["event_bucket_check"]["bucket_mismatches"], 0)
+            self.assertGreater(report["replay_output_error_percentage_points_max"], 30)
+            with self.assertRaisesRegex(ValueError, "stick replay differs"):
+                compare_trace(path)
 
     def test_unknown_schema_and_missing_metadata_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -148,6 +220,27 @@ class EventBucketTests(unittest.TestCase):
         self.assertFalse(check_event_buckets(rows, events)["available"])
         events[1]["sequence"] = "6"
         self.assertTrue(check_event_buckets(rows, events)["available"])
+
+
+class CounterfactualScheduleTests(unittest.TestCase):
+    def test_duplicate_poll_keeps_motion_and_stall_clears_all_estimators(self):
+        # A same-time poll must leave the event for the next advancing query.
+        events = [(4_000_000, 1, 8, 0), (4_000_000, 2, 8, 0),
+                  (131_000_000, 3, 8, 0)]
+        polls = [(4_000_000, 1), (4_000_000, 2), (8_000_000, 2),
+                 (132_000_000, 3), (136_000_000, 3)]
+        for mode in ("direct", "fixed_window", "ema"):
+            with self.subTest(mode=mode):
+                rows = list(simulate(events, polls, (mode, 8, 8), 4000, .3))
+                self.assertGreater(rows[0][1][0], 0)
+                self.assertEqual(rows[1][1], (0, 0))
+                self.assertGreater(rows[2][1][0], 0)
+                self.assertEqual(rows[3][1], (0, 0))
+                self.assertEqual(rows[4][1], (0, 0))
+
+    def test_generated_stall_stays_in_trace_duration(self):
+        self.assertEqual(list(synthetic_schedule(144_000_000, (8,), stall_every=2)),
+                         [(8_000_000, None), (136_000_000, None), (144_000_000, None)])
 
 
 if __name__ == "__main__":

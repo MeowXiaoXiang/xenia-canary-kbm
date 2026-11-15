@@ -50,7 +50,7 @@ DEFINE_transient_double(
     "HID.KBM");
 DEFINE_transient_double(
     raw_mouse_full_stick_speed_cm_s, 10.0,
-    "Physical mouse speed for full stick in cm/s, not cm/360. [1, 100].",
+    "Estimated mouse speed that reaches full stick, in cm/s. [1, 100].",
     "HID.KBM");
 
 DEFINE_transient_bool(
@@ -61,8 +61,8 @@ DEFINE_transient_bool(
 
 DEFINE_transient_double(
     raw_mouse_minimum_response, 0.30,
-    "Minimum radial stick output used by stick anti-deadzone. Zero mouse "
-    "movement still produces zero output.",
+    "Minimum radial stick output used by stick anti-deadzone. A speed "
+    "estimate of zero produces zero output.",
     "HID.KBM");
 
 DEFINE_transient_bool(raw_mouse_invert_y, false,
@@ -79,6 +79,17 @@ DEFINE_transient_bool(
     "Capture and hide the mouse when Raw Input is initialized. The mouse is "
     "automatically released when Xenia loses focus.",
     "HID.KBM");
+
+DEFINE_transient_string(
+    raw_mouse_processing_mode,
+    std::string(xe::hid::kbm::MouseModeName(xe::hid::kbm::kDefaultMouseMode)),
+    "Mouse processing mode: fixed_window, ema or direct.", "HID.KBM");
+DEFINE_transient_double(raw_mouse_fixed_window_ms,
+                        xe::hid::kbm::kDefaultFixedWindowMs,
+                        "Fixed mouse history window in milliseconds.",
+                        "HID.KBM");
+DEFINE_transient_double(raw_mouse_ema_tau_ms, xe::hid::kbm::kDefaultEmaTauMs,
+                        "Mouse EMA time constant in milliseconds.", "HID.KBM");
 
 namespace xe::hid::kbm {
 namespace {
@@ -163,6 +174,15 @@ std::optional<KbmConfigEntry> GetKbmConfigEntry(
   if (name == "raw_mouse_minimum_response") {
     return {{"HID.KBM.RawMouse.Tuning", "minimum_response", 3}};
   }
+  if (name == "raw_mouse_processing_mode") {
+    return {{"HID.KBM.RawMouse.Tuning", "processing_mode", 3}};
+  }
+  if (name == "raw_mouse_fixed_window_ms") {
+    return {{"HID.KBM.RawMouse.Tuning", "fixed_window_ms", 3}};
+  }
+  if (name == "raw_mouse_ema_tau_ms") {
+    return {{"HID.KBM.RawMouse.Tuning", "ema_tau_ms", 3}};
+  }
   return std::nullopt;
 }
 
@@ -208,11 +228,21 @@ bool IsBooleanSetting(std::string_view name) {
 
 bool IsNumberSetting(std::string_view name) {
   return name == "raw_mouse_dpi" || name == "raw_mouse_full_stick_speed_cm_s" ||
-         name == "raw_mouse_minimum_response";
+         name == "raw_mouse_minimum_response" ||
+         name == "raw_mouse_fixed_window_ms" || name == "raw_mouse_ema_tau_ms";
+}
+
+bool IsOptionalProcessingSetting(std::string_view name) {
+  return name == "raw_mouse_processing_mode" ||
+         name == "raw_mouse_fixed_window_ms" || name == "raw_mouse_ema_tau_ms";
 }
 
 bool IsCompatibleConfigValue(const cvar::IConfigVar& config_var,
                              const toml::node& node) {
+  if (config_var.name() == "raw_mouse_processing_mode") {
+    const auto mode = node.value<std::string_view>();
+    return mode && ParseMouseMode(*mode).has_value();
+  }
   if (config_var.name() == "raw_mouse_capture_toggle_key") {
     const auto binding = node.value<std::string>();
     KbmChord chord;
@@ -270,6 +300,9 @@ void LoadConfig() {
       continue;
     }
     const auto node = GetConfigNode(parsed, *entry);
+    if (!node && IsOptionalProcessingSetting(name)) {
+      continue;
+    }
     if (!node || !IsCompatibleConfigValue(*config_var, *node.node())) {
       config_state = KbmConfigState::kIncompatible;
       XELOGW("kbm: ignored incompatible setting '{}' in '{}'.",
@@ -284,6 +317,9 @@ void LoadConfig() {
       continue;
     }
     const auto node = GetConfigNode(parsed, *entry);
+    if (!node && IsOptionalProcessingSetting(name)) {
+      config_var->ResetConfigValueToDefault();
+    }
     if (node) {
       if (name == "kbm_user_index") {
         // TOML integers are 64-bit; clamp before the CVar's int32 conversion
@@ -385,6 +421,11 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
                 settings.raw_mouse_capture_toggle_key);
   values.insert("raw_mouse_capture_on_start",
                 settings.raw_mouse_capture_on_start);
+  values.insert("raw_mouse_processing_mode",
+                MouseModeName(settings.mouse_processing.mode));
+  values.insert("raw_mouse_fixed_window_ms",
+                settings.mouse_processing.fixed_window_ms);
+  values.insert("raw_mouse_ema_tau_ms", settings.mouse_processing.ema_tau_ms);
   for (const auto& var : vars) {
     if (!IsCompatibleConfigValue(*var.config_var,
                                  *values.get(var.config_var->name()))) {
@@ -448,6 +489,8 @@ KbmSettings NormalizeSettings(KbmSettings settings) {
   settings.raw_mouse_minimum_response =
       finite_clamp(settings.raw_mouse_minimum_response,
                    defaults.raw_mouse_minimum_response, 0.0, 0.5);
+  settings.mouse_processing =
+      NormalizeMouseProcessing(settings.mouse_processing);
   return settings;
 }
 
@@ -469,6 +512,10 @@ KbmSettings GetSettingsFromCvars() {
   settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
   settings.raw_mouse_capture_toggle_key = cvars::raw_mouse_capture_toggle_key;
   settings.raw_mouse_capture_on_start = cvars::raw_mouse_capture_on_start;
+  settings.mouse_processing = {ParseMouseMode(cvars::raw_mouse_processing_mode)
+                                   .value_or(kDefaultMouseMode),
+                               cvars::raw_mouse_fixed_window_ms,
+                               cvars::raw_mouse_ema_tau_ms};
   return NormalizeSettings(settings);
 }
 
@@ -491,6 +538,11 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
   OVERRIDE_bool(raw_mouse_invert_y, settings.raw_mouse_invert_y);
   OVERRIDE_string(raw_mouse_capture_toggle_key,
                   settings.raw_mouse_capture_toggle_key);
+  OVERRIDE_string(raw_mouse_processing_mode,
+                  std::string(MouseModeName(settings.mouse_processing.mode)));
+  OVERRIDE_double(raw_mouse_fixed_window_ms,
+                  settings.mouse_processing.fixed_window_ms);
+  OVERRIDE_double(raw_mouse_ema_tau_ms, settings.mouse_processing.ema_tau_ms);
   OVERRIDE_bool(raw_mouse_capture_on_start,
                 settings.raw_mouse_capture_on_start);
 }
