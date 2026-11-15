@@ -89,6 +89,7 @@ then capture again.
    The settings window closes so you can play. If you have edits, choose
    **Save all and record for 60 seconds** to save them first.
 2. Play normally, then reopen settings to see the status or report path.
+   Recording ends after 60 seconds even if the game stops polling.
    **Stop and save report** saves the recording so far. **Cancel sampling**
    discards an active recording.
 3. Keep the report and its matching `.events.csv` file together. Both are

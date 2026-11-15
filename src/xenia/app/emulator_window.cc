@@ -2282,7 +2282,7 @@ void EmulatorWindow::VibrateController(xe::hid::InputSystem* input_sys,
 }
 
 void EmulatorWindow::GamepadHotKeys() {
-  X_INPUT_STATE state;
+  X_INPUT_STATE state = {};
 
   constexpr std::chrono::milliseconds thread_delay(75);
 
@@ -2297,8 +2297,8 @@ void EmulatorWindow::GamepadHotKeys() {
         auto input_lock = input_sys->lock();
         for (uint32_t user_index = 0; user_index < XUserMaxUserCount;
              ++user_index) {
-          X_RESULT result = input_sys->GetState(
-              user_index, X_INPUT_FLAG::X_INPUT_FLAG_GAMEPAD, &state);
+          X_RESULT result =
+              input_sys->GetStateForHostHotkeys(user_index, &state);
           controller_states[user_index] = {result == X_ERROR_SUCCESS, state};
         }
       }  // Lock is released here when input_lock goes out of scope

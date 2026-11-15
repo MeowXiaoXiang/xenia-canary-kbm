@@ -91,7 +91,7 @@ TEST_CASE("Sampling snapshots retain initial state, settings and drop counts",
         return KbmInputReportWriteResult{true, "report.csv"};
       },
       {2, 3, 10ms});
-  const auto now = Clock::now();
+  const auto now = Clock::now() + 1s;
   auto report = Prepare(sampling, now);
   report->settings.dpi = 1325.0;
   report->events.front().delta_x = 123;
@@ -127,6 +127,60 @@ TEST_CASE("Sampling snapshots retain initial state, settings and drop counts",
   REQUIRE(sampling.GetStatus().dropped_sample_count == 2);
 }
 
+TEST_CASE("Sampling reaches the writer without controller polls",
+          "[kbm][sampling]") {
+  WriterGate gate;
+  KbmInputSamplingReport written;
+  KbmInputSampling sampling(
+      [&](const auto& report) {
+        written = report;
+        return gate.Write(report);
+      },
+      {2, 3, 20ms});
+  ReleaseWriter release{gate};
+  auto report = Prepare(sampling, Clock::now());
+  REQUIRE(sampling.Start(report));
+  REQUIRE(gate.Wait());
+  REQUIRE_FALSE(sampling.GetStatus().active);
+  REQUIRE(written.samples.empty());
+  REQUIRE(written.events.size() == 1);
+  gate.Release();
+  REQUIRE(WaitForWrite(sampling));
+}
+
+TEST_CASE("Samples and motion after the deadline are excluded",
+          "[kbm][sampling]") {
+  KbmInputSamplingReport written;
+  KbmInputSampling sampling(
+      [&](const auto& report) {
+        written = report;
+        return KbmInputReportWriteResult{true, "report.csv"};
+      },
+      {2, 3, 60s});
+  auto report = Prepare(sampling, Clock::now());
+  const auto deadline = report->started + 60s;
+  REQUIRE(sampling.Start(report));
+
+  KbmRawInputSample event;
+  event.time = deadline - 1ms;
+  sampling.Record(event);
+  event.time = deadline + 1ms;
+  sampling.Record(event);
+
+  KbmInputSample poll;
+  poll.time = deadline - 1ms;
+  sampling.Record(poll);
+  poll.time = deadline + 1ms;
+  sampling.Record(poll);
+  REQUIRE(WaitForWrite(sampling));
+  REQUIRE(written.events.size() == 2);
+  REQUIRE(written.samples.size() == 1);
+  REQUIRE(written.samples[0].time < deadline);
+  REQUIRE(written.events[1].time < deadline);
+  REQUIRE(written.dropped_events == 0);
+  REQUIRE(written.dropped_samples == 0);
+}
+
 TEST_CASE("Deadline handoff neither copies buffers nor waits for report I/O",
           "[kbm][sampling]") {
   WriterGate gate;
@@ -139,7 +193,7 @@ TEST_CASE("Deadline handoff neither copies buffers nor waits for report I/O",
       },
       {2, 3, 5ms});
   ReleaseWriter release{gate};
-  auto report = Prepare(sampling, Clock::now());
+  auto report = Prepare(sampling, Clock::now() + 1s);
   const auto now = report->started;
   sample_data = report->samples.data();
   auto standby = Prepare(sampling, now + 10ms);
@@ -181,7 +235,7 @@ TEST_CASE("Cancel and active restart do not publish discarded sessions",
         dpi = report.settings.dpi;
         return KbmInputReportWriteResult{true, "latest.csv"};
       },
-      {2, 3, 10ms});
+      {2, 3, 60s});
   auto first = Prepare(sampling, Clock::now());
   REQUIRE(sampling.Start(first));
   REQUIRE(sampling.Cancel());
@@ -251,7 +305,7 @@ TEST_CASE(
         }
         return KbmInputReportWriteResult{true, "recovered.csv"};
       },
-      {2, 3, 10ms});
+      {2, 3, 60s});
   for (int attempt = 0; attempt < 2; ++attempt) {
     auto report = Prepare(sampling, Clock::now());
     REQUIRE(sampling.Start(report));
@@ -271,14 +325,14 @@ TEST_CASE("Shutdown drains completed reports and discards unfinished sessions",
     return KbmInputReportWriteResult{true, "report.csv"};
   };
   {
-    KbmInputSampling sampling(writer, {2, 3, 10ms});
+    KbmInputSampling sampling(writer, {2, 3, 60s});
     auto report = Prepare(sampling, Clock::now());
     REQUIRE(sampling.Start(report));
     REQUIRE(sampling.Finish());
   }
   REQUIRE(writes.load() == 1);
   {
-    KbmInputSampling sampling(writer, {2, 3, 10ms});
+    KbmInputSampling sampling(writer, {2, 3, 60s});
     auto report = Prepare(sampling, Clock::now());
     REQUIRE(sampling.Start(report));
   }
@@ -289,7 +343,7 @@ TEST_CASE("Explicit shutdown waits for an accepted writer before quick exit",
           "[kbm][sampling]") {
   WriterGate gate;
   KbmInputSampling sampling(
-      [&](const auto& report) { return gate.Write(report); }, {2, 3, 10ms});
+      [&](const auto& report) { return gate.Write(report); }, {2, 3, 60s});
   ReleaseWriter initial_release{gate};
   auto report = Prepare(sampling, Clock::now());
   auto standby = Prepare(sampling, Clock::now());
@@ -320,7 +374,7 @@ TEST_CASE(
         ++writes;
         return KbmInputReportWriteResult{true, "unexpected.csv"};
       },
-      {2, 3, 10ms});
+      {2, 3, 60s});
   auto report = Prepare(sampling, Clock::now());
   REQUIRE(sampling.Start(report));
   sampling.Shutdown();
@@ -445,7 +499,7 @@ TEST_CASE(
     "The production report worker runs outside the emulator global region",
     "[kbm][sampling]") {
   ReportDirectory directory;
-  KbmInputSampling sampling(WriteKbmInputSamplingReport, {2, 3, 10ms});
+  KbmInputSampling sampling(WriteKbmInputSamplingReport, {2, 3, 60s});
   auto report = Prepare(sampling, Clock::now());
   report->directory = directory.path;
   REQUIRE(sampling.Start(report));

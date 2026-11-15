@@ -24,7 +24,7 @@ sensitivity, deadzones, acceleration and turn limits can differ by title.
 
 | Mode | Starting value | Range | What to expect |
 | --- | ---: | --- | --- |
-| **Fixed window (recommended)** | **16 ms** | 4–24 ms | A longer window keeps more recent movement for steadier slow aim. A shorter window clears old motion sooner and can miss sparse events. |
+| **Fixed window** | **16 ms** | 4–24 ms | A longer window keeps more recent movement for steadier slow aim. A shorter window clears old motion sooner and can miss sparse events. |
 | **EMA smoothing** | **4 ms** | 2–12 ms | Increase the time constant for stronger smoothing. The output can take longer to settle after you stop. |
 | **Direct** | Uses the game query interval | — | Responds to motion since the previous query. Slow speed can vary more between queries. |
 

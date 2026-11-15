@@ -42,7 +42,8 @@ from gameplay for the same movement.
   or below 2% of the full-stick threshold. After 50 ms, the next query clears
   the output regardless of the remaining speed.
 - The game controls when queries reach KBM. FPS can affect that cadence when
-  the game ties input queries to its frame updates.
+  the game ties input queries to its frame updates. Host controller hotkeys
+  read KBM buttons without advancing the gameplay mouse estimator.
 
 All modes use the same speed-to-stick mapping. Hardware DPI is the number of
 Raw Input counts per inch of travel. At 800 DPI and 10 cm/s, the full-stick
@@ -284,10 +285,13 @@ The worker publishes the event file first and the poll CSV last as the report
 pair's completion marker. New reports use schema 4; replay still recognizes
 legacy report math and rejects unknown schemas/models.
 
-The settings page shows a saving message until publication finishes. Another
-session can start after saving completes; a write failure is shown instead of a
-successful report path. Stop requests publication asynchronously, while Cancel
-discards an active recording. A report already being saved is allowed to finish.
+The report worker finishes a timed session at its deadline even if controller
+queries stop. Polls and Raw Input events timestamped after the deadline are
+excluded from the report. The settings page shows a saving message until
+publication finishes. Another session can start after saving completes.
+The settings page reports write failures. Stop requests publication
+asynchronously, while Cancel discards an active recording. A report already
+being saved is allowed to finish.
 Shutdown waits for an accepted report to finish and discards an unfinished
 recording. The Windows application explicitly shuts down sampling before its
 quick-exit path, which bypasses ordinary driver destruction. Frame-time
@@ -311,6 +315,7 @@ To try the Windows backend, download the unofficial archive from this fork's
 archive is published only after the `main` build and portable KBM tests pass.
 You can also build the same source locally. Use the Windows section of
 [the included upstream build guide](../building.md).
+The Windows CI workflow pins the Vulkan SDK installer version and SHA-256.
 On a Windows development environment, the normal verification commands are:
 
 ```powershell

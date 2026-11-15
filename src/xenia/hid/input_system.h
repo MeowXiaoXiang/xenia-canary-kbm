@@ -55,6 +55,8 @@ class InputSystem {
                            X_INPUT_CAPABILITIES* out_caps);
   X_RESULT GetState(uint32_t user_index, uint32_t flags,
                     X_INPUT_STATE* out_state);
+  X_RESULT GetStateForHostHotkeys(uint32_t user_index,
+                                  X_INPUT_STATE* out_state);
   X_RESULT SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration);
   X_RESULT GetKeystroke(uint32_t user_index, uint32_t flags,
                         X_INPUT_KEYSTROKE* out_keystroke);
@@ -73,6 +75,9 @@ class InputSystem {
   std::unique_lock<xe_unlikely_mutex> lock();
 
  private:
+  X_RESULT GetState(uint32_t user_index, uint32_t flags,
+                    X_INPUT_STATE* out_state, bool for_host_hotkeys);
+
   typedef std::pair<uint16_t, uint16_t> joystick_value;
 
   const std::string controller_slot_state_change_message[2] = {

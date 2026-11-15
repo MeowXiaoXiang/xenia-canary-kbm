@@ -400,11 +400,19 @@ X_RESULT KbmInputDriver::GetKeystroke(uint32_t user_index, uint32_t,
   return X_ERROR_SUCCESS;
 }
 
-void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
-  UpdateControllerKeystrokes();
+X_RESULT KbmInputDriver::GetStateForHostHotkeys(uint32_t user_index,
+                                                X_INPUT_STATE* out_state) {
   auto settings_lock = settings_critical_region_.Acquire();
-  const KbmSettings& settings = settings_;
+  if (!IsKbmForUserEnabled(settings_, user_index)) {
+    return X_ERROR_DEVICE_NOT_CONNECTED;
+  }
+  UpdateControllerKeystrokes();
+  *out_state = {};
+  out_state->gamepad.buttons = GetBoundControllerState().buttons;
+  return X_ERROR_SUCCESS;
+}
 
+KbmControllerState KbmInputDriver::GetBoundControllerState() const {
   KbmControllerState controller_state;
 
   if (window()->HasFocus() && !host_input_suspended_) {
@@ -422,6 +430,14 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
       }
     }
   }
+  return controller_state;
+}
+
+void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
+  UpdateControllerKeystrokes();
+  auto settings_lock = settings_critical_region_.Acquire();
+  const KbmSettings& settings = settings_;
+  KbmControllerState controller_state = GetBoundControllerState();
 
   InputSample input_sample;
   input_sample.time = std::chrono::steady_clock::now();

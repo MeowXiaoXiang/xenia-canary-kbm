@@ -39,6 +39,10 @@ class InputDriver {
   virtual X_RESULT GetCapabilities(uint32_t user_index, uint32_t flags,
                                    X_INPUT_CAPABILITIES* out_caps) = 0;
   virtual X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state) = 0;
+  virtual X_RESULT GetStateForHostHotkeys(uint32_t user_index,
+                                          X_INPUT_STATE* out_state) {
+    return GetState(user_index, out_state);
+  }
   virtual X_RESULT SetState(uint32_t user_index,
                             X_INPUT_VIBRATION* vibration) = 0;
   virtual X_RESULT GetKeystroke(uint32_t user_index, uint32_t flags,

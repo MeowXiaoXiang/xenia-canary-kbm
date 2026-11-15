@@ -84,6 +84,7 @@ bool KbmInputSampling::Start(std::unique_ptr<KbmInputSamplingReport>& report) {
   active_.swap(report);
   status_ = {};
   status_.active = true;
+  changed_.notify_one();
   return true;
 }
 
@@ -94,12 +95,15 @@ void KbmInputSampling::Record(const KbmInputSample& sample) {
     if (!active_ || sample.time < active_->started) {
       return;
     }
-    if (active_->samples.size() < limits_.samples) {
-      active_->samples.push_back(sample);
-    } else {
-      ++active_->dropped_samples;
+    const auto deadline = active_->started + limits_.duration;
+    if (sample.time <= deadline) {
+      if (active_->samples.size() < limits_.samples) {
+        active_->samples.push_back(sample);
+      } else {
+        ++active_->dropped_samples;
+      }
     }
-    if (sample.time >= active_->started + limits_.duration) {
+    if (sample.time >= deadline) {
       FinishLocked();
       finished = true;
     }
@@ -111,7 +115,8 @@ void KbmInputSampling::Record(const KbmInputSample& sample) {
 
 void KbmInputSampling::Record(const KbmRawInputSample& sample) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!active_ || sample.time < active_->started) {
+  if (!active_ || sample.time < active_->started ||
+      sample.time > active_->started + limits_.duration) {
     return;
   }
   if (active_->events.size() < limits_.events) {
@@ -152,6 +157,7 @@ bool KbmInputSampling::Cancel() {
     status_.active = false;
     status_.sample_count = 0;
     status_.dropped_sample_count = 0;
+    changed_.notify_one();
   }
   return true;
 }
@@ -176,7 +182,18 @@ void KbmInputSampling::RunWriter() {
     std::unique_ptr<KbmInputSamplingReport> report;
     {
       std::unique_lock<std::mutex> lock(mutex_);
-      changed_.wait(lock, [this]() { return stopping_ || pending_; });
+      while (!stopping_ && !pending_) {
+        if (active_) {
+          const auto deadline = active_->started + limits_.duration;
+          if (std::chrono::steady_clock::now() >= deadline) {
+            FinishLocked();
+          } else {
+            changed_.wait_until(lock, deadline);
+          }
+        } else {
+          changed_.wait(lock);
+        }
+      }
       if (!pending_) {
         return;
       }

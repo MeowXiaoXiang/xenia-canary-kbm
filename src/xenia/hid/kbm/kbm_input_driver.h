@@ -61,6 +61,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   ~KbmInputDriver() override;
 
   X_STATUS Setup() override;
+  X_RESULT GetStateForHostHotkeys(uint32_t user_index,
+                                  X_INPUT_STATE* out_state) override;
   X_RESULT GetKeystroke(uint32_t user_index, uint32_t flags,
                         X_INPUT_KEYSTROKE* out_keystroke) override;
 
@@ -119,6 +121,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void OnMouseDown(ui::MouseEvent& e) override;
   void OnRawMouseMove(ui::RawMouseMoveEvent& e) override;
   bool IsControllerForUserEnabled(uint32_t user_index) const override;
+  // Requires the settings critical region.
+  KbmControllerState GetBoundControllerState() const;
   void ApplyGamepadState(uint32_t user_index,
                          X_INPUT_STATE* out_state) override;
   bool UsesGenericKeyboardMode() const override { return false; }

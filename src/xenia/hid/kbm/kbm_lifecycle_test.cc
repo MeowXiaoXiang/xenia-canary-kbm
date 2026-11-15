@@ -90,6 +90,33 @@ class DriverFixture {
 
 }  // namespace
 
+TEST_CASE("Host hotkey queries read buttons without recording a poll",
+          "[kbm][lifecycle]") {
+  DriverFixture fixture;
+  auto settings = fixture.driver.GetSettings();
+  settings.keybind_a = "Key.G";
+  fixture.driver.ApplySettings(settings);
+  const auto baseline_packet = fixture.State().packet_number;
+  fixture.driver.SetHostInputSuspended(true);
+  REQUIRE(fixture.driver.StartInputSampling());
+  fixture.driver.SetHostInputSuspended(false);
+  fixture.window.Key(ui::VirtualKey::kG, true);
+
+  X_INPUT_STATE host_state = {};
+  REQUIRE(fixture.driver.GetStateForHostHotkeys(1, &host_state) ==
+          X_ERROR_DEVICE_NOT_CONNECTED);
+  REQUIRE(fixture.driver.GetStateForHostHotkeys(0, &host_state) ==
+          X_ERROR_SUCCESS);
+  REQUIRE(host_state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+  REQUIRE(fixture.driver.GetInputSamplingStatus().sample_count == 0);
+
+  const auto guest_state = fixture.State();
+  REQUIRE(guest_state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+  REQUIRE(guest_state.packet_number == baseline_packet + 1);
+  REQUIRE(fixture.driver.GetInputSamplingStatus().sample_count == 1);
+  fixture.driver.CancelInputSampling();
+}
+
 TEST_CASE("Capture hotkey binding ignores mouse buttons and keeps waiting",
           "[kbm][lifecycle]") {
   DriverFixture fixture;
