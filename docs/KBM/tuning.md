@@ -28,6 +28,32 @@ sensitivity, deadzones, acceleration and turn limits can differ by title.
 | **EMA smoothing** | **8 ms** | 2–12 ms | Increase the time constant for stronger smoothing. The output can take longer to settle after you stop. |
 | **Direct** | Uses the game query interval | — | Responds to motion since the previous query. Slow speed can vary more between queries. |
 
+The Fixed window and EMA panels show the latest interval, median, P95 and
+P99 of game polls in the last five seconds, up to 1,024 samples. They update
+while the game keeps polling, including while settings are open. Intervals
+longer than 100 ms are excluded from the statistics.
+
+- **Fixed window coverage** is the share of those intervals at or below the
+  window length. Movement can still produce stick output when a poll
+  interval is longer than the window.
+- **EMA new sample weight** shows how much of an EMA update would come from
+  the new speed estimate at the median interval, using the time constant
+  selected in the settings panel. With an 8 ms median and the default
+  8 ms time constant, the new estimate contributes about 63%.
+
+Use **Show in-game poll stats** under the polling statistics to see them
+during gameplay. In Direct mode the button appears below the mode selector.
+The overlay appears immediately while KBM settings are open, and the
+adjacent menu previews any corner as soon as it is selected. Before launching
+a game, the preview displays **Waiting for game polls**. During gameplay the
+top line shows the active mode and time setting, with coverage for Fixed
+window or the new sample weight at the median interval for EMA aligned on
+the right. The latest interval, median, P95 and P99 sit in fixed-width cells
+below and refresh every half second. The overlay starts off each time Xenia
+launches, with the lower right selected.
+Enabling it can move presentation to the UI thread on configurations that
+otherwise present directly from the guest output thread.
+
 The two time controls use 0.5 ms steps and remember their values separately.
 New or reset settings use the values in the table. Explicit values saved in
 `kbm.toml` carry over. Missing v4 fields use the current defaults. The mode

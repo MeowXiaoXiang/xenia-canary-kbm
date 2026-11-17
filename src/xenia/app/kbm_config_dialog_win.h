@@ -11,6 +11,7 @@
 #define XENIA_APP_KBM_CONFIG_DIALOG_WIN_H_
 
 #include <string>
+#include <vector>
 
 #include "xenia/hid/kbm/kbm_config.h"
 #include "xenia/ui/imgui_dialog.h"
@@ -33,6 +34,17 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
   void OnDraw(ImGuiIO& io) override;
 
  private:
+  struct PollStats {
+    bool Refresh(hid::kbm::KbmInputDriver* driver);
+    double Percentile(double fraction) const;
+    double Coverage(double window_ms) const;
+    void Draw(const hid::kbm::KbmMouseProcessing& processing) const;
+
+    std::vector<double> intervals;
+    double next_refresh = 0;
+    double latest_ms = 0;
+  };
+
   friend class EmulatorWindow;
   hid::kbm::KbmInputDriver* GetDriver() const;
   void RequestClose();
@@ -41,6 +53,8 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
                    bool allow_alternatives = true);
   void DrawMouseSection();
   bool DrawMouseSettings();
+  bool DrawProcessingTime();
+  void DrawPollHudControls();
   void DrawPreview(bool visible = true);
   bool DrawCaptureSettings();
   bool DrawBindings();
@@ -57,6 +71,7 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
 
   EmulatorWindow& emulator_window_;
   hid::kbm::KbmSettings settings_;
+  PollStats poll_stats_;
   bool save_failed_ = false;
   bool dirty_ = false;
   bool saved_ = false;

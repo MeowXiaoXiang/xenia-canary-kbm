@@ -342,7 +342,8 @@ class EmulatorWindow {
   std::unique_ptr<DisplayConfigDialog> display_config_dialog_;
 #if XE_PLATFORM_WIN32
   std::unique_ptr<KbmConfigDialog> kbm_config_dialog_;
-#endif  // XE_PLATFORM_WIN32
+  int kbm_poll_hud_corner_ = 3;  // Bottom right.
+#endif                           // XE_PLATFORM_WIN32
   std::unique_ptr<ConsoleSettingsDialog> console_settings_dialog_;
   std::unique_ptr<ContentListDialog> content_list_dialog_;
   // Storing pointers and toggling dialog state is useful for broadcasting

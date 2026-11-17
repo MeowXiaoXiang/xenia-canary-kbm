@@ -338,6 +338,23 @@ XE_LOCALIZATION_STRING(kKbmModeDirect, "直接")
 XE_LOCALIZATION_STRING(kKbmModeFixedWindow, "固定視窗")
 XE_LOCALIZATION_STRING(kKbmModeEma, "EMA 平滑")
 XE_LOCALIZATION_STRING(kKbmWindowLength, "視窗長度（ms）")
+XE_LOCALIZATION_STRING(kKbmRecentPollIntervals,
+                       "遊戲查詢間隔（最近 5 秒，%u 筆）")
+XE_LOCALIZATION_STRING(kKbmCurrentPollInterval, "最新間隔")
+XE_LOCALIZATION_STRING(kKbmMedianPollInterval, "中位數")
+XE_LOCALIZATION_STRING(kKbmPollIntervalCoverage, "涵蓋率")
+XE_LOCALIZATION_STRING(kKbmEmaNewSampleWeight, "新樣本權重")
+XE_LOCALIZATION_STRING(kKbmEmaSampleWeightHelp,
+                       "以中位查詢間隔計算。這個比例來自新估算的鼠速，"
+                       "其餘來自上一次的平滑值。")
+XE_LOCALIZATION_STRING(kKbmShowPollHud, "顯示遊戲內輪詢統計")
+XE_LOCALIZATION_STRING(kKbmPollHudWaitingForGame, "等待遊戲查詢。")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaSampleWeight, "新樣本權重（中位間隔）")
+XE_LOCALIZATION_STRING(kKbmPollHudTopLeft, "左上角")
+XE_LOCALIZATION_STRING(kKbmPollHudTopRight, "右上角")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomLeft, "左下角")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomRight, "右下角")
+XE_LOCALIZATION_STRING(kKbmNoRecentPollIntervals, "最近 5 秒沒有遊戲查詢。")
 XE_LOCALIZATION_STRING(kKbmEmaTau, "平滑時間常數（ms）")
 XE_LOCALIZATION_STRING(
     kKbmProcessingHelp,

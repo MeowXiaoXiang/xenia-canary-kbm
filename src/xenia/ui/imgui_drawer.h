@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -52,6 +53,10 @@ class ImGuiDrawer : public WindowInputListener, public UIDrawer {
 
   void AddNotification(ImGuiNotification* notification);
   void RemoveNotification(ImGuiNotification* notification);
+
+  // Draw an overlay on presented frames without enabling dialog input.
+  void SetPassiveOverlay(std::function<void()> draw);
+  bool HasPassiveOverlay() const { return bool(passive_overlay_); }
 
   // SetPresenter may be called from the destructor.
   void SetPresenter(Presenter* new_presenter);
@@ -125,6 +130,9 @@ class ImGuiDrawer : public WindowInputListener, public UIDrawer {
   void SwitchToPhysicalMouseAndUpdateMousePosition(const MouseEvent& e);
 
   bool IsDrawingDialogs() const { return dialog_loop_next_index_ != SIZE_MAX; }
+  bool HasDrawables() const {
+    return !dialogs_.empty() || !notifications_.empty() || HasPassiveOverlay();
+  }
   void DetachIfLastWindowRemoved();
   void UpdateGamepads();
 
@@ -139,6 +147,8 @@ class ImGuiDrawer : public WindowInputListener, public UIDrawer {
   std::function<void(uint8_t)> onGuidePressFunction_;
   // All currently-attached dialogs that get drawn.
   std::vector<ImGuiDialog*> dialogs_;
+  bool dialog_input_listener_attached_ = false;
+  std::function<void()> passive_overlay_;
 
   // All queued notifications. Notification at index 0 is currently presented
   // one.

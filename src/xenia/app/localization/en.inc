@@ -370,6 +370,26 @@ XE_LOCALIZATION_STRING(kKbmModeDirect, "Direct")
 XE_LOCALIZATION_STRING(kKbmModeFixedWindow, "Fixed window")
 XE_LOCALIZATION_STRING(kKbmModeEma, "EMA smoothing")
 XE_LOCALIZATION_STRING(kKbmWindowLength, "Window length (ms)")
+XE_LOCALIZATION_STRING(kKbmRecentPollIntervals,
+                       "Game poll intervals (last 5 s, %u samples)")
+XE_LOCALIZATION_STRING(kKbmCurrentPollInterval, "Latest interval")
+XE_LOCALIZATION_STRING(kKbmMedianPollInterval, "Median")
+XE_LOCALIZATION_STRING(kKbmPollIntervalCoverage, "Coverage")
+XE_LOCALIZATION_STRING(kKbmEmaNewSampleWeight, "New sample weight")
+XE_LOCALIZATION_STRING(kKbmEmaSampleWeightHelp,
+                       "At the median interval, this share comes from the "
+                       "new speed estimate. The rest comes from the "
+                       "previous smoothed value.")
+XE_LOCALIZATION_STRING(kKbmShowPollHud, "Show in-game poll stats")
+XE_LOCALIZATION_STRING(kKbmPollHudWaitingForGame, "Waiting for game polls.")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaSampleWeight,
+                       "New sample weight (median interval)")
+XE_LOCALIZATION_STRING(kKbmPollHudTopLeft, "Top left")
+XE_LOCALIZATION_STRING(kKbmPollHudTopRight, "Top right")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomLeft, "Bottom left")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomRight, "Bottom right")
+XE_LOCALIZATION_STRING(kKbmNoRecentPollIntervals,
+                       "No game polls in the last 5 seconds.")
 XE_LOCALIZATION_STRING(kKbmEmaTau, "Smoothing time constant (ms)")
 XE_LOCALIZATION_STRING(
     kKbmProcessingHelp,

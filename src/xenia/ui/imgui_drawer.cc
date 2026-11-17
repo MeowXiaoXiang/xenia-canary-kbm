@@ -74,7 +74,7 @@ ImGuiDrawer::ImGuiDrawer(xe::ui::Window* window, size_t z_order)
 
 ImGuiDrawer::~ImGuiDrawer() {
   SetPresenter(nullptr);
-  if (!dialogs_.empty()) {
+  if (dialog_input_listener_attached_) {
     window_->RemoveInputListener(this);
     if (internal_state_) {
       ImGui::SetCurrentContext(internal_state_);
@@ -102,6 +102,7 @@ void ImGuiDrawer::AddDialog(ImGuiDialog* dialog) {
     // a dialog's Draw function, re-registering the ImGuiDrawer may result in
     // ImGui being drawn multiple times in the current frame.
     window_->AddInputListener(this, z_order_);
+    dialog_input_listener_attached_ = true;
     if (presenter_) {
       presenter_->AddUIDrawerFromUIThread(this, z_order_);
     }
@@ -155,6 +156,16 @@ void ImGuiDrawer::RemoveNotification(ImGuiNotification* dialog) {
   }
   notifications_.erase(it);
   DetachIfLastWindowRemoved();
+}
+
+void ImGuiDrawer::SetPassiveOverlay(std::function<void()> draw) {
+  const bool had_overlay = HasPassiveOverlay();
+  passive_overlay_ = std::move(draw);
+  if (HasPassiveOverlay() && !had_overlay && presenter_) {
+    presenter_->AddUIDrawerFromUIThread(this, z_order_);
+  } else if (had_overlay && !HasPassiveOverlay()) {
+    DetachIfLastWindowRemoved();
+  }
 }
 
 #ifdef XE_PLATFORM_LINUX
@@ -668,14 +679,13 @@ void ImGuiDrawer::SetPresenter(Presenter* new_presenter) {
     if (presenter_ == new_presenter) {
       return;
     }
-    if (!dialogs_.empty()) {
+    if (HasDrawables()) {
       presenter_->RemoveUIDrawerFromUIThread(this);
     }
-    ImGuiIO& io = GetIO();
   }
   presenter_ = new_presenter;
   if (presenter_) {
-    if (!dialogs_.empty()) {
+    if (HasDrawables()) {
       presenter_->AddUIDrawerFromUIThread(this, z_order_);
     }
   }
@@ -719,7 +729,7 @@ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
     return;
   }
 
-  if (dialogs_.empty() && notifications_.empty()) {
+  if (!HasDrawables()) {
     return;
   }
 
@@ -756,6 +766,10 @@ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
     dialogs_[dialog_loop_next_index_++]->Draw();
   }
   dialog_loop_next_index_ = SIZE_MAX;
+
+  if (passive_overlay_) {
+    passive_overlay_();
+  }
 
   if (!notifications_.empty() && are_notifications_enabled_) {
     auto guest_notifications =
@@ -1033,18 +1047,17 @@ void ImGuiDrawer::DetachIfLastWindowRemoved() {
   // only dialog, then adding a dialog, from within a dialog's Draw function,
   // re-registering the ImGuiDrawer may result in ImGui being drawn multiple
   // times in the current frame.
-  if (!dialogs_.empty() || !notifications_.empty() || IsDrawingDialogs()) {
+  if (!dialogs_.empty() || IsDrawingDialogs()) {
     return;
   }
-  if (presenter_) {
+  if (presenter_ && !HasDrawables()) {
     presenter_->RemoveUIDrawerFromUIThread(this);
   }
-  window_->RemoveInputListener(this);
-  // Clear all input since no input will be received anymore, and when the
-  // drawer becomes active again, it'd have an outdated input state otherwise
-  // which will be persistent until new events actualize individual input
-  // properties.
-  ClearInput();
+  if (dialog_input_listener_attached_) {
+    window_->RemoveInputListener(this);
+    dialog_input_listener_attached_ = false;
+    ClearInput();
+  }
 }
 
 void ImGuiDrawer::UpdateGamepads() {
