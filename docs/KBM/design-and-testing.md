@@ -114,7 +114,7 @@ reports expose truncation counts. Keep both files when sharing a new capture.
 Manual gameplay checks and diagnostic captures included **Gears of War 2**,
 **Gears of War 3**, and **Gears of War: Judgment**. The trial compared Direct,
 Fixed 8 ms and EMA 8 ms in each title. Fixed 16 ms was also tried in Gears of
-War 3. The EMA 4 ms starting point comes from replay comparisons. KBM applies
+War 3. Gameplay feedback favored 8 ms over 4 ms for the EMA default. KBM applies
 the same input rules in every title.
 
 ### What the fixed window changes
@@ -161,9 +161,9 @@ in six trials where 8 ms mouse reports consistently fell outside the window.
 | **Fixed 16 ms** | **1.7** | **16** | **19** |
 | Fixed 24 ms | 1.2 | 18 | 27 |
 | EMA 2 ms | 3.4 | 10 | 17 |
-| **EMA 4 ms** | **3.0** | **10** | **26** |
+| EMA 4 ms | 3.0 | 10 | 26 |
 | EMA 6 ms | 2.6 | 10 | 34 |
-| EMA 8 ms | 2.2 | 11 | 42 |
+| **EMA 8 ms** | **2.2** | **11** | **42** |
 | EMA 12 ms | 1.7 | 16 | 53 |
 | Direct | 3.5 | 10 | 11 |
 
@@ -260,7 +260,7 @@ verify native Windows event ordering or a game's camera response.
 | Capture hotkey binding | Start capturing the hotkey, click a mouse button, then press a keyboard key or chord. | Mouse buttons do not finish the hotkey capture; the supported keyboard input does. Regular controller bindings still accept mouse buttons. |
 | Unsupported binding key | While capturing a controller binding, press an unsupported key, then a supported key. | Capture keeps waiting after the unsupported key; the original binding is not silently cleared. |
 | Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Draft edits affect preview only; cancellation retains the last successfully activated settings. |
-| Processing defaults and stability | Start with a fresh configuration. Open the processing menu, switch modes, save and reopen. Then restore defaults. | The menu lists Fixed window, EMA smoothing and Direct in that order. Fixed is selected at 16 ms and EMA starts at 4 ms. Switching preserves each time setting. Restoring defaults changes the draft until saved. |
+| Processing defaults and stability | Start with a fresh configuration. Open the processing menu, switch modes, save and reopen. Then restore defaults. | The menu lists Fixed window, EMA smoothing and Direct in that order. Fixed is selected at 16 ms and EMA starts at 8 ms. Switching preserves each time setting. Restoring defaults changes the draft until saved. |
 | Live preview | Start a test before loading a game; move, stop, reset the peak, and change tuning. | Output updates without guest polls; stopping returns to zero, and reset or tuning changes clear the peak. |
 | Preview capture | Test Escape, Enter, Space, focus loss, binding capture and dialog closure. | Cursor is released; returning focus does not restart preview, and the gameplay F8 request is preserved. |
 | Incompatible configuration | Open a v3 or unknown-version file; cancel, reopen, restore defaults and save. | No old fields load; save actions require confirmed Restore all defaults. Cancel preserves the file; successful Save replaces it with v4 without a backup. |

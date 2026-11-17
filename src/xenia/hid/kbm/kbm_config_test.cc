@@ -127,7 +127,7 @@ TEST_CASE("Earlier grouped v4 configs default missing processing fields",
   const auto loaded = GetSettingsFromCvars();
   REQUIRE(loaded.mouse_processing.mode == KbmMouseMode::kFixedWindow);
   REQUIRE(loaded.mouse_processing.fixed_window_ms == 16.0);
-  REQUIRE(loaded.mouse_processing.ema_tau_ms == 4.0);
+  REQUIRE(loaded.mouse_processing.ema_tau_ms == 8.0);
   REQUIRE(loaded.keybind_a == "Key.G");
   REQUIRE(loaded.raw_mouse_dpi == 3200);
   REQUIRE(ReadFile(ConfigPath()) == older);
@@ -323,7 +323,7 @@ TEST_CASE("Non-finite KBM tuning values normalize to safe defaults", "[kbm]") {
   REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s ==
           defaults.raw_mouse_full_stick_speed_cm_s);
   REQUIRE(normalized.mouse_processing.fixed_window_ms == 16.0);
-  REQUIRE(normalized.mouse_processing.ema_tau_ms == 4.0);
+  REQUIRE(normalized.mouse_processing.ema_tau_ms == 8.0);
 }
 
 namespace {

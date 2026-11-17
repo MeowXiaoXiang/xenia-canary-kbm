@@ -172,8 +172,7 @@ TEST_CASE("EMA uses actual time, reverses, and clears at the stop gates",
   KbmMouseProcessor mouse;
   KbmMouseSettings settings;
   settings.processing.mode = KbmMouseMode::kEma;
-  REQUIRE(settings.processing.ema_tau_ms == 4.0);
-  settings.processing.ema_tau_ms = 8.0;
+  REQUIRE(settings.processing.ema_tau_ms == 8.0);
   settings.deadzone_compensation = GENERATE(false, true);
   REQUIRE(mouse.Configure(settings.processing, now));
   mouse.Consume(settings, true, now + 1ms);

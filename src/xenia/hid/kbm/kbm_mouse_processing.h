@@ -21,7 +21,7 @@ enum class KbmMouseMode { kFixedWindow, kEma, kDirect };
 
 inline constexpr KbmMouseMode kDefaultMouseMode = KbmMouseMode::kFixedWindow;
 inline constexpr double kDefaultFixedWindowMs = 16.0;
-inline constexpr double kDefaultEmaTauMs = 4.0;
+inline constexpr double kDefaultEmaTauMs = 8.0;
 inline constexpr double kMinFixedWindowMs = 4.0;
 inline constexpr double kMaxFixedWindowMs = 24.0;
 inline constexpr double kMinEmaTauMs = 2.0;
