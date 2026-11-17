@@ -209,6 +209,14 @@ KbmInputDriver::Diagnostics KbmInputDriver::GetDiagnostics() const {
   return diagnostics;
 }
 
+void KbmInputDriver::CopyRecentGamePollIntervals(
+    std::vector<double>& intervals) {
+  intervals.clear();
+  intervals.reserve(KbmPollHistory::kCapacity);
+  auto settings_lock = settings_critical_region_.Acquire();
+  poll_history_.CopyRecent(KbmPollHistory::Clock::now(), intervals);
+}
+
 bool KbmInputDriver::StartInputSampling() {
   // Starting from the settings dialog gives replay a clean estimator history.
   if (!host_input_suspended_) {
@@ -441,6 +449,16 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
 
   InputSample input_sample;
   input_sample.time = std::chrono::steady_clock::now();
+  if (last_game_poll_) {
+    const auto interval = input_sample.time - *last_game_poll_;
+    if (interval > std::chrono::milliseconds::zero() &&
+        interval <= std::chrono::milliseconds(100)) {
+      poll_history_.Record(
+          input_sample.time,
+          std::chrono::duration<double, std::milli>(interval).count());
+    }
+  }
+  last_game_poll_ = input_sample.time;
   input_sample.capture_active = platform_input_.capture_active();
   input_sample.input_suspended = host_input_suspended_;
   if (settings.raw_mouse && platform_input_.raw_mouse_registered() &&

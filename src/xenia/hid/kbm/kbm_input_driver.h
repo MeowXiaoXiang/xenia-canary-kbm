@@ -24,6 +24,7 @@
 #include "xenia/hid/kbm/kbm_mouse_preview.h"
 #include "xenia/hid/kbm/kbm_mouse_processor.h"
 #include "xenia/hid/kbm/kbm_platform_input.h"
+#include "xenia/hid/kbm/kbm_poll_history.h"
 #include "xenia/hid/keyboard/keyboard_input_driver.h"
 #include "xenia/ui/virtual_key.h"
 
@@ -73,6 +74,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   KbmSettings GetSettings() const;
   void ApplySettings(const KbmSettings& settings);
   Diagnostics GetDiagnostics() const;
+  void CopyRecentGamePollIntervals(std::vector<double>& intervals);
   void SetHostInputSuspended(bool suspended);
   void BeginBindingCapture(bool allow_mouse = true);
   BindingCaptureResult ConsumeBindingCaptureResult();
@@ -150,6 +152,8 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   KbmInputState input_state_;
   std::deque<X_INPUT_KEYSTROKE> controller_keystrokes_;
   KbmSettings settings_;
+  KbmPollHistory poll_history_;
+  std::optional<KbmPollHistory::Clock::time_point> last_game_poll_;
   KbmPlatformInput platform_input_;
   // Couples motion arrival, bucket consumption and reset. Never acquire the
   // settings lock while holding this lock.

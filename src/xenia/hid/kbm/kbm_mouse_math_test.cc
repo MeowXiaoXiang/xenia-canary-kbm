@@ -16,10 +16,35 @@
 
 #include <limits>
 #include "xenia/hid/kbm/kbm_mouse_preview.h"
+#include "xenia/hid/kbm/kbm_poll_history.h"
 
 #include "third_party/catch/single_include/catch2/catch.hpp"
 
 namespace xe::hid::kbm {
+
+TEST_CASE("Recent KBM poll history expires and overwrites old intervals",
+          "[kbm]") {
+  using namespace std::chrono_literals;
+  KbmPollHistory history;
+  const KbmPollHistory::Clock::time_point start{};
+  for (size_t i = 0; i <= KbmPollHistory::kCapacity; ++i) {
+    history.Record(start + i * 1ms, double(i));
+  }
+  std::vector<double> snapshot;
+  history.CopyRecent(start + 2s, snapshot);
+  REQUIRE(snapshot.size() == KbmPollHistory::kCapacity);
+  REQUIRE(snapshot.front() == KbmPollHistory::kCapacity);
+  REQUIRE(snapshot.back() == 1.0);
+
+  snapshot.clear();
+  history.CopyRecent(start + 6024ms, snapshot);
+  REQUIRE(snapshot.size() == 1);
+  REQUIRE(snapshot.front() == KbmPollHistory::kCapacity);
+
+  snapshot.clear();
+  history.CopyRecent(start + 6025ms, snapshot);
+  REQUIRE(snapshot.empty());
+}
 
 TEST_CASE("Physical mapping preserves radial direction and speed units",
           "[kbm]") {
