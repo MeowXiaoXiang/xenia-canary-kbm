@@ -203,7 +203,7 @@ def processing_parameters(metadata):
     window = float(metadata["fixed_window_ms"])
     tau = float(metadata["ema_tau_ms"])
     if (mode not in ("direct", "fixed_window", "ema") or
-            not (4 <= window <= 24 and 2 <= tau <= 12) or
+            not (4 <= window <= 24 and 2 <= tau <= 32) or
             not (window * 2).is_integer() or not (tau * 2).is_integer()):
         raise ValueError("invalid KBM processing mode or duration")
     return mode, window, tau

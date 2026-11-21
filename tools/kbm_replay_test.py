@@ -65,9 +65,9 @@ class PhysicalReplayTests(unittest.TestCase):
 
     def test_schema_four_accepts_new_processing_limits(self):
         metadata = {"processing_mode": "ema", "fixed_window_ms": "24",
-                    "ema_tau_ms": "12"}
-        self.assertEqual(processing_parameters(metadata), ("ema", 24, 12))
-        for key, invalid in (("fixed_window_ms", "24.5"), ("ema_tau_ms", "12.5")):
+                    "ema_tau_ms": "32"}
+        self.assertEqual(processing_parameters(metadata), ("ema", 24, 32))
+        for key, invalid in (("fixed_window_ms", "24.5"), ("ema_tau_ms", "32.5")):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 processing_parameters({**metadata, key: invalid})
 

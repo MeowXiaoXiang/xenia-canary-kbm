@@ -72,7 +72,7 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   const bool saved_old_defaults = saved_mode == KbmMouseMode::kFixedWindow;
   saved_settings.mouse_processing =
       saved_old_defaults ? KbmMouseProcessing{saved_mode, 8, 8}
-                         : KbmMouseProcessing{saved_mode, 23.76, 11.76};
+                         : KbmMouseProcessing{saved_mode, 23.76, 31.76};
   ApplySettingsToCvars(saved_settings);
 
   REQUIRE(SaveConfig());
@@ -99,7 +99,7 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   REQUIRE(loaded_settings.mouse_processing.fixed_window_ms ==
           (saved_old_defaults ? 8.0 : 24.0));
   REQUIRE(loaded_settings.mouse_processing.ema_tau_ms ==
-          (saved_old_defaults ? 8.0 : 12.0));
+          (saved_old_defaults ? 8.0 : 32.0));
 }
 
 TEST_CASE("Earlier grouped v4 configs default missing processing fields",

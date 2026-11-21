@@ -14,7 +14,7 @@ from kbm_replay import (PhysicalEstimator, analyze, load_report, map_physical,
 MODE_PARAMETERS = [
     ("direct", 8, 8),
     *(("fixed_window", w, 4) for w in (4, 8, 12, 16, 24)),
-    *(("ema", 16, tau) for tau in (2, 4, 6, 8, 12)),
+    *(("ema", 16, tau) for tau in (2, 4, 6, 8, 12, 24, 32)),
 ]
 
 # Rounding two signed stick axes contributes at most about 0.00216 points.
