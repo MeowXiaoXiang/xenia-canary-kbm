@@ -327,9 +327,26 @@ TEST_CASE("Failed KBM replacement preserves the previous saved file", "[kbm]") {
   CloseHandle(held);
   REQUIRE_FALSE(written);
   REQUIRE(ReadFile(ConfigPath()) == saved);
-  auto temporary = ConfigPath();
-  temporary += ".tmp";
-  REQUIRE_FALSE(std::filesystem::exists(temporary));
+  for (const auto& entry :
+       std::filesystem::directory_iterator(directory.path())) {
+    REQUIRE(entry.path() == ConfigPath());
+  }
+}
+
+TEST_CASE("A leftover KBM temporary file does not block the next save",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  const auto leftover = directory.path() / "kbm.toml.tmp";
+  std::ofstream(leftover) << "abandoned draft";
+
+  KbmSettings draft;
+  draft.overlay.enabled = true;
+  REQUIRE(SaveConfig(draft));
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  REQUIRE(GetSettingsFromCvars().overlay.enabled);
+  REQUIRE(ReadFile(leftover) == "abandoned draft");
 }
 
 TEST_CASE("Non-finite KBM tuning values normalize to safe defaults", "[kbm]") {
@@ -488,22 +505,25 @@ TEST_CASE("Failed reset publication preserves the incompatible original",
     file << kLegacyV3;
   }
   SetupConfig(directory.path(), false);
-  const auto temporary = directory.path() / "kbm.toml.tmp";
-  {
-    std::ofstream file(temporary);
-    file << "another writer";
-  }
+  const HANDLE held =
+      CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  REQUIRE(held != INVALID_HANDLE_VALUE);
   KbmSettings draft;
   bool activated = false;
-  REQUIRE_FALSE(CommitKbmSettings(
+  const bool written = CommitKbmSettings(
       draft, [](const auto& value) { return SaveConfig(value, true); },
-      [&](const auto&) { activated = true; }));
+      [&](const auto&) { activated = true; });
+  CloseHandle(held);
+  REQUIRE_FALSE(written);
   REQUIRE_FALSE(activated);
   REQUIRE(ReadFile(path) == kLegacyV3);
-  REQUIRE(ReadFile(temporary) == "another writer");
+  for (const auto& entry :
+       std::filesystem::directory_iterator(directory.path())) {
+    REQUIRE(entry.path() == path);
+  }
   REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
   REQUIRE_FALSE(CanSaveKbmConfig(GetConfigState(), false));
-  REQUIRE_FALSE(std::filesystem::exists(directory.path() / "kbm.toml.v3.bak"));
 }
 
 TEST_CASE("Malformed v3 values and unknown versions never partially load",

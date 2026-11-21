@@ -10,6 +10,7 @@
 #include "xenia/hid/kbm/kbm_config.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -143,6 +144,25 @@ bool WriteNewConfigFile(const std::filesystem::path& path,
     return false;
   }
   return true;
+}
+
+std::optional<std::filesystem::path> WriteTemporaryConfigFile(
+    const std::filesystem::path& destination, const std::string& bytes) {
+  static std::atomic<uint64_t> next_sequence{0};
+  for (int attempt = 0; attempt < 32; ++attempt) {
+    auto path = destination;
+    path += fmt::format(".{}.{}.tmp", GetCurrentProcessId(),
+                        next_sequence.fetch_add(1, std::memory_order_relaxed));
+    if (WriteNewConfigFile(path, bytes)) {
+      return path;
+    }
+    const DWORD error = GetLastError();
+    // A previous run may have left a file under a reused process ID.
+    if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS) {
+      break;
+    }
+  }
+  return std::nullopt;
 }
 
 struct KbmConfigEntry {
@@ -468,8 +488,6 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
       return false;
     }
   }
-  auto temporary_path = config_path;
-  temporary_path += ".tmp";
   std::string output =
       "# KBM Controller keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n"
@@ -492,14 +510,14 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
     output += '\n';
   }
 
-  if (!WriteNewConfigFile(temporary_path, output)) {
-    XELOGE("kbm: failed to create configuration temporary file '{}'.",
-           temporary_path);
+  const auto temporary_path = WriteTemporaryConfigFile(config_path, output);
+  if (!temporary_path) {
+    XELOGE("kbm: failed to write a temporary file for '{}'.", config_path);
     return false;
   }
-  if (!MoveFileExW(temporary_path.c_str(), config_path.c_str(),
+  if (!MoveFileExW(temporary_path->c_str(), config_path.c_str(),
                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    DeleteFileW(temporary_path.c_str());
+    DeleteFileW(temporary_path->c_str());
     XELOGE("kbm: failed to replace config '{}'.", config_path);
     return false;
   }
