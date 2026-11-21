@@ -25,34 +25,45 @@ sensitivity, deadzones, acceleration and turn limits can differ by title.
 | Mode | Starting value | Range | What to expect |
 | --- | ---: | --- | --- |
 | **Fixed window** | **16 ms** | 4–24 ms | A longer window keeps more recent movement for steadier slow aim. A shorter window clears old motion sooner and can miss sparse events. |
-| **EMA smoothing** | **8 ms** | 2–12 ms | Increase the time constant for stronger smoothing. The output can take longer to settle after you stop. |
+| **EMA smoothing** | **8 ms** | 2–32 ms | Increase the time constant for stronger smoothing. The output can take longer to settle after you stop. |
 | **Direct** | Uses the game query interval | — | Responds to motion since the previous query. Slow speed can vary more between queries. |
 
-The Fixed window and EMA panels show the latest interval, median, P95 and
-P99 of game polls in the last five seconds, up to 1,024 samples. They update
-while the game keeps polling, including while settings are open. Intervals
-longer than 100 ms are excluded from the statistics.
+The Fixed window panel shows the latest interval, median, P95 and P99 of
+game polls in the last five seconds, up to 1,024 samples. It updates while
+the game keeps polling, including while settings are open. Intervals longer
+than 100 ms are excluded. Coverage is the share of those intervals at or
+below the window length. Movement can still produce stick output when the
+interval is longer than the window.
 
-- **Fixed window coverage** is the share of those intervals at or below the
-  window length. Movement can still produce stick output when a poll
-  interval is longer than the window.
-- **EMA new sample weight** shows how much of an EMA update would come from
-  the new speed estimate at the median interval, using the time constant
-  selected in the settings panel. With an 8 ms median and the default
-  8 ms time constant, the new estimate contributes about 63%.
+Use **Show in-game diagnostics** in Fixed window or EMA mode. The diagnostics
+overlay previews the selected mode, timing and appearance while KBM settings
+are open. If the draft mode or its time setting differs from the active one,
+the preview asks you to save before it shows live data. With matching settings
+and no game running, it displays **Waiting for a game to start**.
 
-Use **Show in-game poll stats** under the polling statistics to see them
-during gameplay. In Direct mode the button appears below the mode selector.
-The overlay appears immediately while KBM settings are open, and the
-adjacent menu previews any corner as soon as it is selected. Before launching
-a game, the preview displays **Waiting for game polls**. During gameplay the
-top line shows the active mode and time setting, with coverage for Fixed
-window or the new sample weight at the median interval for EMA aligned on
-the right. The latest interval, median, P95 and P99 sit in fixed-width cells
-below and refresh every half second. The overlay starts off each time Xenia
-launches, with the lower right selected.
-Enabling it can move presentation to the UI thread on configurations that
-otherwise present directly from the guest output thread.
+- **Fixed window** shows the active window length, coverage, latest game
+  query interval, median, P95 and P99. Values refresh every half second.
+- **EMA** plots up to five seconds of raw and smoothed speed, capped at
+  4,096 samples. The chart refreshes up to 30 times per second, using the
+  configured DPI and a shared cm/s scale. Each valid EMA update during mouse
+  capture supplies one sample, including updates with zero movement. The
+  readouts show the latest speeds and the new sample's weight.
+  The dashed guides and their colored numbers mark the two latest speeds.
+  The shared vertical axis starts at 0 and has a minimum upper limit of
+  2 cm/s. Higher speeds in the last five seconds raise that limit.
+  When you stop moving and game queries continue, the speeds return to zero
+  while earlier motion scrolls out of the chart.
+  Use **Diagnostics overlay transparency** in the EMA settings to adjust the
+  background.
+- **Direct** hides the overlay. Switching back to Fixed window or EMA
+  restores the saved overlay preferences.
+
+The overlay defaults to off, in the lower-right corner, with 54% EMA
+background transparency. Changes preview immediately in KBM settings. Save
+to keep them across launches, or cancel to restore the saved values. The
+three preferences are stored under `[HID.KBM.Diagnostics]` in `kbm.toml`.
+Enabling the overlay can move presentation to the UI thread on
+configurations that otherwise present directly from the guest output thread.
 
 The two time controls use 0.5 ms steps and remember their values separately.
 New or reset settings use the values in the table. Explicit values saved in

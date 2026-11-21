@@ -33,8 +33,8 @@ general hardware controllers or `--hid=keyboard` for keyboard passthrough.
   in a live preview before saving.
 - Choose Fixed window, EMA smoothing or Direct. See the
   [tuning guide](docs/KBM/tuning.md#choose-a-processing-mode) for when to use each.
-- Record input diagnostics for replay. The settings window supports English
-  and Traditional Chinese.
+- View in-game diagnostics or record input for replay. The settings window
+  supports English and Traditional Chinese.
 
 ## Building
 

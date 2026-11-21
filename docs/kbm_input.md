@@ -83,6 +83,11 @@ can restore capture if it was requested. Host dialogs pause gameplay input.
 If capture feels stuck after leaving an overlay, release it, focus Xenia,
 then capture again.
 
+## In-game diagnostics
+
+See [Show in-game diagnostics](KBM/tuning.md#choose-a-processing-mode) to
+display the Fixed window statistics or the EMA chart while you play.
+
 ## Input sampling diagnostics
 
 1. In **Advanced and diagnostics**, choose **Record 60-second diagnostics**.
@@ -93,7 +98,8 @@ then capture again.
    **Stop and save report** saves the recording so far. **Cancel sampling**
    discards an active recording.
 3. Keep the report and its matching `.events.csv` file together. Both are
-   saved beside `kbm.toml`.
+   saved beside `kbm.toml` and include the game name and title ID when
+   available at the start of recording.
 
 The report measures controller input and output. See the
 [replay tools](KBM/design-and-testing.md#replay-tools) to check a recording

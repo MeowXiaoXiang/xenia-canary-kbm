@@ -84,8 +84,11 @@ in Xenia's main configuration belong to the separate keyboard driver.
 ## Input report format
 
 Each report includes the per-poll Raw Input delta, the estimated velocity
-passed to the stick mapper, mouse right-stick output, game input polling
-interval, capture state, and reset, stale or dropped sample counts.
+passed to the stick mapper, mouse right-stick output, sample timing, capture
+state, and reset, stale or dropped sample counts. `interval_ms` is the time
+since the mouse processor last advanced or was reset. If a poll does not run
+the mouse processor, such as during preview capture, this field is zero. The
+Fixed window panel uses a separate history of intervals between game queries.
 Schema 4 identifies `mapper=physical_linear_radial`, `processing_mode`,
 `fixed_window_ms`, and `ema_tau_ms` in its metadata. Reports are published
 after recording ends.
@@ -95,13 +98,17 @@ minimum output, and Y inversion when recording starts. These are active gameplay
 settings, not an unsaved preview draft or detected mouse hardware values.
 The report does not contain a complete copy of `kbm.toml` or the button bindings.
 
-New reports include a matching `kbm-input-report-<timestamp>.events.csv`.
+Recording snapshots the game name and title ID at the start. The writer uses
+those values and a timestamp to name the files. It shortens the filename if
+necessary to fit the output path. The matching event file uses the same
+filename stem and ends in `.events.csv`.
 The sidecar contains recorded Raw Input events, reset markers, and the initial
 bucket state. Replay also supports sidecars from schemas 2 and 3.
 The timestamps describe host processing, not hardware sampling. Event sequence
 numbers associate poll buckets with the event trace. The poll report is published
 last and marks a completed pair; a sidecar alone is not a complete report.
-Activating changed KBM settings finishes the current capture so its metadata stays valid.
+Applying changes to gameplay input finishes the current recording so its
+metadata stays valid.
 
 Skip all leading `#` metadata comments when importing. Schema 3 records the
 physical Direct estimator. Schema 2 retains its legacy EMA interpretation.
@@ -151,7 +158,7 @@ trials that produced the corresponding output. Fixed 4 ms missed all motion
 in six trials where 8 ms mouse reports consistently fell outside the window.
 
 <details>
-<summary>Full synthetic comparison (11 mode and time combinations)</summary>
+<summary>Full synthetic comparison (13 mode and time combinations)</summary>
 
 | Mode | Slow output span (percentage points) | First reverse output (ms) | Stop to zero (ms) |
 | --- | ---: | ---: | ---: |
@@ -165,6 +172,8 @@ in six trials where 8 ms mouse reports consistently fell outside the window.
 | EMA 6 ms | 2.6 | 10 | 34 |
 | **EMA 8 ms** | **2.2** | **11** | **42** |
 | EMA 12 ms | 1.7 | 16 | 53 |
+| EMA 24 ms | 1.4 | 24 | 53 |
+| EMA 32 ms | 1.6 | 26 | 53 |
 | Direct | 3.5 | 10 | 11 |
 
 </details>
@@ -197,7 +206,7 @@ python -B tools/kbm_estimator_probe.py
   conclusions. For schema 4, check the reconstructed stick output as well.
   Record again if either stream was truncated.
 - [`kbm_compare_modes.py`](../../tools/kbm_compare_modes.py) compares Direct,
-  Fixed 4/8/12/16/24 ms and EMA 2/4/6/8/12 ms from the same physical-mapping
+  Fixed 4/8/12/16/24 ms and EMA 2/4/6/8/12/24/32 ms from the same physical-mapping
   capture (schema 3 or 4). For schema 4, it also requires the replayed stick
   output to match the recorded output within 0.003 percentage points.
   This tolerance allows for rounding the two stick axes. The tool takes the
@@ -261,7 +270,9 @@ verify native Windows event ordering or a game's camera response.
 | Unsupported binding key | While capturing a controller binding, press an unsupported key, then a supported key. | Capture keeps waiting after the unsupported key; the original binding is not silently cleared. |
 | Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Draft edits affect preview only; cancellation retains the last successfully activated settings. |
 | Processing defaults and stability | Start with a fresh configuration. Open the processing menu, switch modes, save and reopen. Then restore defaults. | The menu lists Fixed window, EMA smoothing and Direct in that order. Fixed is selected at 16 ms and EMA starts at 8 ms. Switching preserves each time setting. Restoring defaults changes the draft until saved. |
-| Poll statistics overlay | Before launching a game, turn on the overlay from KBM settings and select each corner. Close settings, launch a game, and repeat in Fixed window and EMA. | The preview appears immediately and follows the selected corner. In-game values refresh while polling continues. The overlay shows coverage in Fixed window and the median-interval sample weight in EMA. Gameplay input resumes when settings close. The overlay starts disabled after a restart. |
+| Diagnostics overlay | Before launching a game, enable the overlay and select each corner. Launch a game and switch between Fixed window, EMA and Direct in the draft. Change each timing setting and save. Move the mouse, then stop for at least five seconds. | The preview follows draft mode, timing and corner. With unapplied mode or timing, it asks to save for live data. Fixed window shows query intervals and coverage. EMA plots raw and smoothed speeds. The live values return to zero as the earlier movement scrolls out of the chart. Direct hides the overlay and switching back restores it. Gameplay input resumes when settings close. |
+| Overlay preferences | Change visibility, corner and EMA background transparency, then cancel. Change them again, save, and restart into a game without opening KBM settings. | Cancel restores the saved preferences. The next launch uses the newly saved preferences. |
+| High EMA time constants | Compare 8, 24 and 32 ms in the same scene with slow tracking, a fast move followed by a stop, and a reversal. Record actual FPS and the query intervals when testing different frame rates. | Replay accepts the 32 ms capture. Compare the timing of the stick commands with the observed camera response. |
 | Live preview | Start a test before loading a game; move, stop, reset the peak, and change tuning. | Output updates without guest polls; stopping returns to zero, and reset or tuning changes clear the peak. |
 | Preview capture | Test Escape, Enter, Space, focus loss, binding capture and dialog closure. | Cursor is released; returning focus does not restart preview, and the gameplay F8 request is preserved. |
 | Incompatible configuration | Open a v3 or unknown-version file; cancel, reopen, restore defaults and save. | No old fields load; save actions require confirmed Restore all defaults. Cancel preserves the file; successful Save replaces it with v4 without a backup. |
