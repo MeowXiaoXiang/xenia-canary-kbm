@@ -11,10 +11,12 @@
 #define XENIA_HID_KBM_KBM_INPUT_SAMPLING_H_
 
 #include <condition_variable>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 
 #include "xenia/hid/kbm/kbm_input_report.h"
@@ -26,6 +28,8 @@ struct KbmInputSamplingReport {
   std::vector<KbmRawInputSample> events;
   KbmInputReportSettings settings;
   std::filesystem::path directory;
+  std::string title_name;
+  uint32_t title_id = 0;
   std::chrono::steady_clock::time_point started;
   size_t dropped_samples = 0;
   size_t dropped_events = 0;

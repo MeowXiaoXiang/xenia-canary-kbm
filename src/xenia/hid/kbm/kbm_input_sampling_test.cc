@@ -18,8 +18,10 @@
 #include "xenia/base/platform.h"
 
 #if XE_PLATFORM_WIN32
+#include "xenia/base/filesystem.h"
 #include "xenia/base/mutex.h"
 #include "xenia/base/platform_win.h"
+#include "xenia/base/string.h"
 #include "xenia/hid/kbm/kbm_input_report_writer_win.h"
 #endif
 
@@ -446,6 +448,51 @@ TEST_CASE(
   REQUIRE(first.success);
   REQUIRE(second.success);
   REQUIRE(first.report_path != second.report_path);
+}
+
+TEST_CASE(
+    "Published report names include safe title information when available",
+    "[kbm][sampling]") {
+  ReportDirectory directory;
+  KbmInputSamplingReport report;
+  report.directory = directory.path;
+  report.started = Clock::now();
+  report.title_id = 0x4D5308AB;
+  report.title_name = " Gears of War 3: /?* ";
+  std::string expected_prefix = "kbm-input-report-gears-of-war-3-4D5308AB-";
+  SECTION("Fallback to the ID if the title contains only invalid characters") {
+    report.title_name = "../?*";
+    expected_prefix = "kbm-input-report-4D5308AB-";
+  }
+  SECTION("Fallback to the ID if the title is malformed UTF-8") {
+    report.title_name = "\xFF";
+    expected_prefix = "kbm-input-report-4D5308AB-";
+  }
+  SECTION("Preserve a Unicode title when its ID is unavailable") {
+    report.title_name = xe::to_utf8(u"\u6230\u722d\u6a5f\u5668");
+    report.title_id = 0;
+    expected_prefix = "kbm-input-report-" + report.title_name + "-";
+  }
+  SECTION("Use the timestamp alone when there is no title information") {
+    report.title_name.clear();
+    report.title_id = 0;
+    expected_prefix = "kbm-input-report-";
+  }
+  const auto result = WriteKbmInputSamplingReport(report);
+  REQUIRE(result.success);
+  auto path = std::filesystem::path(xe::to_utf16(result.report_path));
+  REQUIRE(path.parent_path() == directory.path);
+  const auto filename = xe::path_to_utf8(path.filename());
+  REQUIRE(filename.starts_with(expected_prefix));
+  REQUIRE(filename.ends_with(".csv"));
+  const std::string_view timestamp(
+      filename.data() + expected_prefix.size(),
+      filename.size() - expected_prefix.size() - 4);
+  REQUIRE_FALSE(timestamp.empty());
+  REQUIRE(timestamp.find_first_not_of("0123456789") == std::string_view::npos);
+  REQUIRE(std::filesystem::is_regular_file(path));
+  REQUIRE(
+      std::filesystem::is_regular_file(path.replace_extension(".events.csv")));
 }
 
 TEST_CASE(

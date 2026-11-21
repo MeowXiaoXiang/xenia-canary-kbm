@@ -14,9 +14,11 @@
 #include <utility>
 
 #include "third_party/fmt/include/fmt/format.h"
+#include "third_party/utfcpp/source/utf8.h"
 #include "xenia/base/filesystem.h"
 #include "xenia/base/logging.h"
 #include "xenia/base/platform_win.h"
+#include "xenia/base/string.h"
 
 namespace xe::hid::kbm {
 namespace {
@@ -77,6 +79,38 @@ class OwnedFile {
   bool owned_ = false;
 };
 
+std::u16string MakeTitleFilenameSegment(std::string_view title_name) {
+  if (!::utf8::is_valid(title_name.begin(), title_name.end())) {
+    return {};
+  }
+  constexpr size_t max_length = 48;
+  std::u16string name;
+  for (char16_t ch : xe::to_utf16(title_name)) {
+    if (name.size() == max_length) {
+      break;
+    }
+    if (ch <= u' ' || std::u16string_view(u"<>:\"/\\|?*").find(ch) !=
+                          std::u16string_view::npos) {
+      ch = u'-';
+    } else if (ch >= u'A' && ch <= u'Z') {
+      ch += u'a' - u'A';
+    }
+    if ((ch == u'-' || ch == u'.') && name.empty()) {
+      continue;
+    }
+    if (ch != u'-' || name.back() != u'-') {
+      name.push_back(ch);
+    }
+  }
+  if (!name.empty() && name.back() >= 0xD800 && name.back() <= 0xDBFF) {
+    name.pop_back();
+  }
+  while (!name.empty() && (name.back() == u'-' || name.back() == u'.')) {
+    name.pop_back();
+  }
+  return name;
+}
+
 }  // namespace
 
 KbmInputReportWriteResult WriteKbmInputSamplingReportFiles(
@@ -129,8 +163,24 @@ KbmInputReportWriteResult WriteKbmInputSamplingReport(
                          .count();
     timestamp = std::max<int64_t>(now, previous + 1);
   } while (!last_timestamp.compare_exchange_weak(previous, timestamp));
-  const auto path =
-      report.directory / fmt::format("kbm-input-report-{}.csv", timestamp);
+  const std::u16string prefix = u"kbm-input-report-";
+  const auto title_id =
+      report.title_id ? xe::to_utf16(fmt::format("{:08X}-", report.title_id))
+                      : std::u16string{};
+  const auto suffix = xe::to_utf16(fmt::format("{}.csv", timestamp));
+  auto title_name = MakeTitleFilenameSegment(report.title_name);
+  if (!title_name.empty()) {
+    title_name += u'-';
+  }
+  auto path = report.directory / (prefix + title_name + title_id + suffix);
+  // Keep room for the sidecar's temporary extension on Windows.
+  constexpr size_t max_poll_path = MAX_PATH - sizeof(".events.tmp");
+  if (path.native().size() > max_poll_path) {
+    path = report.directory / (prefix + title_id + suffix);
+    if (path.native().size() > max_poll_path) {
+      path = report.directory / (prefix + suffix);
+    }
+  }
   auto result = WriteKbmInputSamplingReportFiles(report, path);
   if (result.success) {
     XELOGI("kbm: saved input sampling report '{}'.", path);

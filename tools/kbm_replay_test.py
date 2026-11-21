@@ -30,10 +30,10 @@ class PhysicalReplayTests(unittest.TestCase):
             "2,1,0,0,0\n0,2,10,0,0\n0,3,1,0,0\n", encoding="utf-8")
         return path
 
-    def schema_four_report(self, directory, mode, velocities):
-        path = Path(directory) / "report.csv"
+    def schema_four_report(self, directory, mode, velocities, tau=8, filename="report.csv"):
+        path = Path(directory) / filename
         data = (
-            f"# schema=4, processing_mode={mode}, fixed_window_ms=8, ema_tau_ms=8\n"
+            f"# schema=4, processing_mode={mode}, fixed_window_ms=8, ema_tau_ms={tau}\n"
             "# mapper=physical_linear_radial, dpi=800, full_stick_speed_cm_s=10\n"
             "# deadzone_compensation=false, minimum_response=0.3, invert_y=false\n"
             "# samples=6, events=2, dropped_samples=0, dropped_events=0\n"
@@ -70,6 +70,19 @@ class PhysicalReplayTests(unittest.TestCase):
         for key, invalid in (("fixed_window_ms", "24.5"), ("ema_tau_ms", "32.5")):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 processing_parameters({**metadata, key: invalid})
+
+    def test_named_schema_four_report_replays_ema_at_32_ms(self):
+        initial = 1000 * -math.expm1(-8 / 32)
+        velocities = tuple(initial * math.exp(-dt / 32) for dt in (0, 5, 8, 12))
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.schema_four_report(
+                directory, "ema", velocities, tau=32,
+                filename="kbm-input-report-gears-of-war-3-4D5308AB-123.csv")
+            result = analyze(path)
+            self.assertEqual(result["ema_tau_ms"], 32)
+            self.assertEqual(result["event_bucket_check"]["bucket_mismatches"], 0)
+            self.assertAlmostEqual(result["replay_velocity_error_cps_p99"], 0)
+            self.assertLess(result["replay_output_error_percentage_points_max"], .003)
 
     def test_schema_four_reconstructs_each_processor(self):
         alpha = -math.expm1(-1)

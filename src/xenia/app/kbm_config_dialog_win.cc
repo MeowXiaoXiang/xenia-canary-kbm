@@ -855,7 +855,11 @@ bool KbmConfigDialog::DrawDiagnostics() {
     ImGui::EndDisabled();
     if (start && (!save_first || SaveDraft())) {
       StopCapture();
-      sampling_failed_ = !driver->StartInputSampling();
+      const auto* emulator = emulator_window_.emulator();
+      sampling_failed_ = emulator->is_title_open()
+                             ? !driver->StartInputSampling(
+                                   emulator->title_name(), emulator->title_id())
+                             : !driver->StartInputSampling();
       close = !sampling_failed_;
     }
     ImGui::TextWrapped("%s", Tr(StringId::kKbmInputSamplingHelp));

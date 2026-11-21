@@ -81,7 +81,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void CancelBindingCapture();
   void SetCaptureStateCallback(CaptureStateCallback callback);
   void RefreshRawMouseCapture();
-  bool StartInputSampling();
+  bool StartInputSampling(std::string title_name = {}, uint32_t title_id = 0);
   // Stop hands off a snapshot; completion is reported by
   // GetInputSamplingStatus.
   bool StopInputSampling();

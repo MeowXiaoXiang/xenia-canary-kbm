@@ -217,7 +217,8 @@ void KbmInputDriver::CopyRecentGamePollIntervals(
   poll_history_.CopyRecent(KbmPollHistory::Clock::now(), intervals);
 }
 
-bool KbmInputDriver::StartInputSampling() {
+bool KbmInputDriver::StartInputSampling(std::string title_name,
+                                        uint32_t title_id) {
   // Starting from the settings dialog gives replay a clean estimator history.
   if (!host_input_suspended_) {
     return false;
@@ -226,6 +227,8 @@ bool KbmInputDriver::StartInputSampling() {
   if (!report) {
     return false;
   }
+  report->title_name = std::move(title_name);
+  report->title_id = title_id;
   bool started;
   {
     auto settings_lock = settings_critical_region_.Acquire();
