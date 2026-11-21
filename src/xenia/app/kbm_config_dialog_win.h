@@ -35,10 +35,11 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
 
  private:
   struct PollStats {
-    bool Refresh(hid::kbm::KbmInputDriver* driver);
+    void Refresh(hid::kbm::KbmInputDriver* driver);
+    void Read(hid::kbm::KbmInputDriver* driver);
     double Percentile(double fraction) const;
     double Coverage(double window_ms) const;
-    void Draw(const hid::kbm::KbmMouseProcessing& processing) const;
+    void Draw(double window_ms) const;
 
     std::vector<double> intervals;
     double next_refresh = 0;
@@ -55,12 +56,13 @@ class KbmConfigDialog final : public ui::ImGuiDialog {
   bool DrawMouseSettings();
   bool DrawProcessingTime();
   void DrawPollHudControls();
+  static void UpdatePollHud(EmulatorWindow& window);
   void DrawPreview(bool visible = true);
   bool DrawCaptureSettings();
   bool DrawBindings();
   bool DrawDiagnostics();
   bool DrawConfirmations();
-  void MarkDraftChanged();
+  void MarkDraftChanged(bool reset_mouse_preview = true);
   bool SaveDraft();
   bool CanSaveDraft() const;
   bool preview_failed_ = false;

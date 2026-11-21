@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <chrono>
 #include <cmath>
 #include <sstream>
 #include <vector>
@@ -30,10 +31,6 @@ using hid::kbm::KbmInputDriver;
 using hid::kbm::KbmMouseMode;
 using localization::StringId;
 const char* Tr(StringId id) { return localization::Get(id); }
-
-double EmaNewSampleWeightPercent(double interval_ms, double tau_ms) {
-  return -100.0 * std::expm1(-interval_ms / tau_ms);
-}
 
 constexpr StringId kMouseModes[] = {StringId::kKbmModeFixedWindow,
                                     StringId::kKbmModeEma,
@@ -83,6 +80,222 @@ float ButtonWidth(StringId label) {
   return ImGui::CalcTextSize(Tr(label)).x +
          ImGui::GetStyle().FramePadding.x * 2;
 }
+
+bool BeginPollHud(int corner, float content_width, float opacity = 0.58f) {
+  const bool right = corner % 2 != 0;
+  const bool bottom = corner >= 2;
+  constexpr float margin = 8;
+  const auto* viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(
+      ImVec2(viewport->WorkPos.x +
+                 (right ? viewport->WorkSize.x - margin : margin),
+             viewport->WorkPos.y +
+                 (bottom ? viewport->WorkSize.y - margin : margin)),
+      ImGuiCond_Always, ImVec2(right ? 1 : 0, bottom ? 1 : 0));
+  const ImVec2 padding(6, 4);
+  const float width =
+      std::clamp(content_width + padding.x * 2 + 1, 1.0f,
+                 std::max(1.0f, viewport->WorkSize.x - margin * 2));
+  ImGui::SetNextWindowSize(ImVec2(width, 0));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+  ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0);
+  ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0, 0, 0, opacity));
+  // Draw above the settings window without capturing input.
+  const bool visible = ImGui::Begin(
+      "###KbmPollHud", nullptr,
+      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs |
+          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoDocking |
+          ImGuiWindowFlags_Tooltip);
+  ImGui::PopStyleColor();
+  ImGui::PopStyleVar(2);
+  return visible;
+}
+
+void DrawPollHudHeading(const std::string& mode, const std::string& detail) {
+  const float row_start = ImGui::GetCursorPosX();
+  const float row_width = ImGui::GetContentRegionAvail().x;
+  ImGui::TextWrapped("%s", mode.c_str());
+  if (detail.empty()) {
+    return;
+  }
+  const float detail_width = ImGui::CalcTextSize(detail.c_str()).x;
+  const float detail_x = row_start + row_width - detail_width;
+  if (ImGui::CalcTextSize(mode.c_str()).x + 12 + detail_width <= row_width) {
+    ImGui::SameLine(detail_x);
+  } else if (detail_width <= row_width) {
+    ImGui::SetCursorPosX(detail_x);
+  }
+  if (detail_width <= row_width) {
+    ImGui::TextUnformatted(detail.c_str());
+  } else {
+    ImGui::TextWrapped("%s", detail.c_str());
+  }
+}
+
+struct EmaHud {
+  using Clock = KbmInputDriver::EmaHudHistory::Clock;
+  static constexpr float kMinimumScaleCmS = 2.0f;
+
+  const KbmInputDriver::EmaHudSample* LatestSample() const {
+    if (samples.empty() ||
+        sampled_at - samples.front().time > std::chrono::milliseconds(500)) {
+      return nullptr;
+    }
+    return &samples.front();
+  }
+
+  void Refresh(KbmInputDriver* driver) {
+    sampled_at = Clock::now();
+    if (driver) {
+      driver->CopyEmaHudSamples(sampled_at, samples);
+    } else {
+      samples.clear();
+    }
+    mode_line = fmt::format("{} {:.1f} ms", Tr(StringId::kKbmModeEma), tau_ms);
+    scale_max = kMinimumScaleCmS;
+    for (const auto& sample : samples) {
+      scale_max = std::max(
+          {scale_max, sample.raw_speed_cm_s, sample.smoothed_speed_cm_s});
+    }
+    scale_max = std::ceil(scale_max);
+    scale_label = fmt::format("{} {:.0f} cm/s",
+                              Tr(StringId::kKbmPollHudEmaScaleMax), scale_max);
+    const auto* latest = LatestSample();
+    weight = fmt::format(
+        "{} {}", Tr(StringId::kKbmPollHudEmaWeight),
+        latest ? fmt::format("{:.1f}%", latest->alpha * 100) : "--");
+    raw_value = latest ? fmt::format("{:.2f}", latest->raw_speed_cm_s) : "--";
+    smoothed_value =
+        latest ? fmt::format("{:.2f}", latest->smoothed_speed_cm_s) : "--";
+    const char* unit = latest ? " cm/s" : "";
+    raw_label = fmt::format("{} {}{}", Tr(StringId::kKbmPollHudEmaRawSpeed),
+                            raw_value, unit);
+    smoothed_label = fmt::format("{} {}{}", Tr(StringId::kKbmPollHudEmaSpeed),
+                                 smoothed_value, unit);
+  }
+
+  void Draw(int corner, StringId no_data, float background_opacity) const {
+    constexpr ImU32 raw_color = IM_COL32(120, 199, 255, 255);
+    constexpr ImU32 smoothed_color = IM_COL32(255, 188, 105, 255);
+    const float font = ImGui::GetFontSize();
+    if (BeginPollHud(corner, font * 26, background_opacity)) {
+      DrawPollHudHeading(mode_line, weight);
+      const ImVec2 top = ImGui::GetCursorScreenPos();
+      const ImVec2 size(std::max(1.0f, ImGui::GetContentRegionAvail().x),
+                        font * 5.5f);
+      const ImVec2 end(top.x + size.x, top.y + size.y);
+      ImGui::Dummy(size);
+
+      auto* draw = ImGui::GetWindowDrawList();
+      draw->PushClipRect(top, end, true);
+      const float label_width =
+          std::max({ImGui::CalcTextSize("0.00").x,
+                    ImGui::CalcTextSize(raw_value.c_str()).x,
+                    ImGui::CalcTextSize(smoothed_value.c_str()).x}) +
+          8;
+      const float plot_left = top.x + std::min(label_width, size.x * 0.4f);
+      const float plot_width = end.x - plot_left;
+      for (int second = 1; second < 5; ++second) {
+        const float x = plot_left + plot_width * second / 5;
+        draw->AddLine(ImVec2(x, top.y), ImVec2(x, end.y),
+                      IM_COL32(255, 255, 255, 28));
+      }
+      const float duration =
+          std::chrono::duration<float>(KbmInputDriver::EmaHudHistory::kDuration)
+              .count();
+      const auto speed_y = [&](float speed) {
+        return end.y - 1 - speed / scale_max * (size.y - 2);
+      };
+      float guide_y[2]{};
+      float label_y[2]{};
+      const auto* latest = LatestSample();
+      if (latest) {
+        guide_y[0] = speed_y(latest->raw_speed_cm_s);
+        guide_y[1] = speed_y(latest->smoothed_speed_cm_s);
+        const float label_top = top.y + font + 4;
+        const float label_bottom = end.y - font;
+        const float label_spacing = font + 2;
+        const int upper = guide_y[0] <= guide_y[1] ? 0 : 1;
+        const int lower = 1 - upper;
+        label_y[upper] = std::clamp(guide_y[upper] - font * 0.5f, label_top,
+                                    label_bottom - label_spacing);
+        label_y[lower] =
+            std::clamp(guide_y[lower] - font * 0.5f,
+                       label_y[upper] + label_spacing, label_bottom);
+
+        const ImU32 guide_color[] = {IM_COL32(120, 199, 255, 208),
+                                     IM_COL32(255, 188, 105, 208)};
+        for (int i = 0; i < 2; ++i) {
+          // Alternate dash positions when both speeds share the same height.
+          const float y = guide_y[i];
+          for (float x = plot_left + i * 7; x < end.x; x += 14) {
+            draw->AddLine(ImVec2(x, y), ImVec2(std::min(x + 6, end.x), y),
+                          guide_color[i], 1.5f);
+          }
+        }
+      }
+      for (const bool smoothed : {false, true}) {
+        std::optional<Clock::time_point> previous;
+        const ImU32 color = smoothed ? smoothed_color : raw_color;
+        for (auto it = samples.rbegin(); it != samples.rend(); ++it) {
+          if (previous &&
+              it->time - *previous > std::chrono::milliseconds(100)) {
+            draw->PathStroke(color, ImDrawFlags_None, 1.25f);
+          }
+          previous = it->time;
+          const float age =
+              std::chrono::duration<float>(sampled_at - it->time).count();
+          const float speed =
+              smoothed ? it->smoothed_speed_cm_s : it->raw_speed_cm_s;
+          draw->PathLineTo(
+              ImVec2(plot_left + std::clamp(1.0f - age / duration, 0.0f, 1.0f) *
+                                     plot_width,
+                     speed_y(speed)));
+        }
+        draw->PathStroke(color, ImDrawFlags_None, 1.25f);
+      }
+      if (latest) {
+        const auto draw_label = [&](int index, const std::string& value,
+                                    ImU32 color) {
+          const float x = std::max(
+              top.x, plot_left - ImGui::CalcTextSize(value.c_str()).x - 7);
+          draw->AddLine(ImVec2(plot_left - 5, label_y[index] + font * 0.5f),
+                        ImVec2(plot_left, guide_y[index]), color);
+          draw->AddText(ImVec2(x, label_y[index]), color, value.c_str());
+        };
+        draw_label(0, raw_value, raw_color);
+        draw_label(1, smoothed_value, smoothed_color);
+      }
+      draw->AddText(ImVec2(top.x + 4, top.y + 2), IM_COL32(232, 236, 241, 255),
+                    scale_label.c_str());
+      const char* span = Tr(StringId::kKbmPollHudEmaDuration);
+      draw->AddText(ImVec2(end.x - ImGui::CalcTextSize(span).x - 4, top.y + 2),
+                    IM_COL32(232, 236, 241, 255), span);
+      if (samples.empty()) {
+        const char* waiting = Tr(no_data);
+        const float left =
+            std::max(4.0f, (size.x - ImGui::CalcTextSize(waiting).x) * 0.5f);
+        draw->AddText(ImVec2(top.x + left, top.y + (size.y - font) / 2),
+                      IM_COL32(232, 236, 241, 255), waiting);
+      }
+      draw->PopClipRect();
+      ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(raw_color), "%s",
+                         raw_label.c_str());
+      NextButton(ImGui::CalcTextSize(smoothed_label.c_str()).x);
+      ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(smoothed_color), "%s",
+                         smoothed_label.c_str());
+    }
+    ImGui::End();
+  }
+
+  std::vector<KbmInputDriver::EmaHudSample> samples;
+  Clock::time_point sampled_at;
+  double tau_ms = 0;
+  float scale_max = kMinimumScaleCmS;
+  std::string raw_value, smoothed_value;
+  std::string mode_line, weight, scale_label, raw_label, smoothed_label;
+};
 }  // namespace
 
 KbmConfigDialog::KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
@@ -98,9 +311,12 @@ hid::kbm::KbmInputDriver* KbmConfigDialog::GetDriver() const {
   return FindKbmDriver(emulator_window_);
 }
 
-void KbmConfigDialog::MarkDraftChanged() {
+void KbmConfigDialog::MarkDraftChanged(bool reset_mouse_preview) {
   dirty_ = true;
   saved_ = false;
+  if (!reset_mouse_preview) {
+    return;
+  }
   settings_ = hid::kbm::NormalizeSettings(settings_);
   if (auto* driver = GetDriver()) {
     driver->ResetMousePreview(settings_);
@@ -137,6 +353,7 @@ bool KbmConfigDialog::SaveDraft() {
     reset_incompatible_ = false;
     dirty_ = false;
     saved_ = true;
+    UpdatePollHud(emulator_window_);
   }
   return success;
 }
@@ -369,12 +586,16 @@ bool KbmConfigDialog::DrawProcessingTime() {
   return changed;
 }
 
-bool KbmConfigDialog::PollStats::Refresh(KbmInputDriver* driver) {
+void KbmConfigDialog::PollStats::Refresh(KbmInputDriver* driver) {
   const double now = ImGui::GetTime();
   if (now < next_refresh) {
-    return false;
+    return;
   }
   next_refresh = now + 0.5;
+  Read(driver);
+}
+
+void KbmConfigDialog::PollStats::Read(KbmInputDriver* driver) {
   if (driver) {
     driver->CopyRecentGamePollIntervals(intervals);
   } else {
@@ -384,7 +605,6 @@ bool KbmConfigDialog::PollStats::Refresh(KbmInputDriver* driver) {
     latest_ms = intervals.front();
     std::sort(intervals.begin(), intervals.end());
   }
-  return true;
 }
 
 double KbmConfigDialog::PollStats::Percentile(double fraction) const {
@@ -401,8 +621,7 @@ double KbmConfigDialog::PollStats::Coverage(double window_ms) const {
   return 100.0 * covered / intervals.size();
 }
 
-void KbmConfigDialog::PollStats::Draw(
-    const hid::kbm::KbmMouseProcessing& processing) const {
+void KbmConfigDialog::PollStats::Draw(double window_ms) const {
   if (intervals.empty()) {
     ImGui::TextWrapped("%s", Tr(StringId::kKbmNoRecentPollIntervals));
     return;
@@ -410,7 +629,6 @@ void KbmConfigDialog::PollStats::Draw(
 
   ImGui::TextDisabled(Tr(StringId::kKbmRecentPollIntervals),
                       unsigned(intervals.size()));
-  const bool fixed = processing.mode == KbmMouseMode::kFixedWindow;
   const double median_ms = Percentile(0.5);
   const struct {
     const char* label;
@@ -421,16 +639,12 @@ void KbmConfigDialog::PollStats::Draw(
       {Tr(StringId::kKbmMedianPollInterval), "%.2f ms", median_ms},
       {"P95", "%.2f ms", Percentile(0.95)},
       {"P99", "%.2f ms", Percentile(0.99)},
-      {Tr(fixed ? StringId::kKbmPollIntervalCoverage
-                : StringId::kKbmEmaNewSampleWeight),
-       "%.1f%%",
-       fixed ? Coverage(processing.fixed_window_ms)
-             : EmaNewSampleWeightPercent(median_ms, processing.ema_tau_ms)},
+      {Tr(StringId::kKbmPollIntervalCoverage), "%.1f%%", Coverage(window_ms)},
   };
   const int metric_count = int(std::size(metrics));
   const float min_cell_width =
       std::max(ImGui::CalcTextSize(metrics[0].label).x,
-               ImGui::CalcTextSize(Tr(StringId::kKbmEmaNewSampleWeight)).x) +
+               ImGui::CalcTextSize(Tr(StringId::kKbmPollIntervalCoverage)).x) +
       ImGui::GetStyle().FramePadding.x * 2;
   const int fit = int(ImGui::GetContentRegionAvail().x / min_cell_width);
   const int columns =
@@ -454,17 +668,13 @@ void KbmConfigDialog::PollStats::Draw(
     ImGui::EndTable();
   }
   ImGui::PopStyleVar();
-  if (!fixed) {
-    ImGui::TextWrapped("%s", Tr(StringId::kKbmEmaSampleWeightHelp));
-  }
 }
 
 void KbmConfigDialog::DrawPollHudControls() {
-  auto& drawer = *emulator_window_.imgui_drawer();
-  bool visible = drawer.HasPassiveOverlay();
+  auto& overlay = settings_.overlay;
   const auto label =
       fmt::format("{}###KbmPollHudToggle", Tr(StringId::kKbmShowPollHud));
-  const bool toggled = ImGui::Checkbox(label.c_str(), &visible);
+  const bool toggled = ImGui::Checkbox(label.c_str(), &overlay.enabled);
   const char* corners[] = {Tr(StringId::kKbmPollHudTopLeft),
                            Tr(StringId::kKbmPollHudTopRight),
                            Tr(StringId::kKbmPollHudBottomLeft),
@@ -478,127 +688,123 @@ void KbmConfigDialog::DrawPollHudControls() {
                             ImGui::GetStyle().FramePadding.x * 2;
   NextButton(combo_width);
   ImGui::SetNextItemWidth(combo_width);
-  ImGui::Combo("##KbmPollHudCorner", &emulator_window_.kbm_poll_hud_corner_,
-               corners, int(std::size(corners)));
-
-  if (!toggled) {
-    return;
+  const bool moved = ImGui::Combo("##KbmPollHudCorner", &overlay.corner,
+                                  corners, int(std::size(corners)));
+  if (toggled || moved) {
+    MarkDraftChanged(false);
   }
-  if (!visible) {
+  if (toggled) {
+    UpdatePollHud(emulator_window_);
+  }
+}
+
+void KbmConfigDialog::UpdatePollHud(EmulatorWindow& window) {
+  auto& drawer = *window.imgui_drawer();
+  auto* driver = FindKbmDriver(window);
+  if (!driver) {
     drawer.SetPassiveOverlay({});
     return;
   }
-  drawer.SetPassiveOverlay([window = &emulator_window_, stats = PollStats{},
-                            mode_line = std::string{},
-                            mode_detail = std::string{},
+  const auto settings = driver->GetSettings();
+  const auto* config = window.kbm_config_dialog_.get();
+  const auto& displayed = config ? config->settings_ : settings;
+  const auto mode = displayed.mouse_processing.mode;
+  const bool ema = mode == KbmMouseMode::kEma;
+  driver->SetEmaHudSamplingEnabled(settings.overlay.enabled &&
+                                   settings.mouse_processing.mode ==
+                                       KbmMouseMode::kEma);
+  if (!displayed.overlay.enabled || mode == KbmMouseMode::kDirect) {
+    drawer.SetPassiveOverlay({});
+    return;
+  }
+  drawer.SetPassiveOverlay([window = &window, ema,
+                            active_processing = settings.mouse_processing,
+                            saved_overlay = settings.overlay,
+                            ema_hud = EmaHud{}, stats = PollStats{},
+                            window_ms = 0.0, next_refresh = 0.0,
+                            previously_open = false, mode_line = std::string{},
+                            coverage = std::string{},
                             cells = std::array<std::string, 4>{},
                             cell_widths = std::array<float, 4>{},
                             grid_width = 0.0f]() mutable {
     const auto* config = window->kbm_config_dialog_.get();
     const bool preview = config && !config->IsClosing();
     const bool title_open = window->emulator()->is_title_open();
-    if (!title_open && !stats.intervals.empty()) {
-      stats.intervals.clear();
-      stats.next_refresh = 0;
+    if (title_open != previously_open) {
+      previously_open = title_open;
+      next_refresh = 0;
     }
     if (!preview &&
         (!title_open || window->imgui_drawer()->IsAnyDialogOpen())) {
       return;
     }
-    auto* driver = FindKbmDriver(*window);
-    constexpr float cell_gap = 12;
-    if (stats.Refresh(title_open ? driver : nullptr)) {
-      const auto processing =
-          driver ? driver->GetSettings().mouse_processing
-                 : hid::kbm::GetSettingsFromCvars().mouse_processing;
-      const char* mode = Tr(kMouseModes[static_cast<int>(processing.mode)]);
-      mode_line = mode;
-      mode_detail.clear();
-      grid_width = 0;
-      if (processing.mode == KbmMouseMode::kFixedWindow) {
-        mode_line =
-            fmt::format("{} {:.1f} ms", mode, processing.fixed_window_ms);
-      } else if (processing.mode == KbmMouseMode::kEma) {
-        mode_line = fmt::format("{} {:.1f} ms", mode, processing.ema_tau_ms);
+
+    const auto& overlay = preview ? config->settings_.overlay : saved_overlay;
+    const auto& processing =
+        preview ? config->settings_.mouse_processing : active_processing;
+    const bool processing_matches =
+        processing.mode == active_processing.mode &&
+        (ema ? processing.ema_tau_ms == active_processing.ema_tau_ms
+             : processing.fixed_window_ms == active_processing.fixed_window_ms);
+    auto* driver =
+        title_open && processing_matches ? FindKbmDriver(*window) : nullptr;
+    const auto no_data_id = !processing_matches
+                                ? StringId::kKbmPollHudSaveForLiveData
+                            : !title_open ? StringId::kKbmPollHudWaitingForGame
+                            : ema         ? StringId::kKbmPollHudEmaWaiting
+                                          : StringId::kKbmNoRecentPollIntervals;
+    const int corner = overlay.corner;
+    const double now = ImGui::GetTime();
+    if (ema) {
+      if (now >= next_refresh || ema_hud.tau_ms != processing.ema_tau_ms) {
+        next_refresh = now + 1.0 / 30.0;
+        ema_hud.tau_ms = processing.ema_tau_ms;
+        ema_hud.Refresh(driver);
       }
+      const float opacity = 1.0f - overlay.ema_background_transparency * 0.01f;
+      ema_hud.Draw(corner, no_data_id, opacity);
+      return;
+    }
+
+    constexpr float cell_gap = 12;
+    if (now >= next_refresh || window_ms != processing.fixed_window_ms) {
+      next_refresh = now + 0.5;
+      window_ms = processing.fixed_window_ms;
+      mode_line = fmt::format("{} {:.1f} ms", Tr(StringId::kKbmModeFixedWindow),
+                              window_ms);
+      coverage.clear();
+      grid_width = 0;
+      stats.Read(driver);
       if (!stats.intervals.empty()) {
-        const double median_ms = stats.Percentile(0.5);
-        if (processing.mode == KbmMouseMode::kFixedWindow) {
-          mode_detail =
-              fmt::format("{} {:.1f}%", Tr(StringId::kKbmPollIntervalCoverage),
-                          stats.Coverage(processing.fixed_window_ms));
-        } else if (processing.mode == KbmMouseMode::kEma) {
-          mode_detail = fmt::format(
-              "{} {:.1f}%", Tr(StringId::kKbmPollHudEmaSampleWeight),
-              EmaNewSampleWeightPercent(median_ms, processing.ema_tau_ms));
-        }
+        coverage =
+            fmt::format("{} {:.1f}%", Tr(StringId::kKbmPollIntervalCoverage),
+                        stats.Coverage(window_ms));
         const char* labels[] = {Tr(StringId::kKbmCurrentPollInterval),
                                 Tr(StringId::kKbmMedianPollInterval), "P95",
                                 "P99"};
-        const double values[] = {stats.latest_ms, median_ms,
+        const double values[] = {stats.latest_ms, stats.Percentile(0.5),
                                  stats.Percentile(0.95),
                                  stats.Percentile(0.99)};
-        // Leave room for any displayed interval (up to 100.0 ms).
         const float value_width = ImGui::CalcTextSize(" 888.8 ms").x;
         for (size_t i = 0; i < cells.size(); ++i) {
           cells[i] = fmt::format("{} {:.1f} ms", labels[i], values[i]);
           cell_widths[i] = ImGui::CalcTextSize(labels[i]).x + value_width;
-          grid_width += cell_widths[i];
+          grid_width += cell_widths[i] + (i ? cell_gap : 0);
         }
-        grid_width += cell_gap * (cells.size() - 1);
       }
     }
 
-    const int corner = window->kbm_poll_hud_corner_;
-    const bool right = corner % 2 != 0;
-    const bool bottom = corner >= 2;
-    constexpr float margin = 8;
-    const auto* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(
-        ImVec2(viewport->WorkPos.x +
-                   (right ? viewport->WorkSize.x - margin : margin),
-               viewport->WorkPos.y +
-                   (bottom ? viewport->WorkSize.y - margin : margin)),
-        ImGuiCond_Always, ImVec2(right ? 1 : 0, bottom ? 1 : 0));
-    const ImVec2 padding(6, 4);
-    const char* no_data = Tr(title_open ? StringId::kKbmNoRecentPollIntervals
-                                        : StringId::kKbmPollHudWaitingForGame);
-    const float mode_width = ImGui::CalcTextSize(mode_line.c_str()).x;
-    const float detail_width = ImGui::CalcTextSize(mode_detail.c_str()).x;
+    const char* no_data = Tr(no_data_id);
     const float content_width = std::max(
-        mode_width + (mode_detail.empty() ? 0 : cell_gap + detail_width),
+        ImGui::CalcTextSize(mode_line.c_str()).x +
+            (coverage.empty()
+                 ? 0
+                 : cell_gap + ImGui::CalcTextSize(coverage.c_str()).x),
         stats.intervals.empty() ? ImGui::CalcTextSize(no_data).x : grid_width);
-    const float width =
-        std::clamp(content_width + padding.x * 2 + 1, 1.0f,
-                   std::max(1.0f, viewport->WorkSize.x - margin * 2));
-    ImGui::SetNextWindowSize(ImVec2(width, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
-    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0);
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0, 0, 0, 0.58f));
-    // Use Dear ImGui's overlay layer so a settings window can't cover its HUD
-    // preview. NoInputs keeps the settings controls interactive underneath.
-    if (ImGui::Begin(
-            "###KbmPollHud", nullptr,
-            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_Tooltip)) {
+    if (BeginPollHud(corner, content_width)) {
       const float row_start = ImGui::GetCursorPosX();
       const float row_width = ImGui::GetContentRegionAvail().x;
-      ImGui::TextWrapped("%s", mode_line.c_str());
-      if (!mode_detail.empty()) {
-        const float detail_x = row_start + row_width - detail_width;
-        if (mode_width + cell_gap + detail_width <= row_width) {
-          ImGui::SameLine(detail_x);
-        } else if (detail_width <= row_width) {
-          ImGui::SetCursorPosX(detail_x);
-        }
-        if (detail_width <= row_width) {
-          ImGui::TextUnformatted(mode_detail.c_str());
-        } else {
-          ImGui::TextWrapped("%s", mode_detail.c_str());
-        }
-      }
+      DrawPollHudHeading(mode_line, coverage);
       if (stats.intervals.empty()) {
         ImGui::TextWrapped("%s", no_data);
       } else {
@@ -615,8 +821,6 @@ void KbmConfigDialog::DrawPollHudControls() {
       }
     }
     ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
   });
 }
 
@@ -638,19 +842,31 @@ bool KbmConfigDialog::DrawMouseSettings() {
   int mode = static_cast<int>(processing.mode);
   if (ImGui::Combo(Tr(StringId::kKbmMouseMode), &mode, modes, 3)) {
     processing.mode = static_cast<KbmMouseMode>(mode);
+    UpdatePollHud(emulator_window_);
     changed = true;
   }
   if (processing.mode != KbmMouseMode::kDirect) {
     if (BeginCard("KbmProcessingTuning")) {
       changed |= DrawProcessingTime();
       ImGui::Separator();
-      poll_stats_.Refresh(GetDriver());
-      poll_stats_.Draw(processing);
+      if (processing.mode == KbmMouseMode::kFixedWindow) {
+        poll_stats_.Refresh(GetDriver());
+        poll_stats_.Draw(processing.fixed_window_ms);
+      } else {
+        ImGui::TextWrapped("%s", Tr(StringId::kKbmEmaTimeConstantHelp));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(Tr(StringId::kKbmPollHudEmaTransparency));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderInt("##KbmEmaHudTransparency",
+                             &settings_.overlay.ema_background_transparency, 0,
+                             100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+          MarkDraftChanged(false);
+        }
+      }
       DrawPollHudControls();
     }
     ImGui::EndChild();
-  } else {
-    DrawPollHudControls();
   }
   ImGui::Spacing();
   ImGui::AlignTextToFramePadding();
@@ -725,7 +941,7 @@ void KbmConfigDialog::DrawPreview(bool visible) {
   if (!visible ||
       !ImGui::TreeNodeEx("KbmLivePreview", ImGuiTreeNodeFlags_SpanAvailWidth,
                          "%s", Tr(StringId::kKbmLivePreview))) {
-    if (driver && driver->SampleMousePreview(settings_).active()) {
+    if (driver && driver->MousePreviewActive()) {
       driver->StopMousePreview();
     }
     focus_preview_stop_ = false;
@@ -953,6 +1169,7 @@ bool KbmConfigDialog::DrawConfirmations() {
       settings_ = hid::kbm::KbmSettings();
       reset_incompatible_ = true;
       MarkDraftChanged();
+      UpdatePollHud(emulator_window_);
       ImGui::CloseCurrentPopup();
     }
     if (ImGui::Button(Tr(StringId::kKbmContinueEditing), ImVec2(-1, 0)) ||
@@ -988,8 +1205,7 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
         ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
     const bool was_editing = ImGui::IsAnyItemActive();
     auto* driver = GetDriver();
-    const bool preview_active =
-        driver && driver->SampleMousePreview(settings_).active();
+    const bool preview_active = driver && driver->MousePreviewActive();
     const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
     if (preview_active && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
                            ImGui::IsKeyPressed(ImGuiKey_Space, false))) {
@@ -1153,8 +1369,7 @@ void KbmConfigDialog::OnDraw(ImGuiIO& io) {
       MarkDraftChanged();
     }
     close |= DrawConfirmations();
-    preview_was_active_ =
-        driver && driver->SampleMousePreview(settings_).active();
+    preview_was_active_ = driver && driver->MousePreviewActive();
   } else if (!open) {
     RequestClose();
   }

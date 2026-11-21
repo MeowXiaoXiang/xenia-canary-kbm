@@ -17,13 +17,17 @@
 
 namespace xe::hid::kbm {
 
-class KbmPollHistory {
+template <typename Value, size_t Capacity>
+class KbmRecentHistory {
  public:
   using Clock = std::chrono::steady_clock;
-  static constexpr size_t kCapacity = 1024;
+  static constexpr size_t kCapacity = Capacity;
+  static constexpr auto kDuration = std::chrono::seconds(5);
 
-  void Record(Clock::time_point time, double interval_ms) {
-    entries_[next_] = {time, interval_ms};
+  void Clear() { next_ = size_ = 0; }
+
+  void Record(Clock::time_point time, Value value) {
+    entries_[next_] = {time, value};
     next_ = (next_ + 1) % entries_.size();
     if (size_ < entries_.size()) {
       ++size_;
@@ -31,28 +35,30 @@ class KbmPollHistory {
   }
 
   // The caller can reserve the result before taking its input lock.
-  void CopyRecent(Clock::time_point now, std::vector<double>& intervals) const {
-    const auto cutoff = now - std::chrono::seconds(5);
+  void CopyRecent(Clock::time_point now, std::vector<Value>& values) const {
+    const auto cutoff = now - kDuration;
     for (size_t offset = 1; offset <= size_; ++offset) {
       const auto& entry =
           entries_[(next_ + entries_.size() - offset) % entries_.size()];
       if (entry.time < cutoff) {
         break;
       }
-      intervals.push_back(entry.interval_ms);
+      values.push_back(entry.value);
     }
   }
 
  private:
   struct Entry {
     Clock::time_point time;
-    double interval_ms;
+    Value value;
   };
 
   std::array<Entry, kCapacity> entries_{};
   size_t next_ = 0;
   size_t size_ = 0;
 };
+
+using KbmPollHistory = KbmRecentHistory<double, 1024>;
 
 }  // namespace xe::hid::kbm
 

@@ -343,13 +343,19 @@ XE_LOCALIZATION_STRING(kKbmRecentPollIntervals,
 XE_LOCALIZATION_STRING(kKbmCurrentPollInterval, "最新間隔")
 XE_LOCALIZATION_STRING(kKbmMedianPollInterval, "中位數")
 XE_LOCALIZATION_STRING(kKbmPollIntervalCoverage, "涵蓋率")
-XE_LOCALIZATION_STRING(kKbmEmaNewSampleWeight, "新樣本權重")
-XE_LOCALIZATION_STRING(kKbmEmaSampleWeightHelp,
-                       "以中位查詢間隔計算。這個比例來自新估算的鼠速，"
-                       "其餘來自上一次的平滑值。")
-XE_LOCALIZATION_STRING(kKbmShowPollHud, "顯示遊戲內輪詢統計")
-XE_LOCALIZATION_STRING(kKbmPollHudWaitingForGame, "等待遊戲查詢。")
-XE_LOCALIZATION_STRING(kKbmPollHudEmaSampleWeight, "新樣本權重（中位間隔）")
+XE_LOCALIZATION_STRING(kKbmEmaTimeConstantHelp,
+                       "時間常數越長，鼠速變化越平滑，反應也越慢。")
+XE_LOCALIZATION_STRING(kKbmShowPollHud, "顯示遊戲內診斷")
+XE_LOCALIZATION_STRING(kKbmPollHudWaitingForGame, "等待遊戲啟動。")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaDuration, "最近 5 秒")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaScaleMax, "刻度上限")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaTransparency, "診斷面板背景透明度")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaWeight, "新樣本權重")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaRawSpeed, "平滑前")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaSpeed, "平滑後")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaWaiting, "等待 EMA 取樣。")
+XE_LOCALIZATION_STRING(kKbmPollHudSaveForLiveData,
+                       "儲存設定後即可顯示即時資料。")
 XE_LOCALIZATION_STRING(kKbmPollHudTopLeft, "左上角")
 XE_LOCALIZATION_STRING(kKbmPollHudTopRight, "右上角")
 XE_LOCALIZATION_STRING(kKbmPollHudBottomLeft, "左下角")

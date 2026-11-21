@@ -303,6 +303,7 @@ void EmulatorWindow::OnEmulatorInitialized() {
       // initialization. Rebuild the initially-created menu so its settings
       // page is available only when auto-selection actually chose Kbm.
       BuildMainMenu();
+      KbmConfigDialog::UpdatePollHud(*this);
     }
   }
 #endif  // XE_PLATFORM_WIN32
@@ -1786,6 +1787,7 @@ void EmulatorWindow::ToggleKbmConfigDialog() {
         std::make_unique<KbmConfigDialog>(imgui_drawer_.get(), *this);
   } else if (kbm_config_dialog_->IsClosing()) {
     kbm_config_dialog_.release();
+    KbmConfigDialog::UpdatePollHud(*this);
   } else {
     kbm_config_dialog_->RequestClose();
   }
@@ -2484,6 +2486,7 @@ xe::X_STATUS EmulatorWindow::RunTitle(
 #if XE_PLATFORM_WIN32
   if (kbm_config_dialog_) {
     kbm_config_dialog_.reset();
+    KbmConfigDialog::UpdatePollHud(*this);
   }
 #endif  // XE_PLATFORM_WIN32
   ClearDialogs();

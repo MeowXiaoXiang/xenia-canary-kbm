@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -75,6 +76,16 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   void ApplySettings(const KbmSettings& settings);
   Diagnostics GetDiagnostics() const;
   void CopyRecentGamePollIntervals(std::vector<double>& intervals);
+  struct EmaHudSample {
+    std::chrono::steady_clock::time_point time;
+    float raw_speed_cm_s;
+    float smoothed_speed_cm_s;
+    float alpha;
+  };
+  using EmaHudHistory = KbmRecentHistory<EmaHudSample, 4096>;
+  void SetEmaHudSamplingEnabled(bool enabled);
+  void CopyEmaHudSamples(EmaHudHistory::Clock::time_point now,
+                         std::vector<EmaHudSample>& samples);
   void SetHostInputSuspended(bool suspended);
   void BeginBindingCapture(bool allow_mouse = true);
   BindingCaptureResult ConsumeBindingCaptureResult();
@@ -90,6 +101,9 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   bool StartMousePreview(const KbmSettings& draft = {});
   void StopMousePreview();
   void ResetMousePreview(const KbmSettings& draft);
+  bool MousePreviewActive() const {
+    return platform_input_.preview_capture_active();
+  }
   bool MousePreviewFailed() const {
     return platform_input_.preview_capture_failed();
   }
@@ -159,6 +173,7 @@ class KbmInputDriver final : public keyboard::KeyboardInputDriver,
   // settings lock while holding this lock.
   xe::global_critical_region raw_mouse_motion_critical_region_;
   KbmMouseProcessor raw_mouse_processor_;
+  std::unique_ptr<EmaHudHistory> ema_hud_history_;
   KbmChord raw_mouse_capture_toggle_;
   CaptureStateCallback capture_state_callback_;
   std::atomic<bool> host_input_suspended_{false};

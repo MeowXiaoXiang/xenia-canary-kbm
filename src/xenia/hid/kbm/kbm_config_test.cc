@@ -67,6 +67,7 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   saved_settings.raw_mouse_dpi = 1325.0;
   saved_settings.raw_mouse_deadzone_compensation = true;
   saved_settings.raw_mouse_capture_toggle_key = "Ctrl+Key.F8";
+  saved_settings.overlay = {true, 1, 72};
   const auto saved_mode = GENERATE(KbmMouseMode::kFixedWindow,
                                    KbmMouseMode::kEma, KbmMouseMode::kDirect);
   const bool saved_old_defaults = saved_mode == KbmMouseMode::kFixedWindow;
@@ -81,6 +82,7 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   REQUIRE(contents.find("[HID.KBM.Bindings]") != std::string::npos);
   REQUIRE(contents.find("[HID.KBM.RawMouse]") != std::string::npos);
   REQUIRE(contents.find("[HID.KBM.RawMouse.Tuning]") != std::string::npos);
+  REQUIRE(contents.find("[HID.KBM.Diagnostics]") != std::string::npos);
   REQUIRE(contents.find("a = \"Key.G\"") != std::string::npos);
   REQUIRE(contents.find("dpi = 1325.0") != std::string::npos);
 
@@ -95,6 +97,9 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   REQUIRE(loaded_settings.raw_mouse_dpi == Approx(1325.0));
   REQUIRE(loaded_settings.raw_mouse_deadzone_compensation);
   REQUIRE(loaded_settings.raw_mouse_capture_toggle_key == "Ctrl+Key.F8");
+  REQUIRE(loaded_settings.overlay.enabled);
+  REQUIRE(loaded_settings.overlay.corner == 1);
+  REQUIRE(loaded_settings.overlay.ema_background_transparency == 72);
   REQUIRE(loaded_settings.mouse_processing.mode == saved_mode);
   REQUIRE(loaded_settings.mouse_processing.fixed_window_ms ==
           (saved_old_defaults ? 8.0 : 24.0));
@@ -102,7 +107,7 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
           (saved_old_defaults ? 8.0 : 32.0));
 }
 
-TEST_CASE("Earlier grouped v4 configs default missing processing fields",
+TEST_CASE("Earlier grouped v4 configs default missing optional fields",
           "[kbm]") {
   ScopedConfigDirectory directory;
   SetupConfig(directory.path(), false);
@@ -110,11 +115,15 @@ TEST_CASE("Earlier grouped v4 configs default missing processing fields",
   settings.keybind_a = "Key.G";
   settings.raw_mouse_dpi = 3200;
   settings.mouse_processing = {KbmMouseMode::kEma, 13, 7.5};
+  settings.overlay = {true, 0, 25};
   ApplySettingsToCvars(settings);
   REQUIRE(SaveConfig(settings));
   std::istringstream input(ReadFile(ConfigPath()));
   std::string older;
   for (std::string line; std::getline(input, line);) {
+    if (line == "[HID.KBM.Diagnostics]") {
+      break;
+    }
     if (!line.starts_with("processing_mode") &&
         !line.starts_with("fixed_window_ms") &&
         !line.starts_with("ema_tau_ms")) {
@@ -128,6 +137,9 @@ TEST_CASE("Earlier grouped v4 configs default missing processing fields",
   REQUIRE(loaded.mouse_processing.mode == KbmMouseMode::kFixedWindow);
   REQUIRE(loaded.mouse_processing.fixed_window_ms == 16.0);
   REQUIRE(loaded.mouse_processing.ema_tau_ms == 8.0);
+  REQUIRE_FALSE(loaded.overlay.enabled);
+  REQUIRE(loaded.overlay.corner == 3);
+  REQUIRE(loaded.overlay.ema_background_transparency == 54);
   REQUIRE(loaded.keybind_a == "Key.G");
   REQUIRE(loaded.raw_mouse_dpi == 3200);
   REQUIRE(ReadFile(ConfigPath()) == older);
@@ -191,6 +203,10 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
     from = "ema_tau_ms = 6.5";
     to = "ema_tau_ms = \"slow\"";
   }
+  SECTION("Wrong overlay setting type") {
+    from = "overlay_corner = 3";
+    to = "overlay_corner = true";
+  }
   SECTION("Malformed TOML") {
     from = "schema_version = 4";
     to = "schema_version = [";
@@ -219,11 +235,11 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
   REQUIRE(ReadFile(ConfigPath()) == contents);
 }
 
-TEST_CASE("Controller slots clamp before conversion to the runtime integer",
+TEST_CASE("KBM integer settings clamp before conversion to the runtime integer",
           "[kbm]") {
   ScopedConfigDirectory directory;
   SetupConfig(directory.path(), false);
-  REQUIRE(SaveConfig());
+  REQUIRE(SaveConfig(KbmSettings{}));
   auto contents = ReadFile(ConfigPath());
   std::string value;
   int32_t expected;
@@ -235,9 +251,13 @@ TEST_CASE("Controller slots clamp before conversion to the runtime integer",
     value = "-9223372036854775808";
     expected = 0;
   }
-  const auto offset = contents.find("user_index = 0");
-  REQUIRE(offset != std::string::npos);
-  contents.replace(offset, 14, "user_index = " + value);
+  for (const std::string setting : {"user_index = 0", "overlay_corner = 3",
+                                    "ema_background_transparency = 54"}) {
+    const auto offset = contents.find(setting);
+    REQUIRE(offset != std::string::npos);
+    contents.replace(offset, setting.size(),
+                     setting.substr(0, setting.find('=') + 2) + value);
+  }
   {
     std::ofstream file(ConfigPath(), std::ios::binary | std::ios::trunc);
     file << contents;
@@ -247,7 +267,11 @@ TEST_CASE("Controller slots clamp before conversion to the runtime integer",
   ApplySettingsToCvars(active);
   SetupConfig(directory.path(), false);
   REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
-  REQUIRE(GetSettingsFromCvars().user_index == expected);
+  const auto loaded = GetSettingsFromCvars();
+  REQUIRE(loaded.user_index == expected);
+  REQUIRE(loaded.overlay.corner == expected);
+  REQUIRE(loaded.overlay.ema_background_transparency ==
+          (expected == 0 ? 0 : 100));
   REQUIRE(ReadFile(ConfigPath()) == contents);
 }
 

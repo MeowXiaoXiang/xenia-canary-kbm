@@ -47,7 +47,8 @@ static bool ModifiersMatch(bool required_shift, bool required_ctrl,
          (!required_alt || alt) && (!required_super || super);
 }
 
-static bool AreSettingsEqual(const KbmSettings& lhs, const KbmSettings& rhs) {
+static bool AreInputSettingsEqual(const KbmSettings& lhs,
+                                  const KbmSettings& rhs) {
   if (lhs.enabled != rhs.enabled || lhs.user_index != rhs.user_index ||
       lhs.raw_mouse != rhs.raw_mouse ||
       lhs.mouse_processing != rhs.mouse_processing ||
@@ -166,7 +167,7 @@ void KbmInputDriver::ApplySettings(const KbmSettings& source_settings) {
   KbmSettings settings = NormalizeSettings(source_settings);
   {
     auto lock = settings_critical_region_.Acquire();
-    const bool settings_changed = !AreSettingsEqual(settings_, settings);
+    const bool settings_changed = !AreInputSettingsEqual(settings_, settings);
     if (settings_changed) {
       StopInputSampling();
     }
@@ -217,6 +218,25 @@ void KbmInputDriver::CopyRecentGamePollIntervals(
   poll_history_.CopyRecent(KbmPollHistory::Clock::now(), intervals);
 }
 
+void KbmInputDriver::SetEmaHudSamplingEnabled(bool enabled) {
+  auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
+  if (!enabled) {
+    ema_hud_history_.reset();
+  } else if (!ema_hud_history_) {
+    ema_hud_history_ = std::make_unique<EmaHudHistory>();
+  }
+}
+
+void KbmInputDriver::CopyEmaHudSamples(EmaHudHistory::Clock::time_point now,
+                                       std::vector<EmaHudSample>& samples) {
+  samples.clear();
+  samples.reserve(EmaHudHistory::kCapacity);
+  auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
+  if (ema_hud_history_) {
+    ema_hud_history_->CopyRecent(now, samples);
+  }
+}
+
 bool KbmInputDriver::StartInputSampling(std::string title_name,
                                         uint32_t title_id) {
   // Starting from the settings dialog gives replay a clean estimator history.
@@ -235,6 +255,9 @@ bool KbmInputDriver::StartInputSampling(std::string title_name,
     auto motion_lock = raw_mouse_motion_critical_region_.Acquire();
     const auto now = std::chrono::steady_clock::now();
     raw_mouse_processor_.Reset(now);
+    if (ema_hud_history_) {
+      ema_hud_history_->Clear();
+    }
     report->started = now;
     report->settings = {settings_.raw_mouse_dpi,
                         settings_.raw_mouse_full_stick_speed_cm_s,
@@ -308,11 +331,12 @@ void KbmInputDriver::ResetMousePreview(const KbmSettings& draft) {
 
 const KbmMousePreview& KbmInputDriver::SampleMousePreview(
     const KbmSettings& draft) {
-  if (!platform_input_.preview_capture_active()) {
+  if (MousePreviewActive()) {
+    mouse_preview_.Sample(GetMouseSettings(draft),
+                          std::chrono::steady_clock::now());
+  } else {
     mouse_preview_.Stop();
   }
-  mouse_preview_.Sample(GetMouseSettings(NormalizeSettings(draft)),
-                        std::chrono::steady_clock::now());
   return mouse_preview_;
 }
 
@@ -473,6 +497,18 @@ void KbmInputDriver::ApplyGamepadState(uint32_t, X_INPUT_STATE* out_state) {
     const KbmMouseSample mouse_sample = raw_mouse_processor_.Consume(
         GetMouseSettings(settings), raw_mouse_input_active,
         std::chrono::steady_clock::now());
+    if (ema_hud_history_ && mouse_sample.ema_alpha) {
+      const auto scale = kCentimetersPerInch / settings.raw_mouse_dpi;
+      const double raw_speed = std::hypot(double(mouse_sample.raw_delta_x),
+                                          double(mouse_sample.raw_delta_y)) *
+                               scale / mouse_sample.elapsed_seconds;
+      const double smoothed_speed =
+          std::hypot(mouse_sample.velocity_x, mouse_sample.velocity_y) * scale;
+      ema_hud_history_->Record(
+          mouse_sample.time,
+          {mouse_sample.time, float(raw_speed), float(smoothed_speed),
+           float(*mouse_sample.ema_alpha)});
+    }
     input_sample.time = mouse_sample.time;
     input_sample.event_sequence = mouse_sample.event_sequence;
     input_sample.elapsed_seconds = mouse_sample.elapsed_seconds;
@@ -751,6 +787,9 @@ void KbmInputDriver::ResetRawMouseMotion(
   if (!processing ||
       !raw_mouse_processor_.Configure(*processing, sample.time)) {
     raw_mouse_processor_.Reset(sample.time);
+  }
+  if (ema_hud_history_) {
+    ema_hud_history_->Clear();
   }
   sample.kind = 1;
   sample.sequence = raw_mouse_processor_.event_sequence();

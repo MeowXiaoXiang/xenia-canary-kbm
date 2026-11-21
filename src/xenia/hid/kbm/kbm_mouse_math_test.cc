@@ -44,6 +44,14 @@ TEST_CASE("Recent KBM poll history expires and overwrites old intervals",
   snapshot.clear();
   history.CopyRecent(start + 6025ms, snapshot);
   REQUIRE(snapshot.empty());
+
+  history.Clear();
+  history.CopyRecent(start + 2s, snapshot);
+  REQUIRE(snapshot.empty());
+  history.Record(start + 3s, 0.0);
+  history.CopyRecent(start + 3s, snapshot);
+  REQUIRE(snapshot.size() == 1);
+  REQUIRE(snapshot.front() == 0.0);
 }
 
 TEST_CASE("Physical mapping preserves radial direction and speed units",
@@ -220,6 +228,35 @@ TEST_CASE("EMA uses actual time, reverses, and clears at the stop gates",
   mouse.Consume(settings, true, now + 50ms);
   REQUIRE(mouse.Consume(settings, true, now + 99ms).thumb_x > 0);
   REQUIRE(mouse.Consume(settings, true, now + 100ms).thumb_x == 0);
+}
+
+TEST_CASE("EMA at 32 ms reports the applied weight and clears on timeout",
+          "[kbm]") {
+  using namespace std::chrono_literals;
+  const auto now = KbmMouseWindow::Time{} + 1s;
+  KbmMouseProcessor mouse;
+  KbmMouseSettings settings;
+  settings.processing = {KbmMouseMode::kEma, 16, 32};
+  REQUIRE(mouse.Configure(settings.processing, now));
+  REQUIRE_FALSE(mouse.Consume(settings, true, now + 1ms).ema_alpha);
+  mouse.AddDelta(100, 0, now + 9ms);
+  const auto motion = mouse.Consume(settings, true, now + 9ms);
+  REQUIRE(motion.ema_alpha);
+  REQUIRE(*motion.ema_alpha == Approx(-std::expm1(-0.25)));
+  REQUIRE(motion.raw_delta_x == 100);
+  REQUIRE(motion.velocity_x == Approx(*motion.ema_alpha * 12500));
+  REQUIRE_FALSE(mouse.Consume(settings, true, now + 9ms).ema_alpha);
+  const auto decay = mouse.Consume(settings, true, now + 58ms);
+  REQUIRE(decay.ema_alpha);
+  REQUIRE(decay.raw_delta_x == 0);
+  REQUIRE(decay.velocity_x > 0);
+  REQUIRE(decay.thumb_x > 0);
+  const auto stopped = mouse.Consume(settings, true, now + 59ms);
+  REQUIRE(stopped.ema_alpha);
+  REQUIRE(stopped.raw_delta_x == 0);
+  REQUIRE(stopped.velocity_x == 0);
+  REQUIRE(stopped.thumb_x == 0);
+  REQUIRE_FALSE(mouse.Consume(settings, false, now + 60ms).ema_alpha);
 }
 
 TEST_CASE("Preview uses the selected estimator without reading gameplay",

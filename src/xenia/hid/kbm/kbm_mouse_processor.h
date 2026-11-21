@@ -37,6 +37,7 @@ struct KbmMouseSample {
   int64_t raw_delta_y = 0;
   double velocity_x = 0.0;
   double velocity_y = 0.0;
+  std::optional<double> ema_alpha;
   int16_t thumb_x = 0;
   int16_t thumb_y = 0;
   bool input_active = false;
@@ -69,7 +70,7 @@ class KbmMouseProcessor {
   static constexpr double kMaximumSampleIntervalSeconds = 0.1;
   void ClearEstimator();
   MouseVector Estimate(const KbmMouseSettings& settings,
-                       const KbmMouseSample& sample);
+                       KbmMouseSample& sample);
 
   uint64_t event_sequence_ = 0;
   int64_t pending_delta_x_ = 0;

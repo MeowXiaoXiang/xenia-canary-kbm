@@ -33,6 +33,12 @@ inline bool IsKbmConfigSchemaVersionSupported(std::optional<int64_t> version) {
   return version && *version == kKbmConfigSchemaVersion;
 }
 
+struct KbmOverlaySettings {
+  bool enabled = false;
+  int32_t corner = 3;
+  int32_t ema_background_transparency = 54;
+};
+
 struct KbmSettings {
   bool enabled = true;
   int32_t user_index = 0;
@@ -51,6 +57,7 @@ struct KbmSettings {
   std::string raw_mouse_capture_toggle_key = "Key.F8";
   bool raw_mouse_capture_on_start = false;
   KbmMouseProcessing mouse_processing;
+  KbmOverlaySettings overlay;
 };
 
 void SetupConfig(const std::filesystem::path& storage_root,

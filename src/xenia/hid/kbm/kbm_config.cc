@@ -91,6 +91,19 @@ DEFINE_transient_double(raw_mouse_fixed_window_ms,
 DEFINE_transient_double(raw_mouse_ema_tau_ms, xe::hid::kbm::kDefaultEmaTauMs,
                         "Mouse EMA time constant in milliseconds.", "HID.KBM");
 
+DEFINE_transient_bool(
+    kbm_overlay_enabled, xe::hid::kbm::KbmOverlaySettings{}.enabled,
+    "Show in-game KBM diagnostics in Fixed window or EMA mode.", "HID.KBM");
+DEFINE_transient_int32(kbm_overlay_corner,
+                       xe::hid::kbm::KbmOverlaySettings{}.corner,
+                       "Overlay corner: 0 top left, 1 top right, "
+                       "2 bottom left, 3 bottom right.",
+                       "HID.KBM");
+DEFINE_transient_int32(
+    kbm_overlay_ema_background_transparency,
+    xe::hid::kbm::KbmOverlaySettings{}.ema_background_transparency,
+    "EMA overlay background transparency, in percent. [0, 100].", "HID.KBM");
+
 namespace xe::hid::kbm {
 namespace {
 
@@ -183,6 +196,15 @@ std::optional<KbmConfigEntry> GetKbmConfigEntry(
   if (name == "raw_mouse_ema_tau_ms") {
     return {{"HID.KBM.RawMouse.Tuning", "ema_tau_ms", 3}};
   }
+  if (name == "kbm_overlay_enabled") {
+    return {{"HID.KBM.Diagnostics", "show_overlay", 4}};
+  }
+  if (name == "kbm_overlay_corner") {
+    return {{"HID.KBM.Diagnostics", "overlay_corner", 4}};
+  }
+  if (name == "kbm_overlay_ema_background_transparency") {
+    return {{"HID.KBM.Diagnostics", "ema_background_transparency", 4}};
+  }
   return std::nullopt;
 }
 
@@ -223,7 +245,18 @@ bool IsCanonicalBinding(std::string_view binding) {
 bool IsBooleanSetting(std::string_view name) {
   return name == "kbm_enabled" || name == "raw_mouse" ||
          name == "raw_mouse_deadzone_compensation" ||
-         name == "raw_mouse_invert_y" || name == "raw_mouse_capture_on_start";
+         name == "raw_mouse_invert_y" || name == "raw_mouse_capture_on_start" ||
+         name == "kbm_overlay_enabled";
+}
+
+std::optional<int64_t> IntegerSettingMaximum(std::string_view name) {
+  if (name == "kbm_user_index" || name == "kbm_overlay_corner") {
+    return 3;
+  }
+  if (name == "kbm_overlay_ema_background_transparency") {
+    return 100;
+  }
+  return std::nullopt;
 }
 
 bool IsNumberSetting(std::string_view name) {
@@ -232,9 +265,10 @@ bool IsNumberSetting(std::string_view name) {
          name == "raw_mouse_fixed_window_ms" || name == "raw_mouse_ema_tau_ms";
 }
 
-bool IsOptionalProcessingSetting(std::string_view name) {
+bool IsOptionalSetting(std::string_view name) {
   return name == "raw_mouse_processing_mode" ||
-         name == "raw_mouse_fixed_window_ms" || name == "raw_mouse_ema_tau_ms";
+         name == "raw_mouse_fixed_window_ms" ||
+         name == "raw_mouse_ema_tau_ms" || name.starts_with("kbm_overlay_");
 }
 
 bool IsCompatibleConfigValue(const cvar::IConfigVar& config_var,
@@ -253,7 +287,7 @@ bool IsCompatibleConfigValue(const cvar::IConfigVar& config_var,
     const auto binding = node.value<std::string>();
     return binding && IsCanonicalBinding(*binding);
   }
-  if (config_var.name() == "kbm_user_index") {
+  if (IntegerSettingMaximum(config_var.name())) {
     return node.is_integer();
   }
   if (IsBooleanSetting(config_var.name())) {
@@ -300,7 +334,7 @@ void LoadConfig() {
       continue;
     }
     const auto node = GetConfigNode(parsed, *entry);
-    if (!node && IsOptionalProcessingSetting(name)) {
+    if (!node && IsOptionalSetting(name)) {
       continue;
     }
     if (!node || !IsCompatibleConfigValue(*config_var, *node.node())) {
@@ -317,19 +351,15 @@ void LoadConfig() {
       continue;
     }
     const auto node = GetConfigNode(parsed, *entry);
-    if (!node && IsOptionalProcessingSetting(name)) {
+    if (!node) {
       config_var->ResetConfigValueToDefault();
-    }
-    if (node) {
-      if (name == "kbm_user_index") {
-        // TOML integers are 64-bit; clamp before the CVar's int32 conversion
-        // so overflow cannot silently retain an unrelated active value.
-        const toml::value<int64_t> user_index(
-            std::clamp(*node.value<int64_t>(), int64_t(0), int64_t(3)));
-        config_var->LoadConfigValue(&user_index);
-      } else {
-        config_var->LoadConfigValue(node.node());
-      }
+    } else if (const auto maximum = IntegerSettingMaximum(name)) {
+      // Clamp TOML integers before converting to int32.
+      const toml::value<int64_t> value(
+          std::clamp(*node.value<int64_t>(), int64_t(0), *maximum));
+      config_var->LoadConfigValue(&value);
+    } else {
+      config_var->LoadConfigValue(node.node());
     }
   }
   ApplySettingsToCvars(GetSettingsFromCvars());
@@ -426,6 +456,10 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
   values.insert("raw_mouse_fixed_window_ms",
                 settings.mouse_processing.fixed_window_ms);
   values.insert("raw_mouse_ema_tau_ms", settings.mouse_processing.ema_tau_ms);
+  values.insert("kbm_overlay_enabled", settings.overlay.enabled);
+  values.insert("kbm_overlay_corner", settings.overlay.corner);
+  values.insert("kbm_overlay_ema_background_transparency",
+                settings.overlay.ema_background_transparency);
   for (const auto& var : vars) {
     if (!IsCompatibleConfigValue(*var.config_var,
                                  *values.get(var.config_var->name()))) {
@@ -439,7 +473,7 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
   std::string output =
       "# KBM Controller keyboard and Raw Input mouse settings.\n"
       "# This file is intentionally separate from xenia-canary.config.toml.\n"
-      "# Settings are grouped by controller, bindings and mouse purpose.\n"
+      "# Settings are grouped by controller, bindings, mouse and diagnostics.\n"
       "schema_version = " +
       std::to_string(kKbmConfigSchemaVersion) + "\n";
   std::string category;
@@ -491,6 +525,9 @@ KbmSettings NormalizeSettings(KbmSettings settings) {
                    defaults.raw_mouse_minimum_response, 0.0, 0.5);
   settings.mouse_processing =
       NormalizeMouseProcessing(settings.mouse_processing);
+  settings.overlay.corner = std::clamp(settings.overlay.corner, 0, 3);
+  settings.overlay.ema_background_transparency =
+      std::clamp(settings.overlay.ema_background_transparency, 0, 100);
   return settings;
 }
 
@@ -516,6 +553,8 @@ KbmSettings GetSettingsFromCvars() {
                                    .value_or(kDefaultMouseMode),
                                cvars::raw_mouse_fixed_window_ms,
                                cvars::raw_mouse_ema_tau_ms};
+  settings.overlay = {cvars::kbm_overlay_enabled, cvars::kbm_overlay_corner,
+                      cvars::kbm_overlay_ema_background_transparency};
   return NormalizeSettings(settings);
 }
 
@@ -545,6 +584,10 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
   OVERRIDE_double(raw_mouse_ema_tau_ms, settings.mouse_processing.ema_tau_ms);
   OVERRIDE_bool(raw_mouse_capture_on_start,
                 settings.raw_mouse_capture_on_start);
+  OVERRIDE_bool(kbm_overlay_enabled, settings.overlay.enabled);
+  OVERRIDE_int32(kbm_overlay_corner, settings.overlay.corner);
+  OVERRIDE_int32(kbm_overlay_ema_background_transparency,
+                 settings.overlay.ema_background_transparency);
 }
 
 }  // namespace xe::hid::kbm

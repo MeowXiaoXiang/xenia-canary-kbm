@@ -57,7 +57,7 @@ void KbmMouseProcessor::Reset(std::chrono::steady_clock::time_point time) {
 }
 
 MouseVector KbmMouseProcessor::Estimate(const KbmMouseSettings& settings,
-                                        const KbmMouseSample& sample) {
+                                        KbmMouseSample& sample) {
   MouseVector velocity = {double(sample.raw_delta_x) / sample.elapsed_seconds,
                           double(sample.raw_delta_y) / sample.elapsed_seconds};
   if (processing_.mode == KbmMouseMode::kFixedWindow) {
@@ -66,6 +66,7 @@ MouseVector KbmMouseProcessor::Estimate(const KbmMouseSettings& settings,
     const double ratio =
         sample.elapsed_seconds / (processing_.ema_tau_ms * 0.001);
     const double alpha = -std::expm1(-ratio);
+    sample.ema_alpha = alpha;
     const double decay = std::exp(-ratio);
     ema_velocity_ = {alpha * velocity.x + decay * ema_velocity_.x,
                      alpha * velocity.y + decay * ema_velocity_.y};
