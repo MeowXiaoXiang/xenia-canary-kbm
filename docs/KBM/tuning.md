@@ -7,7 +7,7 @@
 1. New settings start at 800 DPI. Check the active DPI in your mouse software
    and enter it in **Mouse**. KBM uses that value to estimate how fast you move
    the mouse.
-2. Start with **Fixed window**, **16 ms**. Leave **Full-stick speed** at
+2. Start with **EMA smoothing**, **8 ms**. Leave **Full-stick speed** at
    **10 cm/s** and the minimum output at **30%** for the first test.
 3. Choose **Start test**. Try a small correction, then a fast swipe. If you
    reach 100% too easily, raise the full-stick speed. If a comfortable fast
@@ -29,8 +29,8 @@ startup capture, or **How these settings work** for more detail.
 
 | Mode | Starting value | Range | What to expect |
 | --- | ---: | --- | --- |
-| **Fixed window** | **16 ms** | 4–24 ms | A longer window keeps more recent movement for steadier slow aim. A shorter window clears old motion sooner and can miss sparse events. |
 | **EMA smoothing** | **8 ms** | 2–32 ms | Increase the time constant for stronger smoothing. The output can take longer to settle after you stop. |
+| **Fixed window** | **16 ms** | 4–24 ms | A longer window keeps more recent movement for steadier slow aim. A shorter window clears old motion sooner and can miss sparse events. |
 | **Direct** | Uses the game query interval | — | Responds to motion since the previous query. Slow speed can vary more between queries. |
 
 The Fixed window panel shows the latest interval, median, P95 and P99 of

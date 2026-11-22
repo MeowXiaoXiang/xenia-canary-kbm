@@ -32,8 +32,8 @@ using hid::kbm::KbmMouseMode;
 using localization::StringId;
 const char* Tr(StringId id) { return localization::Get(id); }
 
-constexpr StringId kMouseModes[] = {StringId::kKbmModeFixedWindow,
-                                    StringId::kKbmModeEma,
+constexpr StringId kMouseModes[] = {StringId::kKbmModeEma,
+                                    StringId::kKbmModeFixedWindow,
                                     StringId::kKbmModeDirect};
 
 KbmInputDriver* FindKbmDriver(EmulatorWindow& window) {

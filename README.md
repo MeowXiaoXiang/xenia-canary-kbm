@@ -19,8 +19,8 @@ an emulated Xbox 360 controller.
 ## Quick start
 
 1. Launch the Windows build and open **KBM Controller Settings**.
-2. In **Mouse**, enter your mouse's actual DPI. Start with **Fixed window** at
-   **16 ms**. Set your keys and mouse buttons in **Button bindings**.
+2. In **Mouse**, enter your mouse's actual DPI. Start with **EMA smoothing** at
+   **8 ms**. Set your keys and mouse buttons in **Button bindings**.
 3. Choose **Save all and close**. In game, press **F8** to capture the mouse.
 
 KBM Controller is the default Windows input backend. Use `--hid=any` for
@@ -31,7 +31,7 @@ general hardware controllers or `--hid=keyboard` for keyboard passthrough.
 - Bind keyboard keys, mouse buttons and key combinations to Xbox 360 controls.
 - Aim with Raw Input. Set the mouse speed needed to reach full stick and try it
   in a live preview before saving.
-- Choose Fixed window, EMA smoothing or Direct. See the
+- Choose EMA smoothing, Fixed window or Direct. See the
   [tuning guide](docs/KBM/tuning.md#choose-a-processing-mode) for when to use each.
 - View in-game diagnostics or record input for replay. The settings window
   supports English and Traditional Chinese.

@@ -147,7 +147,7 @@ TEST_CASE("Earlier grouped v4 configs default missing optional fields",
   SetupConfig(directory.path(), false);
   REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
   const auto loaded = GetSettingsFromCvars();
-  REQUIRE(loaded.mouse_processing.mode == KbmMouseMode::kFixedWindow);
+  REQUIRE(loaded.mouse_processing.mode == KbmMouseMode::kEma);
   REQUIRE(loaded.mouse_processing.fixed_window_ms == 16.0);
   REQUIRE(loaded.mouse_processing.ema_tau_ms == 8.0);
   REQUIRE_FALSE(loaded.overlay.enabled);
@@ -213,7 +213,7 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
     to = "dpi = \"fast\"";
   }
   SECTION("Unknown processing mode") {
-    from = "processing_mode = \"fixed_window\"";
+    from = "processing_mode = \"ema\"";
     to = "processing_mode = \"unknown\"";
   }
   SECTION("Unknown compensation shape") {

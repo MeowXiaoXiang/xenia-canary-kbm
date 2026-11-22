@@ -17,9 +17,9 @@
 
 namespace xe::hid::kbm {
 
-enum class KbmMouseMode { kFixedWindow, kEma, kDirect };
+enum class KbmMouseMode { kEma, kFixedWindow, kDirect };
 
-inline constexpr KbmMouseMode kDefaultMouseMode = KbmMouseMode::kFixedWindow;
+inline constexpr KbmMouseMode kDefaultMouseMode = KbmMouseMode::kEma;
 inline constexpr double kDefaultFixedWindowMs = 16.0;
 inline constexpr double kDefaultEmaTauMs = 8.0;
 inline constexpr double kMinFixedWindowMs = 4.0;

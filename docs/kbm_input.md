@@ -13,7 +13,7 @@ On Windows, KBM Controller maps keyboard and mouse input to an emulated Xbox
 2. Enable **KBM Controller** and select a controller slot. Bind your keys and
    mouse buttons under **Button bindings**.
 3. In **Mouse**, enable **Use mouse to control the right stick** and enter your
-   mouse's actual DPI. Start with **Fixed window** at **16 ms**.
+   mouse's actual DPI. Start with **EMA smoothing** at **8 ms**.
 4. Choose **Save all and close**. In game, press **F8** to capture the mouse.
 
 If the menu is missing or KBM input is inactive, launch with `--hid=kbm` or
@@ -58,9 +58,9 @@ for the full rules.
 
 ## Raw Input mouse tuning
 
-Start with Fixed 16 ms and your mouse's actual DPI. Use the
+Start with EMA 8 ms and your mouse's actual DPI. Use the
 [mouse tuning guide](KBM/tuning.md) to adjust slow aim, full-stick speed and
-anti-deadzone, or to compare Fixed window, EMA and Direct.
+anti-deadzone, or to compare EMA, Fixed window and Direct.
 
 The anti-deadzone buttons offer **Circle** with one minimum, or **Axial**
 with separate horizontal and vertical minima. See

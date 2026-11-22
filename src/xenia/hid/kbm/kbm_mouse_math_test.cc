@@ -242,7 +242,10 @@ TEST_CASE(
   const auto now = KbmMouseWindow::Time{} + 1s;
   KbmMouseProcessor mouse;
   KbmMouseSettings settings;
-  REQUIRE(settings.processing.mode == KbmMouseMode::kFixedWindow);
+  REQUIRE(settings.processing.mode == KbmMouseMode::kEma);
+  REQUIRE(settings.processing.ema_tau_ms == 8.0);
+  settings.processing.mode = KbmMouseMode::kFixedWindow;
+  REQUIRE(mouse.Configure(settings.processing, now));
   REQUIRE(settings.processing.fixed_window_ms == 16.0);
   mouse.Reset(now);
   mouse.Consume(settings, true, now + 1ms);
@@ -296,7 +299,8 @@ TEST_CASE("EMA uses actual time, reverses, and clears at the stop gates",
   settings.processing.mode = KbmMouseMode::kEma;
   REQUIRE(settings.processing.ema_tau_ms == 8.0);
   settings.deadzone_compensation = GENERATE(false, true);
-  REQUIRE(mouse.Configure(settings.processing, now));
+  REQUIRE_FALSE(mouse.Configure(settings.processing, now));
+  mouse.Reset(now);
   mouse.Consume(settings, true, now + 1ms);
   mouse.AddDelta(8, 0, now + 5ms);
   const double first = 2000 * -std::expm1(-0.5);
