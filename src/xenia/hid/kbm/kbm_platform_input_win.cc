@@ -346,7 +346,17 @@ bool KbmPlatformInput::UpdateClipRectangle() {
     XELOGW("kbm: failed to clip the mouse cursor, error {}.", GetLastError());
     return false;
   }
-  return CenterCursor();
+  if (!CenterCursor()) {
+    return false;
+  }
+  // Focus restoration may hide the cursor before it reaches our client area.
+  // Reapply the native cursor after centering; the Window setter caches state.
+  if (window_.HasFocus() && GetForegroundWindow() == hwnd &&
+      GetCapture() == hwnd &&
+      window_.GetCursorVisibility() == ui::Window::CursorVisibility::kHidden) {
+    SetCursor(nullptr);
+  }
+  return true;
 }
 
 bool KbmPlatformInput::CenterCursor() {

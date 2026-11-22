@@ -278,6 +278,7 @@ verify native Windows event ordering or a game's camera response.
 | --- | --- | --- |
 | Focus loss | Hold a movement key or mouse button, switch to another application, release it there, and return. | No stuck control. Requested mouse capture can resume on return. |
 | Capture toggle | Move the mouse while repeatedly capturing and releasing with F8. | Cursor visibility and clipping match capture state; old movement does not reappear after capture resumes. |
+| Rapid focus restore | With F8 capture active, Alt+Tab away and immediately return; repeat with a pause and in windowed/fullscreen modes. Toggle capture off with F8 and repeat. | While captured, the cursor is hidden and motion still works. With capture released, the cursor remains available. No visible cursor jitters around the window center after focus returns. |
 | Host dialogs | Open and close settings while moving or holding a control; repeat with another host dialog. | Guest input is suspended, the cursor is available, and closing the last dialog restores requested capture without stale input. |
 | Binding capture | Capture a key, mouse button, and modifier chord; cancel capture with Escape. | Correct binding names, working cancellation, and no unintended controller input while the dialog is open. |
 | Capture hotkey binding | Start capturing the hotkey, click a mouse button, then press a keyboard key or chord. | Mouse buttons do not finish the hotkey capture; the supported keyboard input does. Regular controller bindings still accept mouse buttons. |
