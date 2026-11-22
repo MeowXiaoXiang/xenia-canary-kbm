@@ -20,6 +20,11 @@ At 5 cm/s, half the mouse speed reaches full stick compared with 10 cm/s.
 The game controls how fast the camera turns at that output. In-game stick
 sensitivity, deadzones, acceleration and turn limits can differ by title.
 
+The live preview is below mouse tuning. Hover over **Peak** for sampling
+limitations. The mouse capture hotkey stays visible below the preview. Click
+its key button to rebind it. Expand **Mouse capture options** to change
+startup capture, or **How these settings work** for more detail.
+
 ## Choose a processing mode
 
 | Mode | Starting value | Range | What to expect |
@@ -37,7 +42,7 @@ interval is longer than the window.
 
 Use **Show in-game diagnostics** in Fixed window or EMA mode. The diagnostics
 overlay previews the selected mode, timing and appearance while KBM settings
-are open. If the draft mode or its time setting differs from the active one,
+are open. If the selected mode or its time setting differs from the active one,
 the preview asks you to save before it shows live data. With matching settings
 and no game running, it displays **Waiting for a game to start**.
 
@@ -53,8 +58,8 @@ and no game running, it displays **Waiting for a game to start**.
   2 cm/s. Higher speeds in the last five seconds raise that limit.
   When you stop moving and game queries continue, the speeds return to zero
   while earlier motion scrolls out of the chart.
-  Use **Diagnostics overlay transparency** in the EMA settings to adjust the
-  background.
+  Enable **Show in-game diagnostics** to reveal **Diagnostics overlay
+  transparency** below it in EMA mode.
 - **Direct** hides the overlay. Switching back to Fixed window or EMA
   restores the saved overlay preferences.
 

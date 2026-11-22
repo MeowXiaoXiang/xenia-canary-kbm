@@ -60,7 +60,7 @@ and glyph support.
 ## Scope and privacy
 
 Do not add games, disc images, title content, saves, shader caches, logs, or
-other proprietary Xbox assets to this repository. The project deliberately
+other proprietary Xbox assets to this repository. The project
 does not contain game-specific hooks, memory patches, or title profiles.
 For general emulator information and compatibility reports, see the
 [upstream Xenia Canary project](https://github.com/xenia-canary/xenia-canary).

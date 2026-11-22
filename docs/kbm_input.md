@@ -29,15 +29,15 @@ configuration in the storage root. Enter bindings from older `winkey.toml`
 files again.
 
 If Xenia rejects an older or invalid `kbm.toml`, choose **Restore all defaults...**
-before saving. This resets the entire draft, including bindings.
+before saving. This resets all settings in the window, including bindings.
 **Save all** replaces the old file with schema v4. Copy the old file first if
 you want a backup. Startup, cancellation and a failed save leave the old file
 in place.
 
 ## Settings window
 
-- **Save all** saves the draft and activates it. **Save all and close** also
-  closes the window. Preview uses your draft before you save it.
+- **Save all** writes all changes and applies them. **Save all and close** also
+  closes the window. Use live preview to test changes before saving.
 - **Cancel and close** discards edits since the last successful save. With
   unsaved edits, closing from the title bar, pressing Escape outside an edit
   or test, or choosing the menu entry again asks what to do.

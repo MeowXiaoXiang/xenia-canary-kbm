@@ -21,8 +21,8 @@
 namespace xe::hid::kbm {
 
 // Owns native Raw Input registration, cursor capture and window lifecycle.
-// It deliberately only reports state transitions to the KBM driver: mapping,
-// input state and report collection remain portable core concerns.
+// Reports native input and capture state to the KBM driver. Mapping, input
+// state and report collection stay in the portable core.
 class KbmPlatformInput final {
  public:
   enum class CaptureMode { kNone, kGameplay, kPreview };

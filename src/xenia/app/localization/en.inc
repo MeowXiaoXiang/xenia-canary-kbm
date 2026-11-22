@@ -138,6 +138,9 @@ XE_LOCALIZATION_STRING(
     "be saved, but input requires hid = \"kbm\" on the next launch.")
 XE_LOCALIZATION_STRING(kKbmPressBinding, "Press a key or mouse button...")
 XE_LOCALIZATION_STRING(kKbmPressCaptureKey, "Press a keyboard key...")
+XE_LOCALIZATION_STRING(kKbmCaptureKeyTooltip,
+                       "Click to bind a keyboard key. Hold Ctrl, Alt, Shift, "
+                       "or Win to create a chord.")
 XE_LOCALIZATION_STRING(
     kKbmBindingTooltip,
     "Click, then press a key or mouse button. Hold Ctrl, Alt, Shift, or "
@@ -169,15 +172,26 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "Invert vertical look")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
-XE_LOCALIZATION_STRING(kKbmCaptureToggle,
-                       "Mouse capture hotkey (keyboard only):")
+XE_LOCALIZATION_STRING(kKbmCaptureToggle, "Mouse capture hotkey")
 XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "Stick anti-deadzone")
 XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0–50%)")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneCircle, "Circle")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneAxial, "Axial")
+XE_LOCALIZATION_STRING(
+    kKbmAxialMagnitudeHelp,
+    "Each axis is limited to 100%. Combined diagonal output can exceed 100%.")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseX,
+                       "Horizontal minimum output (0–50%)")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseY, "Vertical minimum output (0–50%)")
+XE_LOCALIZATION_STRING(
+    kKbmAxialResponseHelp,
+    "Compensates each axis independently using its minimum output. Crossing an "
+    "axis can change the output direction abruptly.")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
-    "Raises non-zero output to cross the game's stick deadzone. Too much "
-    "minimum output makes fine adjustment difficult. A speed estimate of "
-    "zero produces zero output. Disable for pure linear output.")
+    "Raises non-zero output to cross the game's stick deadzone. Setting the "
+    "minimum too high makes small movements harder to control. A speed "
+    "estimate of zero produces zero output. Disable for linear output.")
 XE_LOCALIZATION_STRING(kKbmDiagnostics, "Advanced and diagnostics")
 XE_LOCALIZATION_STRING(kKbmLastStickOutput,
                        "Mouse right-stick magnitude: {:.1f}%")
@@ -198,18 +212,18 @@ XE_LOCALIZATION_STRING(
     "KBM Controller input is temporarily paused while this window is "
     "open.")
 XE_LOCALIZATION_STRING(kKbmDiagnosticsUnavailable,
-                       "Runtime diagnostics are unavailable.")
+                       "Input diagnostics are unavailable.")
 XE_LOCALIZATION_STRING(kKbmSave, "Save all")
 XE_LOCALIZATION_STRING(kKbmCancel, "Cancel and close")
 XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "Restore all defaults...")
 XE_LOCALIZATION_STRING(kKbmSaveClose, "Save all and close")
 XE_LOCALIZATION_STRING(kKbmSettingsFile, "Settings file: kbm.toml")
 XE_LOCALIZATION_STRING(kKbmAppliedUnsaved,
-                       "Draft changes affect preview only; save to activate.")
+                       "Changes affect preview only. Save all to apply them.")
 XE_LOCALIZATION_STRING(kKbmAppliedSaved, "Changes are applied and saved.")
 XE_LOCALIZATION_STRING(
     kKbmAppliedSaveFailed,
-    "Saving failed. The active settings and kbm.toml were not changed.")
+    "Saving failed. Your current settings and kbm.toml are unchanged.")
 XE_LOCALIZATION_STRING(
     kKbmConfigIncompatible,
     "kbm.toml is incompatible and was not loaded, including its bindings. "
@@ -219,7 +233,7 @@ XE_LOCALIZATION_STRING(kKbmUnbound, "Unbound")
 XE_LOCALIZATION_STRING(kKbmBindEscape, "Bind Escape")
 XE_LOCALIZATION_STRING(kKbmCancelCapture, "Cancel capture")
 XE_LOCALIZATION_STRING(
-    kKbmSnapshot, "Last gameplay sample (not live while this window is open)")
+    kKbmSnapshot, "Last gameplay mouse sample (paused while settings are open)")
 XE_LOCALIZATION_STRING(kKbmInputSampling, "Input sampling")
 XE_LOCALIZATION_STRING(kKbmStartInputSampling, "Record 60-second diagnostics")
 XE_LOCALIZATION_STRING(kKbmSaveAndStartInputSampling,
@@ -228,8 +242,8 @@ XE_LOCALIZATION_STRING(kKbmStopAndSaveInputSampling, "Stop and save report")
 XE_LOCALIZATION_STRING(kKbmCancelInputSampling, "Cancel sampling")
 XE_LOCALIZATION_STRING(
     kKbmInputSamplingHelp,
-    "Recording closes settings and resumes game input. Draft changes are saved "
-    "first; the report records the active mouse parameters.")
+    "Recording closes this window and resumes game input. Changes are saved "
+    "first; the report includes the mouse settings used for recording.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingProgress,
                        "Recording: %.0f s remaining | %zu samples")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportSaved, "Report saved: %s")
@@ -399,18 +413,22 @@ XE_LOCALIZATION_STRING(kKbmNoRecentPollIntervals,
                        "No game queries in the last 5 seconds.")
 XE_LOCALIZATION_STRING(kKbmEmaTau, "Smoothing time constant (ms)")
 XE_LOCALIZATION_STRING(
-    kKbmProcessingHelp,
-    "Fixed window uses the most recent motion for the selected duration. "
-    "EMA smooths the Direct estimate. Direct uses motion between game queries. "
-    "Longer times can make stopping or reversing feel slower. The preview "
-    "peak is the highest sampled output. A brief motion can expire from the "
+    kKbmFixedWindowHelp,
+    "Uses motion within the selected time window. A longer window can make "
+    "stopping or reversing feel slower.")
+XE_LOCALIZATION_STRING(kKbmDirectHelp,
+                       "Estimates speed from motion and elapsed time between "
+                       "game queries, without additional smoothing.")
+XE_LOCALIZATION_STRING(
+    kKbmPreviewSamplingHelp,
+    "Peak is the highest sampled output. A brief motion can expire from the "
     "fixed window between preview samples.")
 
 XE_LOCALIZATION_STRING(
     kKbmPhysicalGuide,
-    "Match the active DPI in your mouse software. Changing full-stick speed "
-    "from 10 to 5 cm/s halves the mouse speed needed for full stick. Try slow "
-    "and fast movements in the live preview to see when it reaches 100%.")
+    "Changing full-stick speed from 10 to 5 cm/s halves the mouse speed needed "
+    "for the same output. Compare slow movement, fast movement and stopping in "
+    "the preview. Full-stick speed is a physical speed, not cm/360 degrees.")
 
 XE_LOCALIZATION_STRING(kKbmLivePreview, "Independent live stick preview")
 
@@ -420,7 +438,7 @@ XE_LOCALIZATION_STRING(kKbmStopPreview, "Stop test")
 
 XE_LOCALIZATION_STRING(kKbmPreviewExitHelp,
                        "Move the mouse to test. Press Escape, Enter or Space "
-                       "to release the cursor. Game input remains paused.")
+                       "to release the cursor.")
 
 XE_LOCALIZATION_STRING(kKbmPreviewSpeed,
                        "Est. mouse speed %.1f cm/s | Full stick at %.2f cm/s")
@@ -434,14 +452,14 @@ XE_LOCALIZATION_STRING(
 
 XE_LOCALIZATION_STRING(kKbmBindingActions, "Binding actions")
 XE_LOCALIZATION_STRING(
-    kKbmDpiHelp, "Manually enter actual DPI (100–32,000); not auto-detected.")
+    kKbmDpiHelp,
+    "Enter your mouse's active DPI (100–32,000); not detected automatically.")
 XE_LOCALIZATION_STRING(
     kKbmSpeedDirection,
-    "The right stick reaches full deflection when the estimated mouse speed "
-    "reaches this value. Lower values make it easier to reach full stick.")
+    "Lower values produce more stick output at the same mouse speed.")
 XE_LOCALIZATION_STRING(kKbmTuningHelp, "How these settings work")
-XE_LOCALIZATION_STRING(
-    kKbmPreviewDraft, "Uses this window's draft only. Game input stays paused.")
+XE_LOCALIZATION_STRING(kKbmPreviewDraft,
+                       "Test the settings shown in this window.")
 XE_LOCALIZATION_STRING(kKbmCaptureOptions, "Mouse capture options")
 XE_LOCALIZATION_STRING(kKbmKeyboardBindings, "Button bindings")
 XE_LOCALIZATION_STRING(kKbmTechnicalDetails,
@@ -450,31 +468,16 @@ XE_LOCALIZATION_STRING(
     kKbmInputSamplingStartFailed,
     "Could not start recording. Check the log and try again.")
 XE_LOCALIZATION_STRING(kKbmUnsavedTitle, "Unsaved changes")
-XE_LOCALIZATION_STRING(
-    kKbmUnsavedHelp,
-    "Mouse, bindings and controller options share one draft. Save all changes, "
-    "discard them, or continue editing.")
+XE_LOCALIZATION_STRING(kKbmUnsavedHelp,
+                       "Save changes to mouse, bindings and controller "
+                       "options, discard them, or continue editing.")
 XE_LOCALIZATION_STRING(kKbmDiscardClose, "Discard changes and close")
 XE_LOCALIZATION_STRING(kKbmContinueEditing, "Continue editing")
 XE_LOCALIZATION_STRING(kKbmResetTitle, "Restore all defaults?")
+XE_LOCALIZATION_STRING(kKbmResetHelp,
+                       "Reset all bindings, mouse and controller options. Save "
+                       "all to apply and write the defaults.")
+XE_LOCALIZATION_STRING(kKbmResetConfirm, "Restore defaults")
 XE_LOCALIZATION_STRING(
-    kKbmResetHelp,
-    "Reset every binding, mouse and controller option in this draft. The "
-    "active settings and file change only after Save all.")
-XE_LOCALIZATION_STRING(kKbmResetConfirm, "Reset the entire draft")
-XE_LOCALIZATION_STRING(kKbmSharedDraft,
-                       "One draft for mouse, bindings and controller options. "
-                       "Save all to activate.")
-
-XE_LOCALIZATION_STRING(kKbmAntiDeadzoneCircle, "Circle")
-XE_LOCALIZATION_STRING(kKbmAntiDeadzoneAxial, "Axial")
-XE_LOCALIZATION_STRING(
-    kKbmAxialMagnitudeHelp,
-    "Each axis is limited to 100%. Combined diagonal output can exceed 100%.")
-XE_LOCALIZATION_STRING(kKbmMinimumResponseX,
-                       "Horizontal minimum output (0–50%)")
-XE_LOCALIZATION_STRING(kKbmMinimumResponseY, "Vertical minimum output (0–50%)")
-XE_LOCALIZATION_STRING(
-    kKbmAxialResponseHelp,
-    "Compensates each axis independently using its minimum output. Crossing an "
-    "axis can change the output direction abruptly.")
+    kKbmSharedDraft,
+    "Save all applies mouse, bindings and controller changes together.")

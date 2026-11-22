@@ -67,6 +67,21 @@ void Error(StringId text) {
   ImGui::PopStyleColor();
 }
 
+void Tooltip(const char* text, const char* heading = nullptr) {
+  if (ImGui::BeginTooltip()) {
+    const float width = std::max(
+        1.0f,
+        std::min(ImGui::GetFontSize() * 26, ImGui::GetIO().DisplaySize.x - 32));
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+    if (heading) {
+      ImGui::TextUnformatted(heading);
+    }
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+  }
+}
+
 void NextButton(float width) {
   const float right =
       ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
@@ -469,10 +484,23 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
   const auto capture_prompt = allow_alternatives
                                   ? StringId::kKbmPressBinding
                                   : StringId::kKbmPressCaptureKey;
-  if (ImGui::BeginTable("Binding", 2, ImGuiTableFlags_SizingStretchProp)) {
+  const auto tooltip = allow_alternatives ? StringId::kKbmBindingTooltip
+                                          : StringId::kKbmCaptureKeyTooltip;
+  const float minimum_width =
+      allow_alternatives ? 0
+                         : std::max(ImGui::GetFontSize() * 8,
+                                    ImGui::CalcTextSize(Tr(capture_prompt)).x +
+                                        ImGui::GetStyle().FramePadding.x * 2);
+  const float actions_width =
+      ImGui::CalcTextSize("...").x + ImGui::GetStyle().FramePadding.x * 2;
+  const float table_width =
+      allow_alternatives ? 0
+                         : std::min(ImGui::GetContentRegionAvail().x,
+                                    minimum_width + actions_width +
+                                        ImGui::GetStyle().CellPadding.x * 4);
+  if (ImGui::BeginTable("Binding", 2, ImGuiTableFlags_SizingStretchProp,
+                        ImVec2(table_width, 0))) {
     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-    const float actions_width =
-        ImGui::CalcTextSize("...").x + ImGui::GetStyle().FramePadding.x * 2;
     ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed,
                             actions_width);
     ImGui::TableNextRow();
@@ -484,9 +512,13 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
           capturing ? Tr(capture_prompt) : Tr(StringId::kKbmUnbound);
       const float width = std::min(
           ImGui::GetContentRegionAvail().x,
-          ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2);
+          std::max(minimum_width, ImGui::CalcTextSize(label).x +
+                                      ImGui::GetStyle().FramePadding.x * 2));
       if (ImGui::Button(label, ImVec2(width, 0))) {
         StartBindingCapture(&binding, false);
+      }
+      if (ImGui::IsItemHovered()) {
+        Tooltip(Tr(tooltip));
       }
     } else {
       const float available = ImGui::GetContentRegionAvail().x;
@@ -498,9 +530,10 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
         const std::string label = capturing_token
                                       ? Tr(capture_prompt)
                                       : hid::kbm::FormatKbmBinding(tokens[i]);
-        const float width =
-            std::min(available, ImGui::CalcTextSize(label.c_str()).x +
-                                    ImGui::GetStyle().FramePadding.x * 2);
+        const float width = std::min(
+            available,
+            std::max(minimum_width, ImGui::CalcTextSize(label.c_str()).x +
+                                        ImGui::GetStyle().FramePadding.x * 2));
         if (i) {
           NextButton(width);
         }
@@ -508,8 +541,7 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
           StartBindingCapture(&binding, false, int(i));
         }
         if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("%s\n%s", label.c_str(),
-                            Tr(StringId::kKbmBindingTooltip));
+          Tooltip(Tr(tooltip), label.c_str());
         }
         ImGui::PopID();
       }
@@ -520,7 +552,7 @@ bool KbmConfigDialog::DrawBinding(const char* id, std::string& binding,
       ImGui::OpenPopup("Actions");
     }
     if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", Tr(StringId::kKbmBindingActions));
+      Tooltip(Tr(StringId::kKbmBindingActions));
     }
     if (ImGui::BeginPopup("Actions")) {
       if (allow_alternatives &&
@@ -562,11 +594,29 @@ void KbmConfigDialog::DrawMouseSection() {
     MarkDraftChanged();
   }
   ImGui::Separator();
+  DrawPreview();
+  ImGui::Separator();
   if (DrawCaptureSettings()) {
     MarkDraftChanged();
   }
-  ImGui::Separator();
-  DrawPreview();
+  if (ImGui::TreeNodeEx("KbmTuningHelp", 0, "%s",
+                        Tr(StringId::kKbmTuningHelp))) {
+    ImGui::TextWrapped("%s", Tr(StringId::kKbmPhysicalGuide));
+    ImGui::Spacing();
+    const auto mode = settings_.mouse_processing.mode;
+    if (mode != KbmMouseMode::kEma) {
+      ImGui::TextWrapped("%s", Tr(mode == KbmMouseMode::kFixedWindow
+                                      ? StringId::kKbmFixedWindowHelp
+                                      : StringId::kKbmDirectHelp));
+      ImGui::Spacing();
+    }
+    ImGui::TextWrapped("%s", Tr(settings_.raw_mouse_anti_deadzone_shape ==
+                                        hid::kbm::KbmAntiDeadzoneShape::kAxial
+                                    ? StringId::kKbmAxialResponseHelp
+                                    : StringId::kKbmMinimumResponseHelp));
+    ImGui::TextDisabled("%s", Tr(StringId::kKbmSettingsFile));
+    ImGui::TreePop();
+  }
 }
 
 bool KbmConfigDialog::DrawProcessingTime() {
@@ -718,6 +768,18 @@ void KbmConfigDialog::DrawPollHudControls() {
   if (toggled) {
     UpdatePollHud(emulator_window_);
   }
+  if (overlay.enabled &&
+      settings_.mouse_processing.mode == KbmMouseMode::kEma) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(Tr(StringId::kKbmPollHudEmaTransparency));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("##KbmEmaHudTransparency",
+                         &overlay.ema_background_transparency, 0, 100, "%d%%",
+                         ImGuiSliderFlags_AlwaysClamp)) {
+      MarkDraftChanged(false);
+    }
+  }
 }
 
 void KbmConfigDialog::UpdatePollHud(EmulatorWindow& window) {
@@ -852,7 +914,7 @@ bool KbmConfigDialog::DrawMouseSettings() {
   changed |=
       ImGui::Checkbox(Tr(StringId::kKbmEnableRawMouse), &settings_.raw_mouse);
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("%s", Tr(StringId::kKbmEnableRawMouseTooltip));
+    Tooltip(Tr(StringId::kKbmEnableRawMouseTooltip));
   }
   ImGui::EndDisabled();
   if (!settings_.enabled) {
@@ -876,15 +938,6 @@ bool KbmConfigDialog::DrawMouseSettings() {
         poll_stats_.Draw(processing.fixed_window_ms);
       } else {
         ImGui::TextWrapped("%s", Tr(StringId::kKbmEmaTimeConstantHelp));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(Tr(StringId::kKbmPollHudEmaTransparency));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::SliderInt("##KbmEmaHudTransparency",
-                             &settings_.overlay.ema_background_transparency, 0,
-                             100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
-          MarkDraftChanged(false);
-        }
       }
       DrawPollHudControls();
     }
@@ -965,7 +1018,7 @@ bool KbmConfigDialog::DrawMouseSettings() {
                     ImVec2(center.x + radius, center.y + radius), color);
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-      ImGui::SetTooltip("%s", Tr(help));
+      Tooltip(Tr(help));
     }
     if (clicked) {
       settings_.raw_mouse_anti_deadzone_shape = shape;
@@ -993,19 +1046,6 @@ bool KbmConfigDialog::DrawMouseSettings() {
   ImGui::EndDisabled();
   changed |= ImGui::Checkbox(Tr(StringId::kKbmInvertVertical),
                              &settings_.raw_mouse_invert_y);
-  if (ImGui::TreeNodeEx("KbmTuningHelp", 0, "%s",
-                        Tr(StringId::kKbmTuningHelp))) {
-    ImGui::TextWrapped("%s", Tr(StringId::kKbmPhysicalGuide));
-    ImGui::Spacing();
-    ImGui::TextWrapped("%s", Tr(StringId::kKbmProcessingHelp));
-    ImGui::Spacing();
-    ImGui::TextWrapped("%s", Tr(settings_.raw_mouse_anti_deadzone_shape ==
-                                        hid::kbm::KbmAntiDeadzoneShape::kAxial
-                                    ? StringId::kKbmAxialResponseHelp
-                                    : StringId::kKbmMinimumResponseHelp));
-    ImGui::TextDisabled("%s", Tr(StringId::kKbmSettingsFile));
-    ImGui::TreePop();
-  }
   return changed;
 }
 
@@ -1043,6 +1083,9 @@ void KbmConfigDialog::DrawPreview(bool visible) {
                      settings_.raw_mouse_full_stick_speed_cm_s);
   ImGui::AlignTextToFramePadding();
   ImGui::Text(Tr(StringId::kKbmPreviewPeak), preview.peak() * 100);
+  if (ImGui::IsItemHovered()) {
+    Tooltip(Tr(StringId::kKbmPreviewSamplingHelp));
+  }
   NextButton(ButtonWidth(StringId::kKbmResetPreviewPeak));
   if (ImGui::Button(Tr(StringId::kKbmResetPreviewPeak))) {
     driver->ResetMousePreview(settings_);
@@ -1071,12 +1114,18 @@ void KbmConfigDialog::DrawPreview(bool visible) {
 }
 
 bool KbmConfigDialog::DrawCaptureSettings() {
-  ImGui::TextDisabled("%s", Tr(StringId::kKbmCaptureOptions));
-  bool changed = ImGui::Checkbox(Tr(StringId::kKbmCaptureOnStart),
-                                 &settings_.raw_mouse_capture_on_start);
+  bool changed = false;
+  ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted(Tr(StringId::kKbmCaptureToggle));
+  NextButton(ImGui::GetFontSize() * 15);
   changed |= DrawBinding("CaptureToggle",
                          settings_.raw_mouse_capture_toggle_key, false);
+  if (ImGui::TreeNodeEx("KbmCaptureOptions", 0, "%s",
+                        Tr(StringId::kKbmCaptureOptions))) {
+    changed |= ImGui::Checkbox(Tr(StringId::kKbmCaptureOnStart),
+                               &settings_.raw_mouse_capture_on_start);
+    ImGui::TreePop();
+  }
   return changed;
 }
 
@@ -1180,7 +1229,7 @@ bool KbmConfigDialog::DrawDiagnostics() {
     ImGui::TextWrapped("%s", Tr(StringId::kKbmSnapshot));
     ImGui::ProgressBar(std::min(output, 1.0f), ImVec2(-1, 0), label.c_str());
     if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", Tr(StringId::kKbmAxialMagnitudeHelp));
+      Tooltip(Tr(StringId::kKbmAxialMagnitudeHelp));
     }
     ImGui::TextWrapped(Tr(StringId::kKbmRawSpeed),
                        diagnostics.raw_counts_per_second_x,

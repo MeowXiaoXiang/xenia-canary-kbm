@@ -36,8 +36,8 @@ void KbmInputSampling::Shutdown() {
     }
   }
   changed_.notify_one();
-  // A completed report is drained. An unfinished session is discarded, as on
-  // driver shutdown previously. The worker owns no driver/UI references.
+  // Finish queued reports before returning; discard the active recording.
+  // The worker owns no driver or UI references.
   if (worker_.joinable()) {
     worker_.join();
   }

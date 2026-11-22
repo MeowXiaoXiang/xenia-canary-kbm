@@ -98,7 +98,8 @@ state, and reset, stale or dropped sample counts. `interval_ms` is the time
 since the mouse processor last advanced or was reset. If a poll does not run
 the mouse processor, such as during preview capture, this field is zero. The
 Fixed window panel uses a separate history of intervals between game queries.
-Schema 4 identifies `mapper=physical_linear_radial`, `processing_mode`,
+Schema 4 identifies `mapper=physical_linear_radial` or
+`mapper=physical_linear_axial`, together with `processing_mode`,
 `fixed_window_ms`, and `ema_tau_ms` in its metadata. Reports are published
 after recording ends.
 
