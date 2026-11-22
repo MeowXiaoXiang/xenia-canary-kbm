@@ -288,6 +288,7 @@ verify native Windows event ordering or a game's camera response.
 | Processing defaults and stability | Start with a fresh configuration. Open the processing menu, switch modes, save and reopen. Then restore defaults. | The menu lists EMA smoothing, Fixed window and Direct in that order. EMA is selected at 8 ms and Fixed starts at 16 ms. Switching preserves each time setting. Restoring defaults changes the draft until saved. |
 | Diagnostics overlay | Before launching a game, enable the overlay and select each corner. Launch a game and switch between Fixed window, EMA and Direct in the draft. Change each timing setting and save. Move the mouse, then stop for at least five seconds. | The preview follows draft mode, timing and corner. With unapplied mode or timing, it asks to save for live data. Fixed window shows query intervals and coverage. EMA plots raw and smoothed speeds. The live values return to zero as the earlier movement scrolls out of the chart. Direct hides the overlay and switching back restores it. Gameplay input resumes when settings close. |
 | Overlay preferences | Change visibility, corner and EMA background transparency, then cancel. Change them again, save, and restart into a game without opening KBM settings. | Cancel restores the saved preferences. The next launch uses the newly saved preferences. |
+| FPS overlay coexistence | Enable the FPS overlay from Display and the KBM diagnostics overlay. Toggle each independently, and repeatedly open and close host settings. | Both overlays can remain visible. Hiding one leaves the other enabled. Closing the last host dialog restores gameplay input even when an overlay remains visible. |
 | High EMA time constants | Compare 8, 24 and 32 ms in the same scene with slow tracking, a fast move followed by a stop, and a reversal. Record actual FPS and the query intervals when testing different frame rates. | Replay accepts the 32 ms capture. Compare the timing of the stick commands with the observed camera response. |
 | Live preview | Start a test before loading a game; move, stop, reset the peak, and change tuning. | Output updates without guest polls; stopping returns to zero, and reset or tuning changes clear the peak. |
 | Preview capture | Test Escape, Enter, Space, focus loss, binding capture and dialog closure. | Cursor is released; returning focus does not restart preview, and the gameplay F8 request is preserved. |
@@ -306,6 +307,12 @@ Host-dialog suspension clears logical keyboard state on both entry and resume.
 Keys received for UI navigation or binding capture must not become held guest
 controls when the last dialog closes. A new press can activate the binding
 again after resume.
+
+Host button queries for ImGui navigation and XAM closing-input filtering do
+not advance the KBM mouse processor or record game-query intervals. The XAM
+filter still hides held closing buttons until release and discards queued
+keystrokes. Game calls to `XamInputGetState` continue polling while XAM UI is
+active, with their output withheld from the game.
 
 Diagnostic completion transfers the completed buffers to one report worker.
 The controller query does not copy the buffers, serialize CSV, or write files.

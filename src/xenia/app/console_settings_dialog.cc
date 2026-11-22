@@ -73,10 +73,28 @@ static const std::map<uint32_t, std::string> kAVRegion = {
     {0x00400400, "PAL"},
     {0x00800300, "PAL 50Hz"}};
 
+// Label on the left, with the next control aligned to a shared column.
+static void LabeledRow(std::string_view label) {
+  const float start_x = ImGui::GetCursorPosX();
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted(label.data(), label.data() + label.size());
+  ImGui::SameLine();
+  // Leave room for long translated labels as well as the current row.
+  const float label_width = std::max(
+      {ImGui::CalcTextSize(localization::Get(StringId::kConsoleDisableDst)).x,
+       ImGui::CalcTextSize(
+           localization::Get(StringId::kConsoleLowLatencyUnsupported))
+           .x,
+       ImGui::CalcTextSize(label.data(), label.data() + label.size()).x});
+  ImGui::SetCursorPosX(start_x + label_width +
+                       ImGui::GetStyle().ItemSpacing.x * 2.0f);
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+}
+
 template <typename T>
 void DrawCombobox(ImGuiIO& io, std::string_view combobox_name,
                   const std::map<T, std::string>& options, xe::be<T>& value) {
-  const char* preview = "Unknown";
+  const char* preview = localization::Get(StringId::kUnknown);
   for (const auto& opt : options) {
     if (opt.first == value.get()) {
       preview = opt.second.data();
@@ -84,7 +102,8 @@ void DrawCombobox(ImGuiIO& io, std::string_view combobox_name,
     }
   }
 
-  if (ImGui::BeginCombo(combobox_name.data(), preview)) {
+  LabeledRow(combobox_name);
+  if (ImGui::BeginCombo(fmt::format("##{}", combobox_name).c_str(), preview)) {
     for (const auto& opt : options) {
       const bool selected = (opt.first == value.get());
       if (ImGui::Selectable(opt.second.data(), selected)) {
@@ -107,8 +126,8 @@ void DrawLanguageCombobox(ImGuiIO& io, xe::be<uint32_t>& value) {
     }
   }
 
-  if (ImGui::BeginCombo(localization::Get(StringId::kConsoleLanguage),
-                        preview)) {
+  LabeledRow(localization::Get(StringId::kConsoleLanguage));
+  if (ImGui::BeginCombo("##Language", preview)) {
     for (const auto& option : kLanguageMap) {
       const bool selected = option.first == value.get();
       if (ImGui::Selectable(localization::Get(option.second), selected)) {
@@ -134,8 +153,8 @@ void DrawResolutionCombobox(ImGuiIO& io,
     }
   }
 
-  if (ImGui::BeginCombo(localization::Get(StringId::kConsoleResolution),
-                        preview)) {
+  LabeledRow(localization::Get(StringId::kConsoleResolution));
+  if (ImGui::BeginCombo("##Resolution", preview)) {
     for (const auto& opt : options) {
       const bool selected = (opt.to_host() == resolution.get());
       if (ImGui::Selectable(opt.name_.c_str(), selected)) {
@@ -172,8 +191,8 @@ void DrawTimezoneCombobox(ImGuiIO& io, kernel::XConfigData* xdata) {
     index = std::distance(kernel::kTimezones.cbegin(), it);
   }
 
-  if (ImGui::BeginCombo(localization::Get(StringId::kConsoleTimezone),
-                        kernel::kTimezones[index].name.c_str())) {
+  LabeledRow(localization::Get(StringId::kConsoleTimezone));
+  if (ImGui::BeginCombo("##Timezone", kernel::kTimezones[index].name.c_str())) {
     for (size_t i = 0; i < kernel::kTimezones.size(); ++i) {
       const bool is_selected =
           (kernel::kTimezones[i] == kernel::kTimezones[index]);
@@ -202,7 +221,8 @@ void DrawTimezoneCombobox(ImGuiIO& io, kernel::XConfigData* xdata) {
 template <typename T>
 static bool FlagCheckbox(const char* label, xe::be<T>& field, T value) {
   bool set = (field.get() & value) != 0;
-  if (ImGui::Checkbox(label, &set)) {
+  LabeledRow(label);
+  if (ImGui::Checkbox(fmt::format("##{}", label).c_str(), &set)) {
     if (set) {
       field = field.get() | value;
     } else {
@@ -226,57 +246,50 @@ static void ByteArray(const char* label, T* array, size_t count) {
   }
 }
 
+// Bordered box with the label set into its top border.
 void GroupBox(const char* label, auto draw_fn) {
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  ImVec2 text_size = ImGui::CalcTextSize(label);
-  float border_offset = text_size.y * 0.5f;
-  ImGuiStyle& style = ImGui::GetStyle();
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float label_height = ImGui::GetTextLineHeight();
+  const float inset_x = 8.0f;
+  // Clear the half of the label that hangs below the border.
+  const float padding_y = label_height * 0.5f + style.ItemSpacing.y;
 
-  // Push content down so it doesn't overlap the label
-  ImGui::SetCursorPosY(ImGui::GetCursorPosY() + border_offset);
-  ImGui::Indent(8.0f);
+  const ImVec2 box_min = ImGui::GetCursorScreenPos();
+  const float border_top = box_min.y + label_height * 0.5f;
+  const float min_box_right =
+      box_min.x + ImGui::GetContentRegionAvail().x - 1.0f;
 
+  ImGui::SetCursorScreenPos(
+      ImVec2(box_min.x + inset_x, border_top + padding_y));
   ImGui::BeginGroup();
-  ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x - 16.0f, 0));
-  ImGui::Spacing();
   draw_fn();
-  ImGui::Spacing();
   ImGui::EndGroup();
 
-  ImGui::Unindent(8.0f);
+  const ImVec2 content_max = ImGui::GetItemRectMax();
+  const float box_right = std::max(min_box_right, content_max.x + inset_x);
+  const float box_bottom = content_max.y + padding_y;
 
-  // NOW we know the rect
-  ImVec2 rect_min = ImGui::GetItemRectMin();
-  ImVec2 rect_max = ImGui::GetItemRectMax();
-
-  // Expand rect a bit for padding
-  rect_min.x -= 8.0f;
-  rect_max.x += 8.0f;
-  rect_max.y += style.ItemSpacing.y;
-
-  // Move the top of the border up to account for label offset
-  rect_min.y -= border_offset;
-
-  ImU32 border_color = ImGui::GetColorU32(ImGuiCol_Border);
-  float label_start = rect_min.x + 8.0f;
-  float label_end = label_start + text_size.x + 4.0f;
-
-  // Top edge with gap for label
-  draw_list->AddLine(ImVec2(rect_min.x, rect_min.y),
-                     ImVec2(label_start, rect_min.y), border_color);
-  draw_list->AddLine(ImVec2(label_end, rect_min.y),
-                     ImVec2(rect_max.x, rect_min.y), border_color);
-  // Left, right, bottom
-  draw_list->AddLine(rect_min, ImVec2(rect_min.x, rect_max.y), border_color);
-  draw_list->AddLine(ImVec2(rect_max.x, rect_min.y),
-                     ImVec2(rect_max.x, rect_max.y), border_color);
-  draw_list->AddLine(ImVec2(rect_min.x, rect_max.y), rect_max, border_color);
-
-  // Label
-  draw_list->AddText(ImVec2(label_start + 2.0f, rect_min.y - border_offset),
+  const ImU32 border_color = ImGui::GetColorU32(ImGuiCol_Border);
+  const float label_x = box_min.x + inset_x;
+  const float label_end = label_x + ImGui::CalcTextSize(label).x;
+  draw_list->AddLine(ImVec2(box_min.x, border_top),
+                     ImVec2(label_x - 4.0f, border_top), border_color);
+  draw_list->AddLine(ImVec2(label_end + 4.0f, border_top),
+                     ImVec2(box_right, border_top), border_color);
+  draw_list->AddLine(ImVec2(box_min.x, border_top),
+                     ImVec2(box_min.x, box_bottom), border_color);
+  draw_list->AddLine(ImVec2(box_right, border_top),
+                     ImVec2(box_right, box_bottom), border_color);
+  draw_list->AddLine(ImVec2(box_min.x, box_bottom),
+                     ImVec2(box_right + 1.0f, box_bottom), border_color);
+  draw_list->AddText(ImVec2(label_x, box_min.y),
                      ImGui::GetColorU32(ImGuiCol_Text), label);
 
-  ImGui::SetCursorPosY(rect_max.y + style.ItemSpacing.y);
+  // Reserve the box so the window sizes around it.
+  ImGui::SetCursorScreenPos(box_min);
+  ImGui::Dummy(ImVec2(box_right + 1.0f - box_min.x,
+                      box_bottom - box_min.y + style.ItemSpacing.y));
 }
 
 void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
@@ -334,8 +347,6 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
                      xconfig_data_.user.parental_control_flags,
                      static_cast<uint8_t>(kernel::X_PC_FLAGS::PCEnabled));
       });
-
-      ImGui::Dummy(ImVec2(2.f, 2.f));
 
       GroupBox(tr(StringId::kConsoleRetailOptions), [&]() {
         FlagCheckbox(tr(StringId::kConsoleDashboardInitialized),
@@ -401,35 +412,23 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
                      xconfig_data_.user.audio_flags,
                      static_cast<uint32_t>(kernel::X_AUDIO_FLAGS::LowLatency));
 
-        float volume = xconfig_data_.user.music_volume.get();
-        if (ImGui::SliderFloat(tr(StringId::kConsoleAudioPlayerVolume), &volume,
-                               0.0f, 1.0f, "%.2f")) {
-          xconfig_data_.user.music_volume = volume;
+        int volume_percent = static_cast<int>(
+            xconfig_data_.user.music_volume.get() * 100.0f + 0.5f);
+        LabeledRow(tr(StringId::kConsoleAudioPlayerVolume));
+        if (ImGui::SliderInt("##MusicVolume", &volume_percent, 0, 100,
+                             "%d%%")) {
+          xconfig_data_.user.music_volume = volume_percent / 100.0f;
         }
       });
 
       GroupBox(tr(StringId::kConsoleNetwork), [&]() {
-        if (ImGui::BeginTable("##NetworkTable", 2)) {
-          ImGui::TableNextRow();
-          ImGui::TableNextColumn();
+        LabeledRow(tr(StringId::kConsoleMacAddress));
+        ByteArray("mac", xconfig_data_.secured.mac_address.data(),
+                  xconfig_data_.secured.mac_address.size());
 
-          ImGui::TextUnformatted(tr(StringId::kConsoleMacAddress));
-          ImGui::TableNextColumn();
-
-          ByteArray("mac", xconfig_data_.secured.mac_address.data(),
-                    xconfig_data_.secured.mac_address.size());
-
-          ImGui::TableNextRow();
-          ImGui::TableNextColumn();
-
-          ImGui::TextUnformatted(tr(StringId::kConsoleNetworkId));
-          ImGui::TableNextColumn();
-
-          ByteArray("netid", xconfig_data_.secured.online_network_id.data(),
-                    xconfig_data_.secured.online_network_id.size());
-
-          ImGui::EndTable();
-        }
+        LabeledRow(tr(StringId::kConsoleNetworkId));
+        ByteArray("netid", xconfig_data_.secured.online_network_id.data(),
+                  xconfig_data_.secured.online_network_id.size());
       });
       ImGui::EndDisabled();
       ImGui::EndTabItem();
@@ -441,25 +440,35 @@ void ConsoleSettingsDialog::OnDraw(ImGuiIO& io) {
   ImGui::Dummy(ImVec2(2.f, 2.f));
   // Bottom
   ImGui::Separator();
+  ImGui::Spacing();
 
   ImGui::BeginDisabled(emulator_window_.emulator()->is_title_open());
-  if (ImGui::Button(tr(StringId::kConsoleSave))) {
+  const float footer_y = ImGui::GetCursorPosY();
+  if (ui::DialogButton(tr(StringId::kConsoleSave), true)) {
     SaveConfig();
+    save_confirmation_is_reset_ = false;
     save_confirmation_disappearance_ = ImGui::GetTime() + 3.0;
   }
 
   if (save_confirmation_disappearance_ > ImGui::GetTime()) {
+    // Centre vertically on the button.
     ImGui::SameLine();
-    ImGui::TextUnformatted(tr(StringId::kConsoleSaved));
+    ImGui::SetCursorPosY(
+        footer_y +
+        (ui::DialogButtonSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::TextUnformatted(tr(save_confirmation_is_reset_
+                                  ? StringId::kConsoleResetSaved
+                                  : StringId::kConsoleSaved));
   }
 
   ImGui::SameLine();
-  ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
-                       ImGui::GetContentRegionAvail().x - 55.f);
-
-  if (ImGui::Button(tr(StringId::kConsoleReset), ImVec2(55.f, 0.0f))) {
+  ImGui::SetCursorPosY(footer_y);
+  ui::RightAlignDialogButtons(1);
+  if (ui::DialogButton(tr(StringId::kConsoleReset), false)) {
     xconfig_->SetDefaults();
     xconfig_data_ = *xconfig_->GetXConfig();
+    SaveConfig();
+    save_confirmation_is_reset_ = true;
     save_confirmation_disappearance_ = ImGui::GetTime() + 3.0;
   }
   ImGui::EndDisabled();

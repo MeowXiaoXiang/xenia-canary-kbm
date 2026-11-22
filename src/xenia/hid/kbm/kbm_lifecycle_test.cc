@@ -12,6 +12,10 @@
 #include <utility>
 
 #include "third_party/catch/single_include/catch2/catch.hpp"
+#include "xenia/hid/input_system.h"
+#include "xenia/kernel/xam/ui_input_filter.h"
+#include "xenia/ui/imgui_dialog.h"
+#include "xenia/ui/imgui_drawer.h"
 #include "xenia/ui/window.h"
 #include "xenia/ui/windowed_app_context.h"
 
@@ -53,6 +57,15 @@ class TestWindow final : public ui::Window {
     OnMouseDown(event, receiver);
   }
 
+  bool Character() {
+    ui::KeyEvent event(this, ui::VirtualKey::kA, 1, false, false, false, false,
+                       false);
+    event.set_unicode('a');
+    WindowDestructionReceiver receiver(this);
+    OnKeyChar(event, receiver);
+    return event.is_handled();
+  }
+
  private:
   bool OpenImpl() override { return true; }
   void RequestCloseImpl() override {}
@@ -88,7 +101,61 @@ class DriverFixture {
   KbmInputDriver driver;
 };
 
+class TestDialog final : public ui::ImGuiDialog {
+ public:
+  explicit TestDialog(ui::ImGuiDrawer& drawer) : ImGuiDialog(&drawer) {}
+  void OnDraw(ImGuiIO&) override {}
+};
+
 }  // namespace
+
+TEST_CASE("Overlays remain passive after the last host dialog closes",
+          "[kbm][lifecycle][overlay]") {
+  DriverFixture fixture;
+  InputSystem input_system(&fixture.window);
+  auto driver = std::make_unique<KbmInputDriver>(&fixture.window, 1);
+  driver->ApplySettings(fixture.driver.GetSettings());
+  auto* kbm = driver.get();
+  input_system.AddDriver(std::move(driver));
+  ui::ImGuiDrawer drawer(&fixture.window, 100);
+  drawer.LoadInputSystem(&input_system);
+  drawer.SetOverlay([] {});
+  drawer.SetPassiveOverlay([] {});
+
+  fixture.window.Key(ui::VirtualKey::kSpace, true);
+  X_INPUT_STATE state = {};
+  REQUIRE(kbm->GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+  REQUIRE_FALSE(fixture.window.Character());
+
+  for (int i = 0; i < 2; ++i) {
+    auto first = std::make_unique<TestDialog>(drawer);
+    auto second = std::make_unique<TestDialog>(drawer);
+    REQUIRE(kbm->GetState(0, &state) == X_ERROR_SUCCESS);
+    REQUIRE(state.gamepad.buttons == 0);
+    REQUIRE(fixture.window.Character());
+    first.reset();
+    REQUIRE(drawer.IsAnyDialogOpen());
+    REQUIRE(fixture.window.Character());
+    second.reset();
+    REQUIRE_FALSE(drawer.IsAnyDialogOpen());
+    REQUIRE(drawer.HasPassiveOverlay());
+    REQUIRE_FALSE(fixture.window.Character());
+
+    fixture.window.Key(ui::VirtualKey::kSpace, false);
+    fixture.window.Key(ui::VirtualKey::kSpace, true);
+    REQUIRE(kbm->GetState(0, &state) == X_ERROR_SUCCESS);
+    REQUIRE(state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+  }
+
+  drawer.SetOverlay(nullptr);
+  REQUIRE(drawer.HasPassiveOverlay());
+  REQUIRE_FALSE(fixture.window.Character());
+  drawer.SetOverlay([] {});
+  drawer.SetPassiveOverlay(nullptr);
+  REQUIRE_FALSE(drawer.HasPassiveOverlay());
+  REQUIRE_FALSE(fixture.window.Character());
+}
 
 TEST_CASE("Host hotkey queries read buttons without recording a poll",
           "[kbm][lifecycle]") {
@@ -115,6 +182,46 @@ TEST_CASE("Host hotkey queries read buttons without recording a poll",
   REQUIRE(guest_state.packet_number == baseline_packet + 1);
   REQUIRE(fixture.driver.GetInputSamplingStatus().sample_count == 1);
   fixture.driver.CancelInputSampling();
+}
+
+TEST_CASE("XAM closing-input filtering does not advance KBM polling",
+          "[kbm][lifecycle][xam]") {
+  DriverFixture fixture;
+  InputSystem input_system(&fixture.window);
+  auto driver = std::make_unique<KbmInputDriver>(&fixture.window, 1);
+  driver->ApplySettings(fixture.driver.GetSettings());
+  auto* kbm = driver.get();
+  input_system.AddDriver(std::move(driver));
+  kbm->SetHostInputSuspended(true);
+  REQUIRE(kbm->StartInputSampling());
+  kbm->SetHostInputSuspended(false);
+  fixture.window.Key(ui::VirtualKey::kSpace, true);
+
+  kernel::xam::UIInputFilter filter;
+  filter.OnUIClosed(&input_system);
+  REQUIRE(kbm->GetInputSamplingStatus().sample_count == 0);
+  X_INPUT_KEYSTROKE repeat = {};
+  repeat.user_index = 0;
+  repeat.flags = X_INPUT_KEYSTROKE_REPEAT;
+  REQUIRE(filter.ShouldDropKeystroke(&input_system, repeat));
+  REQUIRE(kbm->GetInputSamplingStatus().sample_count == 0);
+
+  X_INPUT_STATE state = {};
+  REQUIRE(kbm->GetStateForHostHotkeys(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+  filter.FilterState(0, &state);
+  REQUIRE_FALSE(state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+
+  fixture.window.Key(ui::VirtualKey::kSpace, false);
+  REQUIRE_FALSE(filter.ShouldDropKeystroke(&input_system, repeat));
+  fixture.window.Key(ui::VirtualKey::kSpace, true);
+  REQUIRE(kbm->GetStateForHostHotkeys(0, &state) == X_ERROR_SUCCESS);
+  filter.FilterState(0, &state);
+  REQUIRE(state.gamepad.buttons & X_INPUT_GAMEPAD_A);
+  REQUIRE(kbm->GetInputSamplingStatus().sample_count == 0);
+  REQUIRE(kbm->GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(kbm->GetInputSamplingStatus().sample_count == 1);
+  kbm->CancelInputSampling();
 }
 
 TEST_CASE("Capture hotkey binding ignores mouse buttons and keeps waiting",

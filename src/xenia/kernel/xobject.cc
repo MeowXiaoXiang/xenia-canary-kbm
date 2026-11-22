@@ -55,9 +55,12 @@ XObject::~XObject() {
     uint32_t ptr = guest_object_ptr_ - sizeof(X_OBJECT_HEADER);
     auto header = memory()->TranslateVirtual<X_OBJECT_HEADER*>(ptr);
 
-    // Free the object creation info
-    if (header->object_type_ptr) {
-      memory()->SystemHeapFree(header->object_type_ptr);
+    // Free the object type, unless it's one of the exported ones
+    const uint32_t type_ptr = header->object_type_ptr;
+    const uint32_t globals = kernel_state_->GetKernelGuestGlobals();
+    if (type_ptr && (type_ptr < globals ||
+                     type_ptr >= globals + sizeof(KernelGuestGlobals))) {
+      memory()->SystemHeapFree(type_ptr);
     }
 
     memory()->SystemHeapFree(ptr);
@@ -82,6 +85,16 @@ bool XObject::ReleaseHandle() {
   // FIXME: Return true when handle is actually released.
   return !handles_.empty() && kernel_state_->object_table()->ReleaseHandle(
                                   handles_[0]) == X_STATUS_SUCCESS;
+}
+
+void XObject::SetNativeCounts(int32_t pointer_count, int32_t handle_count) {
+  if (!allocated_guest_object_ || !guest_object_ptr_) {
+    return;
+  }
+  auto header = memory()->TranslateVirtual<X_OBJECT_HEADER*>(
+      guest_object_ptr_ - sizeof(X_OBJECT_HEADER));
+  header->pointer_count = pointer_count;
+  header->handle_count = handle_count;
 }
 
 void XObject::Retain() { ++pointer_ref_count_; }
@@ -216,6 +229,14 @@ uint32_t XObject::TimeoutTicksToMs(int64_t timeout_ticks) {
   }
 }
 
+std::optional<int64_t> XObject::MsToTimeoutTicks(uint32_t milliseconds) {
+  if (milliseconds == UINT32_MAX) {
+    return std::nullopt;
+  }
+
+  return int64_t(-10000) * milliseconds;
+}
+
 X_STATUS XObject::Wait(uint32_t wait_reason, uint32_t processor_mode,
                        uint32_t alertable, uint64_t* opt_timeout) {
   auto wait_handle = GetWaitHandle();
@@ -229,8 +250,21 @@ X_STATUS XObject::Wait(uint32_t wait_reason, uint32_t processor_mode,
                         TimeoutTicksToMs(*opt_timeout)))
                   : std::chrono::milliseconds::max();
 
-  auto result =
-      xe::threading::Wait(wait_handle, alertable ? true : false, timeout_ms);
+  // A wait on a signalled object is satisfied before user APCs are delivered,
+  // while an alertable host wait delivers them first, so check the object
+  // without alerting before waiting alertably.
+  auto result = xe::threading::WaitResult::kTimeout;
+
+  if (alertable) {
+    result =
+        xe::threading::Wait(wait_handle, false, std::chrono::milliseconds(0));
+  }
+
+  if (result != xe::threading::WaitResult::kSuccess &&
+      result != xe::threading::WaitResult::kAbandoned) {
+    result =
+        xe::threading::Wait(wait_handle, alertable ? true : false, timeout_ms);
+  }
 
   switch (result) {
     case xe::threading::WaitResult::kSuccess:
@@ -248,8 +282,11 @@ X_STATUS XObject::Wait(uint32_t wait_reason, uint32_t processor_mode,
     case xe::threading::WaitResult::kTimeout:
       xe::threading::MaybeYield();
       return X_STATUS_TIMEOUT;
-    default:
+    // An abandoned mutant is still taken, now by this thread
     case xe::threading::WaitResult::kAbandoned:
+      WaitCallback();
+      return X_STATUS_ABANDONED_WAIT_0;
+    default:
     case xe::threading::WaitResult::kFailed:
       return X_STATUS_ABANDONED_WAIT_0;
   }
@@ -263,9 +300,25 @@ X_STATUS XObject::SignalAndWait(XObject* signal_object, XObject* wait_object,
                         TimeoutTicksToMs(*opt_timeout)))
                   : std::chrono::milliseconds::max();
 
-  auto result = xe::threading::SignalAndWait(
-      signal_object->GetWaitHandle(), wait_object->GetWaitHandle(),
-      alertable ? true : false, timeout_ms);
+  // As in Wait, a signalled object satisfies the wait before user APCs are
+  // delivered. Signal and check without alerting first, then wait alertably
+  // on the object alone.
+  xe::threading::WaitResult result;
+
+  if (alertable) {
+    result = xe::threading::SignalAndWait(signal_object->GetWaitHandle(),
+                                          wait_object->GetWaitHandle(), false,
+                                          std::chrono::milliseconds(0));
+
+    if (result == xe::threading::WaitResult::kTimeout) {
+      result =
+          xe::threading::Wait(wait_object->GetWaitHandle(), true, timeout_ms);
+    }
+  } else {
+    result = xe::threading::SignalAndWait(signal_object->GetWaitHandle(),
+                                          wait_object->GetWaitHandle(), false,
+                                          timeout_ms);
+  }
 
   switch (result) {
     case xe::threading::WaitResult::kSuccess:
@@ -283,8 +336,10 @@ X_STATUS XObject::SignalAndWait(XObject* signal_object, XObject* wait_object,
     case xe::threading::WaitResult::kTimeout:
       xe::threading::MaybeYield();
       return X_STATUS_TIMEOUT;
-    default:
     case xe::threading::WaitResult::kAbandoned:
+      wait_object->WaitCallback();
+      return X_STATUS_ABANDONED_WAIT_0;
+    default:
     case xe::threading::WaitResult::kFailed:
       return X_STATUS_ABANDONED_WAIT_0;
   }
@@ -309,8 +364,22 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects,
   X_STATUS status;
   uint32_t boost_increment = 0;
   if (wait_type) {
-    auto result = xe::threading::WaitAny(wait_handles, count,
-                                         alertable ? true : false, timeout_ms);
+    // As in Wait, check the objects without alerting before waiting
+    // alertably
+    auto result =
+        std::make_pair(xe::threading::WaitResult::kTimeout, size_t(0));
+
+    if (alertable) {
+      result = xe::threading::WaitAny(wait_handles, count, false,
+                                      std::chrono::milliseconds(0));
+    }
+
+    if (result.first != xe::threading::WaitResult::kSuccess &&
+        result.first != xe::threading::WaitResult::kAbandoned) {
+      result = xe::threading::WaitAny(wait_handles, count,
+                                      alertable ? true : false, timeout_ms);
+    }
+
     switch (result.first) {
       case xe::threading::WaitResult::kSuccess:
         objects[result.second]->WaitCallback();
@@ -325,6 +394,7 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects,
         status = X_STATUS_TIMEOUT;
         break;
       case xe::threading::WaitResult::kAbandoned:
+        objects[result.second]->WaitCallback();
         status = X_STATUS(X_STATUS_ABANDONED_WAIT_0 + result.second);
         break;
       default:
@@ -333,8 +403,19 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects,
         break;
     }
   } else {
-    auto result = xe::threading::WaitAll(wait_handles, count,
-                                         alertable ? true : false, timeout_ms);
+    auto result = xe::threading::WaitResult::kTimeout;
+
+    if (alertable) {
+      result = xe::threading::WaitAll(wait_handles, count, false,
+                                      std::chrono::milliseconds(0));
+    }
+
+    if (result != xe::threading::WaitResult::kSuccess &&
+        result != xe::threading::WaitResult::kAbandoned) {
+      result = xe::threading::WaitAll(wait_handles, count,
+                                      alertable ? true : false, timeout_ms);
+    }
+
     switch (result) {
       case xe::threading::WaitResult::kSuccess:
         for (uint32_t i = 0; i < count; i++) {
@@ -353,8 +434,13 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects,
         xe::threading::MaybeYield();
         status = X_STATUS_TIMEOUT;
         break;
-      default:
       case xe::threading::WaitResult::kAbandoned:
+        for (uint32_t i = 0; i < count; i++) {
+          objects[i]->WaitCallback();
+        }
+        status = X_STATUS_ABANDONED_WAIT_0;
+        break;
+      default:
       case xe::threading::WaitResult::kFailed:
         status = X_STATUS_ABANDONED_WAIT_0;
         break;
@@ -390,13 +476,22 @@ uint8_t* XObject::CreateNative(uint32_t size) {
 
   auto header = memory()->TranslateVirtual<X_OBJECT_HEADER*>(mem);
 
-  auto object_type = memory()->SystemHeapAlloc(sizeof(X_OBJECT_TYPE));
-  if (object_type) {
-    // Set it up in the header.
-    // Some kernel method is accessing this struct and dereferencing a member
-    // @ offset 0x14
+  // The header points at the exported type, ExEventObjectType and the rest,
+  // as a title comparing them expects. A type with no export gets a blank one
+  // of its own, as some kernel method reads a member at 0x14.
+  auto& object_types =
+      kernel_state_->host_object_type_enum_to_guest_object_type_ptr_;
+  auto it = object_types.find(type_);
+  if (it != object_types.end()) {
+    header->object_type_ptr = it->second;
+  } else if (auto object_type =
+                 memory()->SystemHeapAlloc(sizeof(X_OBJECT_TYPE))) {
     header->object_type_ptr = object_type;
   }
+
+  // The handles opened so far, each holding one reference
+  const auto handle_count = static_cast<int32_t>(handles_.size());
+  SetNativeCounts(handle_count, handle_count);
 
   return memory()->TranslateVirtual(guest_object_ptr_);
 }

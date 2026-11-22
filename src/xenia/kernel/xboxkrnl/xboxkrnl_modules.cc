@@ -133,29 +133,34 @@ dword_result_t xeXexLoadImage(
       *hmodule_ptr = hmodule;
       return X_STATUS_OBJECT_NAME_COLLISION;
     } else {
-      // Existing module found.
+      // Existing module found: one more load to unload.
       hmodule = module->hmodule_ptr();
+      auto ldr_data =
+          kernel_memory()->TranslateVirtual<X_LDR_DATA_TABLE_ENTRY*>(hmodule);
+      ldr_data->load_count++;
       result = X_STATUS_SUCCESS;
     }
   } else {
     // Not found; attempt to load as a user module.
     auto user_module = load_callback();
+    // A title's own DLL only loads into the title process.
+    if (user_module && user_module->xex_module() &&
+        (user_module->xex_module()->xex_header()->module_flags &
+         XEX_MODULE_TITLE) &&
+        !(module_flags & TITLE_PROCESS)) {
+      kernel_state()->UnloadUserModule(user_module, false);
+      *hmodule_ptr = 0;
+      return X_STATUS_ACCESS_DENIED;
+    }
     if (user_module) {
       kernel_state()->ApplyTitleUpdate(user_module);
       kernel_state()->FinishLoadingUserModule(user_module);
       // Give up object ownership, this reference will be released by the last
-      // XexUnloadImage call
+      // XexUnloadImage call. A new module starts with a load count of 1.
       auto user_module_raw = user_module.release();
       hmodule = user_module_raw->hmodule_ptr();
       result = X_STATUS_SUCCESS;
     }
-  }
-
-  // Increment the module's load count.
-  if (hmodule) {
-    auto ldr_data =
-        kernel_memory()->TranslateVirtual<X_LDR_DATA_TABLE_ENTRY*>(hmodule);
-    ldr_data->load_count++;
   }
 
   *hmodule_ptr = hmodule;

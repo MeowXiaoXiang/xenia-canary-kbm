@@ -142,6 +142,11 @@ struct KernelGuestGlobals {
 
   // if LLE emulating Xam, this is needed or you get an immediate freeze
   X_KEVENT UsbdBootEnumerationDoneEvent;
+  X_KEVENT UsbdDriverLoadRequiredEvent;
+  X_KEVENT StfsDeviceErrorEvent;
+
+  // Every loaded module's loader entry, by InLoadOrderLinks, in load order
+  X_LIST_ENTRY loaded_modules;
 };
 struct DPCImpersonationScope {
   uint8_t previous_irql_;
@@ -281,7 +286,12 @@ class KernelState {
   void UnregisterNotifyListener(XNotifyListener* listener);
   void BroadcastNotification(XNotificationID id, uint32_t data);
 
-  util::NativeList* dpc_list() { return &dpc_list_; }
+  // A DPC waits in a queue for the KPCR it was inserted on and runs once that
+  // KPCR's IRQL drops below DISPATCH_LEVEL. QueueDpc returns false for a DPC
+  // that is already queued, and DequeueDpc whether it was queued.
+  bool QueueDpc(uint32_t pcr, uint32_t dpc);
+  bool DequeueDpc(uint32_t dpc);
+  void RunQueuedDpcs(cpu::ppc::PPCContext* context);
 
   void CompleteOverlapped(uint32_t overlapped_ptr, X_RESULT result);
   void CompleteOverlappedEx(uint32_t overlapped_ptr, X_RESULT result,
@@ -309,6 +319,9 @@ class KernelState {
       std::function<X_RESULT(uint32_t&, uint32_t&)> completion_callback,
       uint32_t overlapped_ptr, std::function<void()> pre_callback = nullptr,
       std::function<void()> post_callback = nullptr);
+
+  // Runs fn on the dispatch thread, which has a guest context.
+  void Dispatch(std::function<void()> fn);
 
   bool Save(ByteStream* stream);
   bool Restore(ByteStream* stream);
@@ -390,8 +403,11 @@ class KernelState {
 
   std::atomic<bool> dispatch_thread_running_;
   object_ref<XHostThread> dispatch_thread_;
+  // The queued DPCs and the KPCRs they wait for, in the order they were queued.
   // Must be guarded by the global critical region.
-  util::NativeList dpc_list_;
+  std::vector<std::pair<uint32_t, uint32_t>> queued_dpcs_;
+  // Lets a drop in IRQL skip the lock when nothing is queued.
+  std::atomic<uint32_t> queued_dpc_count_ = 0;
   std::condition_variable_any dispatch_cond_;
   std::list<std::function<void()>> dispatch_queue_;
 

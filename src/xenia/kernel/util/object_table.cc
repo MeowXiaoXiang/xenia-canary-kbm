@@ -144,6 +144,7 @@ X_STATUS ObjectTable::AddHandle(XObject* object, X_HANDLE* out_handle) {
         handle += XObject::kHandleHostBase;
       }
       object->handles().push_back(handle);
+      UpdateNativeCountsInLock(object);
 
       // Retain so long as the object is in the table.
       object->Retain();
@@ -189,6 +190,7 @@ X_STATUS ObjectTable::RetainHandle(X_HANDLE handle, uint64_t* out_generation) {
   }
 
   entry->handle_ref_count++;
+  UpdateNativeCountsInLock(entry->object);
   if (out_generation) {
     *out_generation = entry->generation;
   }
@@ -210,6 +212,7 @@ X_STATUS ObjectTable::ReleaseHandleInLock(X_HANDLE handle) {
     // No more references. Remove it from the table.
     return RemoveHandle(handle);
   }
+  UpdateNativeCountsInLock(entry->object);
 
   // FIXME: Return a status code telling the caller it wasn't released
   // (but not a failure code)
@@ -242,12 +245,22 @@ X_STATUS ObjectTable::RemoveHandle(X_HANDLE handle) {
       object->handles().erase(handle_entry);
     }
     object->UpdateNativeHandle(handle);
+    UpdateNativeCountsInLock(object);
 
     XELOGD("Removed handle:{:08X} for {}", handle, typeid(*object).name());
 
-    // Remove object name from mapping to prevent naming collision.
+    // The name lasts while the object has a handle, so it moves to another
+    // handle, like a duplicate, before it's removed.
     if (!object->name().empty()) {
-      RemoveNameMapping(object->name());
+      auto it = name_table_.find(string_key_case(object->name()));
+
+      if (it != name_table_.end() && it->second == handle) {
+        if (object->handles().empty()) {
+          name_table_.erase(it);
+        } else {
+          it->second = object->handles().front();
+        }
+      }
     }
     // Release now that the object has been removed from the table.
     object->Release();
@@ -274,7 +287,20 @@ X_STATUS ObjectTable::OpenGuestHandle(X_HANDLE handle, const XObject* object,
   if (entry->guest_open_count >= 0) {
     ++entry->guest_open_count;
   }
+  UpdateNativeCountsInLock(entry->object);
   return X_STATUS_SUCCESS;
+}
+
+void ObjectTable::UpdateNativeCountsInLock(XObject* object) {
+  int32_t pointer_count = 0;
+  for (X_HANDLE handle : object->handles()) {
+    const ObjectTableEntry* entry = LookupTableInLock(handle);
+    if (entry && entry->object == object) {
+      pointer_count += entry->handle_ref_count;
+    }
+  }
+  object->SetNativeCounts(pointer_count,
+                          static_cast<int32_t>(object->handles().size()));
 }
 
 X_STATUS ObjectTable::ClaimGuestClose(X_HANDLE handle, const XObject* object,

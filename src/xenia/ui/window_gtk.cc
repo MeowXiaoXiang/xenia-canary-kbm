@@ -37,6 +37,7 @@ GTKWindow::GTKWindow(WindowedAppContext& app_context,
              desired_logical_height) {}
 
 GTKWindow::~GTKWindow() {
+  *alive_ = false;
   EnterDestructor();
   if (window_) {
     // Set window_ to null to ignore events from now on since this ui::GTKWindow
@@ -209,6 +210,26 @@ void GTKWindow::ApplyNewFullscreen() {
   }
 }
 
+void GTKWindow::ApplyNewDesiredLogicalSize() {
+  // The desired size is the size of the drawing area, while gtk_window_resize
+  // takes the size of the whole window contents, which also include the main
+  // menu outside fullscreen. The menu is detached while in fullscreen, so use
+  // its preferred height rather than the current layout. For a maximized or a
+  // fullscreen window, GTK applies the size when the window is restored.
+  int menu_height = 0;
+  const auto* main_menu = dynamic_cast<const GTKMenuItem*>(GetMainMenu());
+
+  if (main_menu && main_menu->handle()) {
+    int menu_minimum_height = 0;
+    gtk_widget_get_preferred_height(main_menu->handle(), &menu_minimum_height,
+                                    &menu_height);
+  }
+
+  // The GDK_CONFIGURE that follows reports the new actual size.
+  gtk_window_resize(GTK_WINDOW(window_), int(GetDesiredLogicalWidth()),
+                    int(GetDesiredLogicalHeight()) + menu_height);
+}
+
 void GTKWindow::ApplyNewTitle() {
   gtk_window_set_title(GTK_WINDOW(window_), GetTitle().c_str());
 }
@@ -295,7 +316,46 @@ std::unique_ptr<Surface> GTKWindow::CreateSurfaceImpl(
   return nullptr;
 }
 
-void GTKWindow::RequestPaintImpl() { gtk_widget_queue_draw(drawing_area_); }
+void GTKWindow::RequestPaintImpl() {
+  // May be called from the guest output thread, but painting must be done in
+  // the UI thread.
+  // Painting directly rather than via gtk_widget_queue_draw, as GTK defers
+  // draws to its own frame clock, while guest output frames need to be painted
+  // as soon as they're ready, and the presenter limits the frame rate of the UI
+  // itself.
+  if (paint_requested_.exchange(true, std::memory_order_relaxed)) {
+    return;
+  }
+  // Not via CallInUIThread, as a paint may request the next one, and pending
+  // functions are executed until there are none left, which would never let
+  // the main loop handle events. With the same priority as pending functions
+  // so neither can starve the other.
+  gdk_threads_add_idle_full(
+      G_PRIORITY_DEFAULT_IDLE, PaintIdleHandler,
+      new std::pair<GTKWindow*, std::shared_ptr<bool>>(this, alive_),
+      [](gpointer data) {
+        delete static_cast<std::pair<GTKWindow*, std::shared_ptr<bool>>*>(data);
+      });
+}
+
+gboolean GTKWindow::PaintIdleHandler(gpointer data) {
+  const auto& request =
+      *static_cast<std::pair<GTKWindow*, std::shared_ptr<bool>>*>(data);
+  if (!*request.second) {
+    return G_SOURCE_REMOVE;
+  }
+  GTKWindow* window = request.first;
+  window->paint_requested_.store(false, std::memory_order_relaxed);
+  if (!window->drawing_area_) {
+    return G_SOURCE_REMOVE;
+  }
+  if (window->batched_size_update_depth_) {
+    window->batched_size_update_contained_draw_ = true;
+  } else {
+    window->OnPaint();
+  }
+  return G_SOURCE_REMOVE;
+}
 
 void GTKWindow::HandleSizeUpdate(
     WindowDestructionReceiver& destruction_receiver) {

@@ -431,3 +431,7 @@ XE_LOCALIZATION_STRING(
 XE_LOCALIZATION_STRING(kKbmResetConfirm, "還原預設值")
 XE_LOCALIZATION_STRING(kKbmSharedDraft,
                        "儲存全部會一併套用滑鼠、按鍵與控制器設定。")
+XE_LOCALIZATION_STRING(kMenuFpsOverlay, "顯示／隱藏 FPS 面板(&O)")
+XE_LOCALIZATION_STRING(kMenuResetWindowSize, "還原視窗大小(&R)")
+XE_LOCALIZATION_STRING(kXmpUnavailable, "音訊播放器無法使用。")
+XE_LOCALIZATION_STRING(kConsoleResetSaved, "設定已重設並儲存！")

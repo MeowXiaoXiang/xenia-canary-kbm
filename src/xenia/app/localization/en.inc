@@ -481,3 +481,7 @@ XE_LOCALIZATION_STRING(kKbmResetConfirm, "Restore defaults")
 XE_LOCALIZATION_STRING(
     kKbmSharedDraft,
     "Save all applies mouse, bindings and controller changes together.")
+XE_LOCALIZATION_STRING(kMenuFpsOverlay, "Toggle FPS &Overlay")
+XE_LOCALIZATION_STRING(kMenuResetWindowSize, "&Reset window size")
+XE_LOCALIZATION_STRING(kXmpUnavailable, "Audio player isn't available.")
+XE_LOCALIZATION_STRING(kConsoleResetSaved, "Settings Reset and Saved!")

@@ -142,8 +142,7 @@ bool BeginPollHud(int corner, float content_width, float opacity = 0.58f) {
       "###KbmPollHud", nullptr,
       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs |
-          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoDocking |
-          ImGuiWindowFlags_Tooltip);
+          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_Tooltip);
   ImGui::PopStyleColor();
   ImGui::PopStyleVar(2);
   return visible;
@@ -278,7 +277,7 @@ struct EmaHud {
         for (auto it = samples.rbegin(); it != samples.rend(); ++it) {
           if (previous &&
               it->time - *previous > std::chrono::milliseconds(100)) {
-            draw->PathStroke(color, ImDrawFlags_None, 1.25f);
+            draw->PathStroke(color, 1.25f, ImDrawFlags_None);
           }
           previous = it->time;
           const float age =
@@ -290,7 +289,7 @@ struct EmaHud {
                                      plot_width,
                      speed_y(speed)));
         }
-        draw->PathStroke(color, ImDrawFlags_None, 1.25f);
+        draw->PathStroke(color, 1.25f, ImDrawFlags_None);
       }
       if (latest) {
         const auto draw_label = [&](int index, const std::string& value,

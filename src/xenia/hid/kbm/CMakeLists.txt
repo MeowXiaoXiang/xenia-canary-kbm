@@ -57,7 +57,13 @@ if(XENIA_BUILD_TESTS)
     target_include_directories(xenia-hid-kbm-lifecycle-tests PRIVATE
       ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src)
     target_compile_features(xenia-hid-kbm-lifecycle-tests PRIVATE cxx_std_17)
-    target_link_libraries(xenia-hid-kbm-lifecycle-tests PRIVATE xenia-hid-kbm)
+    # The host-dialog regression exercises ImGuiDrawer and InputSystem together.
+    target_link_libraries(xenia-hid-kbm-lifecycle-tests PRIVATE
+      xenia-hid-kbm imgui capstone xenia-core xenia-cpu xenia-gpu xenia-kernel
+      xenia-patcher
+      $<$<BOOL:${XE_TARGET_X86_64}>:xenia-cpu-backend-x64>
+      $<$<BOOL:${XE_TARGET_AARCH64}>:xenia-cpu-backend-a64>
+    )
     add_test(NAME xenia-hid-kbm-lifecycle-tests
       COMMAND xenia-hid-kbm-lifecycle-tests)
   endif()

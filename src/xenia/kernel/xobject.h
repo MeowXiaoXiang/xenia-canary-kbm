@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <optional>
 #include <string>
 
 #include "xenia/base/threading.h"
@@ -198,6 +199,9 @@ class XObject {
 
   void RetainHandle();
   bool ReleaseHandle();
+  // Copies the counts into the object header, when the object has one of
+  // its own from CreateNative
+  void SetNativeCounts(int32_t pointer_count, int32_t handle_count);
   void Retain();
   void Release();
   X_STATUS Delete();
@@ -225,6 +229,8 @@ class XObject {
                                uint32_t wait_type, uint32_t wait_reason,
                                uint32_t processor_mode, uint32_t alertable,
                                uint64_t* opt_timeout);
+
+  static std::optional<int64_t> MsToTimeoutTicks(uint32_t milliseconds);
 
   static object_ref<XObject> GetNativeObject(
       KernelState* kernel_state, void* native_ptr,

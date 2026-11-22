@@ -54,6 +54,7 @@ class ConsoleSettingsDialog final : public ui::ImGuiDialog {
 
   // UI specific variables
   double save_confirmation_disappearance_ = 0.0;
+  bool save_confirmation_is_reset_ = false;
 };
 
 }  // namespace app

@@ -237,20 +237,13 @@ class EmulatorWindow {
    public:
     XMPConfigDialog(ui::ImGuiDrawer* imgui_drawer,
                     EmulatorWindow& emulator_window)
-        : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
-      if (emulator_window_.emulator_->audio_media_player()) {
-        volume_ = emulator_window_.emulator_->audio_media_player()
-                      ->GetVolume()
-                      ->load();
-      }
-    }
+        : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {}
 
    protected:
     void OnDraw(ImGuiIO& io) override;
 
    private:
     EmulatorWindow& emulator_window_;
-    float volume_ = 0.0f;
   };
 
   explicit EmulatorWindow(Emulator* emulator,
@@ -323,6 +316,11 @@ class EmulatorWindow {
 
   void ClearDialogs();
 
+  void OnFrameRateUpdated();
+  void DrawFrameRateOverlay();
+  void ApplyFrameRateOverlay();
+  void ToggleFrameRateOverlay();
+
   Emulator* emulator_;
   ui::WindowedAppContext& app_context_;
   EmulatorWindowListener window_listener_;
@@ -338,6 +336,8 @@ class EmulatorWindow {
 
   std::string base_title_;
   bool initializing_shader_storage_ = false;
+
+  std::atomic<bool> frame_rate_update_pending_ = false;
 
   std::unique_ptr<DisplayConfigDialog> display_config_dialog_;
 #if XE_PLATFORM_WIN32

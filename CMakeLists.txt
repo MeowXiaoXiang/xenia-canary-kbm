@@ -107,7 +107,9 @@ include_directories(SYSTEM
 # Global defines
 add_compile_definitions(
   VULKAN_HPP_NO_TO_STRING
-  IMGUI_DISABLE_DEFAULT_FONT
+  IMGUI_DISABLE_DEFAULT_FONT_BITMAP  # Keep the vector font for the fallback
+  IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+  IMGUI_USE_WCHAR32  # Characters above U+FFFF
   USE_CPP17  # Tabulate
 )
 
@@ -139,7 +141,6 @@ if(MSVC)
     _AMD64=1
     UNICODE
     _UNICODE
-    IMGUI_DISABLE_OBSOLETE_FUNCTIONS
   )
   add_link_options(
     /ignore:4006  # Ignores complaints about empty obj files
