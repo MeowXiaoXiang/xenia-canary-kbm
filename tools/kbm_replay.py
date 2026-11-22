@@ -190,12 +190,35 @@ class PhysicalEstimator:
         return (dx / dt, dy / dt * self.y_sign)
 
 
-def map_physical(velocity, threshold, minimum):
+def map_physical(velocity, threshold, minimum, shape="radial", axial_minimum=(.3, .3)):
     magnitude = math.hypot(*velocity)
     if magnitude == 0:
         return (0.0, 0.0)
+    if shape == "axial":
+        scale = min(magnitude / threshold, 1.0)
+        return tuple(0.0 if v == 0 else math.copysign(
+            min(floor + (1 - floor) * abs(v) / magnitude * scale, 1.0), v)
+            for v, floor in zip(velocity, axial_minimum))
     radius = minimum + (1 - minimum) * min(magnitude / threshold, 1.0)
     return tuple(v / magnitude * radius for v in velocity)
+
+
+def mapping_parameters(metadata):
+    mapper = metadata.get("mapper")
+    shapes = {"physical_linear_radial": "radial", "physical_linear_axial": "axial"}
+    if mapper not in shapes:
+        raise ValueError("unsupported physical KBM mapper")
+    shape = shapes[mapper]
+    if metadata.get("anti_deadzone_shape", "radial") != shape:
+        raise ValueError("inconsistent KBM anti-deadzone shape")
+    minimum = (.3, .3)
+    if shape == "axial":
+        minimum = tuple(float(metadata[k]) for k in ("minimum_response_x", "minimum_response_y"))
+        if not all(0 <= v <= .5 for v in minimum):
+            raise ValueError("invalid axial KBM parameters")
+    if metadata["deadzone_compensation"] == "false":
+        minimum = (0.0, 0.0)
+    return shape, minimum
 
 
 def processing_parameters(metadata):
@@ -229,8 +252,7 @@ def recorded_estimates(rows, events, estimator):
 
 
 def analyze_modes(path, metadata, rows):
-    if metadata["mapper"] != "physical_linear_radial":
-        raise ValueError("unsupported physical KBM mapper")
+    shape, axial_minimum = mapping_parameters(metadata)
     mode, window, tau = processing_parameters(metadata)
     dpi = float(metadata["dpi"])
     speed = float(metadata["full_stick_speed_cm_s"])
@@ -246,6 +268,7 @@ def analyze_modes(path, metadata, rows):
         if int(metadata[key]) < 0:
             raise ValueError(f"invalid {key}")
     result = {"report": path.name, "schema": "4", "processing_mode": mode,
+              "anti_deadzone_shape": shape,
               "fixed_window_ms": window, "ema_tau_ms": tau,
               "analyzed_samples": len(rows)}
     sidecar = path.with_suffix(".events.csv")
@@ -269,7 +292,7 @@ def analyze_modes(path, metadata, rows):
     for row, velocity in zip(rows, recorded_estimates(rows, events, estimator)):
         velocity_errors.append(math.hypot(
             velocity[0] - float(row["velocity_x"]), velocity[1] - float(row["velocity_y"])))
-        expected = map_physical(velocity, threshold, minimum)
+        expected = map_physical(velocity, threshold, minimum, shape, axial_minimum)
         output_errors.append(100 * math.hypot(
             expected[0] - int(row["thumb_x"]) / 32767,
             expected[1] - int(row["thumb_y"]) / 32767))

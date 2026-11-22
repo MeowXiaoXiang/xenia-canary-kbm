@@ -55,8 +55,17 @@ magnitude = clamp(hypot(velocity_x, velocity_y) / full_scale_cps, 0, 1)
 ```
 
 With anti-deadzone off, the amplitude is `magnitude`. With it on, nonzero
-output becomes `minimum + (1 - minimum) * magnitude`. A zero speed estimate
-always maps to zero. The mapper preserves direction, with optional Y inversion.
+radial output becomes `minimum + (1 - minimum) * magnitude` and preserves
+direction. Axial compensation starts with the same radial base vector
+`p = direction * magnitude`. Each nonzero component becomes
+`sign(p_i) * (minimum_i + (1 - minimum_i) * abs(p_i))`, using its independent
+horizontal or vertical minimum. Each zero component stays zero. Axial can
+change direction near the coordinate axes and can produce a vector magnitude
+above 1, with each component bounded by 1. The preview, diagnostics and report
+retain that combined magnitude. Progress bars fill at
+100% while their labels show the full magnitude. No circular normalization
+follows axial compensation.
+A zero speed estimate always maps to zero. Both shapes support Y inversion.
 Keyboard stick bindings combine with the mouse output using per-axis saturation.
 A game can retain its own acceleration and deadzone.
 
@@ -94,7 +103,11 @@ Schema 4 identifies `mapper=physical_linear_radial`, `processing_mode`,
 after recording ends.
 
 Metadata snapshots the active DPI, full-stick speed, anti-deadzone switch,
-minimum output, and Y inversion when recording starts. These are active gameplay
+minimum output, compensation shape, axial minima and Y inversion when
+recording starts. Axial metadata includes `anti_deadzone_shape=axial`,
+`minimum_response_x`, and `minimum_response_y`. Older radial reports retain
+their recorded mapping, and replay rejects inconsistent shape metadata.
+These are active gameplay
 settings, not an unsaved preview draft or detected mouse hardware values.
 The report does not contain a complete copy of `kbm.toml` or the button bindings.
 
@@ -269,6 +282,7 @@ verify native Windows event ordering or a game's camera response.
 | Capture hotkey binding | Start capturing the hotkey, click a mouse button, then press a keyboard key or chord. | Mouse buttons do not finish the hotkey capture; the supported keyboard input does. Regular controller bindings still accept mouse buttons. |
 | Unsupported binding key | While capturing a controller binding, press an unsupported key, then a supported key. | Capture keeps waiting after the unsupported key; the original binding is not silently cleared. |
 | Save and cancel | Edit a setting, save it, reopen, then edit and cancel. | Draft edits affect preview only; cancellation retains the last successfully activated settings. |
+| Anti-deadzone shape | Switch Circle and Axial, set different horizontal and vertical minima, save and reopen. Cancel another edit. Test slow motion at 0, 1, 5, 45 and 90 degrees, crossing axes and reversing, in each processor. | All minima retain their values. Cancel retains the saved mapping. Exact zero stays zero, each axis stays within its range, and the preview can show combined magnitude above 100% with Axial. Recording and replay agree on the selected shape and minima. |
 | Processing defaults and stability | Start with a fresh configuration. Open the processing menu, switch modes, save and reopen. Then restore defaults. | The menu lists Fixed window, EMA smoothing and Direct in that order. Fixed is selected at 16 ms and EMA starts at 8 ms. Switching preserves each time setting. Restoring defaults changes the draft until saved. |
 | Diagnostics overlay | Before launching a game, enable the overlay and select each corner. Launch a game and switch between Fixed window, EMA and Direct in the draft. Change each timing setting and save. Move the mouse, then stop for at least five seconds. | The preview follows draft mode, timing and corner. With unapplied mode or timing, it asks to save for live data. Fixed window shows query intervals and coverage. EMA plots raw and smoothed speeds. The live values return to zero as the earlier movement scrolls out of the chart. Direct hides the overlay and switching back restores it. Gameplay input resumes when settings close. |
 | Overlay preferences | Change visibility, corner and EMA background transparency, then cancel. Change them again, save, and restart into a game without opening KBM settings. | Cancel restores the saved preferences. The next launch uses the newly saved preferences. |

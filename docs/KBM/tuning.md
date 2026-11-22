@@ -87,6 +87,35 @@ from 0% to 50%. It raises the minimum for nonzero output and can help small
 movements get past the game's deadzone. An accurate DPI value gives a better
 speed estimate. It does not increase the number of counts the mouse reports.
 
+### Choose an anti-deadzone shape
+
+Use the **Circle** and **Axial** buttons beside **Stick anti-deadzone**.
+Circle is the default. It keeps one minimum output for the whole vector and
+preserves the estimated movement direction. Axial provides separate
+**Horizontal minimum output** and **Vertical minimum output** controls,
+each starting at 30% with a 0–50% range. All three minimum values are saved
+independently, so switching shapes retains their settings.
+
+Axial raises each nonzero component independently. It can help when a game
+applies its deadzone separately to horizontal and vertical input. Tiny motion
+across an axis can produce a direction jump. Compare slow horizontal,
+vertical, diagonal and near-horizontal movements before choosing it.
+Both shapes send zero for a zero speed estimate. Turning compensation off
+uses linear radial mapping.
+
+Each output axis is limited to 100%. With Axial enabled, the combined
+diagonal magnitude can exceed 100%. The live preview, diagnostics and CSV
+show that magnitude. A full progress bar represents 100%; its number can be
+higher with Axial. The full-stick speed sets where the underlying radial
+speed estimate saturates. Compensation can bring the combined magnitude to 100%
+earlier. All three processing modes and the independent preview use the same
+compensation rules.
+
+The v4 settings under `[HID.KBM.RawMouse.Tuning]` are `anti_deadzone_shape`
+(`radial` or `axial`), `minimum_response`, `minimum_response_x`, and
+`minimum_response_y`. Older v4 files keep their radial behavior. Missing
+axial minima default to 30%. Save to apply changes to gameplay.
+
 ## Compare two settings
 
 Use a familiar scene and keep the game's sensitivity, mouse DPI, full-stick

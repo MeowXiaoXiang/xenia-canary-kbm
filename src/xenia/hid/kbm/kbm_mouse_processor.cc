@@ -118,7 +118,10 @@ KbmMouseSample KbmMouseProcessor::Consume(
   sample.velocity_y = velocity_.y;
   const auto mapped = MapMousePhysical(
       velocity_, settings.dpi, settings.full_stick_speed_cm_s,
-      settings.deadzone_compensation ? settings.minimum_response : 0.0);
+      settings.deadzone_compensation ? settings.minimum_response : 0.0,
+      settings.deadzone_compensation ? settings.anti_deadzone_shape
+                                     : KbmAntiDeadzoneShape::kRadial,
+      {settings.minimum_response_x, settings.minimum_response_y});
   sample.thumb_x = static_cast<int16_t>(std::lround(mapped.x * 32767.0));
   sample.thumb_y = static_cast<int16_t>(std::lround(mapped.y * 32767.0));
   return sample;

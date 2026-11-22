@@ -37,7 +37,10 @@ KbmMouseSettings GetMouseSettings(const KbmSettings& settings) {
           settings.raw_mouse_deadzone_compensation,
           settings.raw_mouse_minimum_response,
           settings.raw_mouse_invert_y,
-          settings.mouse_processing};
+          settings.mouse_processing,
+          settings.raw_mouse_anti_deadzone_shape,
+          settings.raw_mouse_minimum_response_x,
+          settings.raw_mouse_minimum_response_y};
 }
 
 static bool ModifiersMatch(bool required_shift, bool required_ctrl,
@@ -58,6 +61,9 @@ static bool AreInputSettingsEqual(const KbmSettings& lhs,
       lhs.raw_mouse_deadzone_compensation !=
           rhs.raw_mouse_deadzone_compensation ||
       lhs.raw_mouse_minimum_response != rhs.raw_mouse_minimum_response ||
+      lhs.raw_mouse_anti_deadzone_shape != rhs.raw_mouse_anti_deadzone_shape ||
+      lhs.raw_mouse_minimum_response_x != rhs.raw_mouse_minimum_response_x ||
+      lhs.raw_mouse_minimum_response_y != rhs.raw_mouse_minimum_response_y ||
       lhs.raw_mouse_invert_y != rhs.raw_mouse_invert_y ||
       lhs.raw_mouse_capture_toggle_key != rhs.raw_mouse_capture_toggle_key ||
       lhs.raw_mouse_capture_on_start != rhs.raw_mouse_capture_on_start) {
@@ -264,7 +270,10 @@ bool KbmInputDriver::StartInputSampling(std::string title_name,
                         settings_.raw_mouse_deadzone_compensation,
                         settings_.raw_mouse_minimum_response,
                         settings_.raw_mouse_invert_y,
-                        settings_.mouse_processing};
+                        settings_.mouse_processing,
+                        settings_.raw_mouse_anti_deadzone_shape,
+                        settings_.raw_mouse_minimum_response_x,
+                        settings_.raw_mouse_minimum_response_y};
     if (!ConfigPath().empty()) {
       report->directory = ConfigPath().parent_path();
     }

@@ -66,6 +66,16 @@ DEFINE_transient_double(
     "estimate of zero produces zero output.",
     "HID.KBM");
 
+DEFINE_transient_string(raw_mouse_anti_deadzone_shape, "radial",
+                        "Stick anti-deadzone shape: radial or axial.",
+                        "HID.KBM");
+DEFINE_transient_double(
+    raw_mouse_minimum_response_x, 0.30,
+    "Minimum horizontal output for axial anti-deadzone. [0, 0.5].", "HID.KBM");
+DEFINE_transient_double(
+    raw_mouse_minimum_response_y, 0.30,
+    "Minimum vertical output for axial anti-deadzone. [0, 0.5].", "HID.KBM");
+
 DEFINE_transient_bool(raw_mouse_invert_y, false,
                       "Invert Raw Input mouse Y movement.", "HID.KBM");
 
@@ -207,6 +217,15 @@ std::optional<KbmConfigEntry> GetKbmConfigEntry(
   if (name == "raw_mouse_minimum_response") {
     return {{"HID.KBM.RawMouse.Tuning", "minimum_response", 3}};
   }
+  if (name == "raw_mouse_anti_deadzone_shape") {
+    return {{"HID.KBM.RawMouse.Tuning", "anti_deadzone_shape", 3}};
+  }
+  if (name == "raw_mouse_minimum_response_x") {
+    return {{"HID.KBM.RawMouse.Tuning", "minimum_response_x", 3}};
+  }
+  if (name == "raw_mouse_minimum_response_y") {
+    return {{"HID.KBM.RawMouse.Tuning", "minimum_response_y", 3}};
+  }
   if (name == "raw_mouse_processing_mode") {
     return {{"HID.KBM.RawMouse.Tuning", "processing_mode", 3}};
   }
@@ -282,17 +301,26 @@ std::optional<int64_t> IntegerSettingMaximum(std::string_view name) {
 bool IsNumberSetting(std::string_view name) {
   return name == "raw_mouse_dpi" || name == "raw_mouse_full_stick_speed_cm_s" ||
          name == "raw_mouse_minimum_response" ||
+         name == "raw_mouse_minimum_response_x" ||
+         name == "raw_mouse_minimum_response_y" ||
          name == "raw_mouse_fixed_window_ms" || name == "raw_mouse_ema_tau_ms";
 }
 
 bool IsOptionalSetting(std::string_view name) {
   return name == "raw_mouse_processing_mode" ||
+         name == "raw_mouse_anti_deadzone_shape" ||
+         name == "raw_mouse_minimum_response_x" ||
+         name == "raw_mouse_minimum_response_y" ||
          name == "raw_mouse_fixed_window_ms" ||
          name == "raw_mouse_ema_tau_ms" || name.starts_with("kbm_overlay_");
 }
 
 bool IsCompatibleConfigValue(const cvar::IConfigVar& config_var,
                              const toml::node& node) {
+  if (config_var.name() == "raw_mouse_anti_deadzone_shape") {
+    const auto shape = node.value<std::string_view>();
+    return shape && ParseAntiDeadzoneShape(*shape).has_value();
+  }
   if (config_var.name() == "raw_mouse_processing_mode") {
     const auto mode = node.value<std::string_view>();
     return mode && ParseMouseMode(*mode).has_value();
@@ -466,6 +494,12 @@ bool SaveConfig(const KbmSettings& source_settings, bool reset_incompatible) {
                 settings.raw_mouse_deadzone_compensation);
   values.insert("raw_mouse_minimum_response",
                 settings.raw_mouse_minimum_response);
+  values.insert("raw_mouse_anti_deadzone_shape",
+                AntiDeadzoneShapeName(settings.raw_mouse_anti_deadzone_shape));
+  values.insert("raw_mouse_minimum_response_x",
+                settings.raw_mouse_minimum_response_x);
+  values.insert("raw_mouse_minimum_response_y",
+                settings.raw_mouse_minimum_response_y);
   values.insert("raw_mouse_invert_y", settings.raw_mouse_invert_y);
   values.insert("raw_mouse_capture_toggle_key",
                 settings.raw_mouse_capture_toggle_key);
@@ -541,6 +575,15 @@ KbmSettings NormalizeSettings(KbmSettings settings) {
   settings.raw_mouse_minimum_response =
       finite_clamp(settings.raw_mouse_minimum_response,
                    defaults.raw_mouse_minimum_response, 0.0, 0.5);
+  settings.raw_mouse_minimum_response_x =
+      finite_clamp(settings.raw_mouse_minimum_response_x,
+                   defaults.raw_mouse_minimum_response_x, 0.0, 0.5);
+  settings.raw_mouse_minimum_response_y =
+      finite_clamp(settings.raw_mouse_minimum_response_y,
+                   defaults.raw_mouse_minimum_response_y, 0.0, 0.5);
+  if (settings.raw_mouse_anti_deadzone_shape != KbmAntiDeadzoneShape::kAxial) {
+    settings.raw_mouse_anti_deadzone_shape = KbmAntiDeadzoneShape::kRadial;
+  }
   settings.mouse_processing =
       NormalizeMouseProcessing(settings.mouse_processing);
   settings.overlay.corner = std::clamp(settings.overlay.corner, 0, 3);
@@ -564,6 +607,11 @@ KbmSettings GetSettingsFromCvars() {
   settings.raw_mouse_deadzone_compensation =
       cvars::raw_mouse_deadzone_compensation;
   settings.raw_mouse_minimum_response = cvars::raw_mouse_minimum_response;
+  settings.raw_mouse_anti_deadzone_shape =
+      ParseAntiDeadzoneShape(cvars::raw_mouse_anti_deadzone_shape)
+          .value_or(KbmAntiDeadzoneShape::kRadial);
+  settings.raw_mouse_minimum_response_x = cvars::raw_mouse_minimum_response_x;
+  settings.raw_mouse_minimum_response_y = cvars::raw_mouse_minimum_response_y;
   settings.raw_mouse_invert_y = cvars::raw_mouse_invert_y;
   settings.raw_mouse_capture_toggle_key = cvars::raw_mouse_capture_toggle_key;
   settings.raw_mouse_capture_on_start = cvars::raw_mouse_capture_on_start;
@@ -592,6 +640,13 @@ void ApplySettingsToCvars(const KbmSettings& source_settings) {
                 settings.raw_mouse_deadzone_compensation);
   OVERRIDE_double(raw_mouse_minimum_response,
                   std::clamp(settings.raw_mouse_minimum_response, 0.0, 0.5));
+  OVERRIDE_string(raw_mouse_anti_deadzone_shape,
+                  std::string(AntiDeadzoneShapeName(
+                      settings.raw_mouse_anti_deadzone_shape)));
+  OVERRIDE_double(raw_mouse_minimum_response_x,
+                  settings.raw_mouse_minimum_response_x);
+  OVERRIDE_double(raw_mouse_minimum_response_y,
+                  settings.raw_mouse_minimum_response_y);
   OVERRIDE_bool(raw_mouse_invert_y, settings.raw_mouse_invert_y);
   OVERRIDE_string(raw_mouse_capture_toggle_key,
                   settings.raw_mouse_capture_toggle_key);

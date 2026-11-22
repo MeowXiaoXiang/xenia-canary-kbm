@@ -179,8 +179,8 @@ XE_LOCALIZATION_STRING(
     "minimum output makes fine adjustment difficult. A speed estimate of "
     "zero produces zero output. Disable for pure linear output.")
 XE_LOCALIZATION_STRING(kKbmDiagnostics, "Advanced and diagnostics")
-XE_LOCALIZATION_STRING(kKbmLastStickOutput, "Last game stick output: {:.0f}%{}")
-XE_LOCALIZATION_STRING(kKbmMaximum, " (maximum)")
+XE_LOCALIZATION_STRING(kKbmLastStickOutput,
+                       "Mouse right-stick magnitude: {:.1f}%")
 XE_LOCALIZATION_STRING(
     kKbmRawSpeed,
     "Raw Input speed X %.0f / Y %.0f counts/s | Stick X %d / Y %d")
@@ -465,3 +465,16 @@ XE_LOCALIZATION_STRING(kKbmResetConfirm, "Reset the entire draft")
 XE_LOCALIZATION_STRING(kKbmSharedDraft,
                        "One draft for mouse, bindings and controller options. "
                        "Save all to activate.")
+
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneCircle, "Circle")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneAxial, "Axial")
+XE_LOCALIZATION_STRING(
+    kKbmAxialMagnitudeHelp,
+    "Each axis is limited to 100%. Combined diagonal output can exceed 100%.")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseX,
+                       "Horizontal minimum output (0–50%)")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseY, "Vertical minimum output (0–50%)")
+XE_LOCALIZATION_STRING(
+    kKbmAxialResponseHelp,
+    "Compensates each axis independently using its minimum output. Crossing an "
+    "axis can change the output direction abruptly.")

@@ -66,6 +66,9 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   saved_settings.keybind_left_trigger = "Mouse.X1";
   saved_settings.raw_mouse_dpi = 1325.0;
   saved_settings.raw_mouse_deadzone_compensation = true;
+  saved_settings.raw_mouse_anti_deadzone_shape = KbmAntiDeadzoneShape::kAxial;
+  saved_settings.raw_mouse_minimum_response_x = 0.21;
+  saved_settings.raw_mouse_minimum_response_y = 0.42;
   saved_settings.raw_mouse_capture_toggle_key = "Ctrl+Key.F8";
   saved_settings.overlay = {true, 1, 72};
   const auto saved_mode = GENERATE(KbmMouseMode::kFixedWindow,
@@ -96,6 +99,10 @@ TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   REQUIRE(loaded_settings.keybind_left_trigger == "Mouse.X1");
   REQUIRE(loaded_settings.raw_mouse_dpi == Approx(1325.0));
   REQUIRE(loaded_settings.raw_mouse_deadzone_compensation);
+  REQUIRE(loaded_settings.raw_mouse_anti_deadzone_shape ==
+          KbmAntiDeadzoneShape::kAxial);
+  REQUIRE(loaded_settings.raw_mouse_minimum_response_x == Approx(0.21));
+  REQUIRE(loaded_settings.raw_mouse_minimum_response_y == Approx(0.42));
   REQUIRE(loaded_settings.raw_mouse_capture_toggle_key == "Ctrl+Key.F8");
   REQUIRE(loaded_settings.overlay.enabled);
   REQUIRE(loaded_settings.overlay.corner == 1);
@@ -116,6 +123,9 @@ TEST_CASE("Earlier grouped v4 configs default missing optional fields",
   settings.raw_mouse_dpi = 3200;
   settings.mouse_processing = {KbmMouseMode::kEma, 13, 7.5};
   settings.overlay = {true, 0, 25};
+  settings.raw_mouse_anti_deadzone_shape = KbmAntiDeadzoneShape::kAxial;
+  settings.raw_mouse_minimum_response_x = 0.18;
+  settings.raw_mouse_minimum_response_y = 0.46;
   ApplySettingsToCvars(settings);
   REQUIRE(SaveConfig(settings));
   std::istringstream input(ReadFile(ConfigPath()));
@@ -125,6 +135,9 @@ TEST_CASE("Earlier grouped v4 configs default missing optional fields",
       break;
     }
     if (!line.starts_with("processing_mode") &&
+        !line.starts_with("anti_deadzone_shape") &&
+        !line.starts_with("minimum_response_x") &&
+        !line.starts_with("minimum_response_y") &&
         !line.starts_with("fixed_window_ms") &&
         !line.starts_with("ema_tau_ms")) {
       older += line + "\n";
@@ -140,6 +153,10 @@ TEST_CASE("Earlier grouped v4 configs default missing optional fields",
   REQUIRE_FALSE(loaded.overlay.enabled);
   REQUIRE(loaded.overlay.corner == 3);
   REQUIRE(loaded.overlay.ema_background_transparency == 54);
+  REQUIRE(loaded.raw_mouse_anti_deadzone_shape ==
+          KbmAntiDeadzoneShape::kRadial);
+  REQUIRE(loaded.raw_mouse_minimum_response_x == Approx(0.30));
+  REQUIRE(loaded.raw_mouse_minimum_response_y == Approx(0.30));
   REQUIRE(loaded.keybind_a == "Key.G");
   REQUIRE(loaded.raw_mouse_dpi == 3200);
   REQUIRE(ReadFile(ConfigPath()) == older);
@@ -198,6 +215,14 @@ TEST_CASE("Invalid KBM files never partially replace active settings",
   SECTION("Unknown processing mode") {
     from = "processing_mode = \"fixed_window\"";
     to = "processing_mode = \"unknown\"";
+  }
+  SECTION("Unknown compensation shape") {
+    from = "anti_deadzone_shape = \"radial\"";
+    to = "anti_deadzone_shape = \"triangle\"";
+  }
+  SECTION("Wrong axial minimum type") {
+    from = "minimum_response_x = 0.3";
+    to = "minimum_response_x = false";
   }
   SECTION("Wrong processing time type") {
     from = "ema_tau_ms = 6.5";
@@ -352,6 +377,12 @@ TEST_CASE("A leftover KBM temporary file does not block the next save",
 TEST_CASE("Non-finite KBM tuning values normalize to safe defaults", "[kbm]") {
   KbmSettings settings;
   settings.raw_mouse_dpi = std::numeric_limits<double>::quiet_NaN();
+  settings.raw_mouse_minimum_response_x =
+      std::numeric_limits<double>::quiet_NaN();
+  settings.raw_mouse_minimum_response_y =
+      std::numeric_limits<double>::infinity();
+  settings.raw_mouse_anti_deadzone_shape =
+      static_cast<KbmAntiDeadzoneShape>(99);
   settings.raw_mouse_full_stick_speed_cm_s =
       std::numeric_limits<double>::infinity();
   settings.mouse_processing.fixed_window_ms =
@@ -361,6 +392,10 @@ TEST_CASE("Non-finite KBM tuning values normalize to safe defaults", "[kbm]") {
   const auto normalized = NormalizeSettings(settings);
   const KbmSettings defaults;
   REQUIRE(normalized.raw_mouse_dpi == defaults.raw_mouse_dpi);
+  REQUIRE(normalized.raw_mouse_minimum_response_x == Approx(.30));
+  REQUIRE(normalized.raw_mouse_minimum_response_y == Approx(.30));
+  REQUIRE(normalized.raw_mouse_anti_deadzone_shape ==
+          KbmAntiDeadzoneShape::kRadial);
   REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s ==
           defaults.raw_mouse_full_stick_speed_cm_s);
   REQUIRE(normalized.mouse_processing.fixed_window_ms == 16.0);

@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 
 from kbm_replay import (analyze, check_event_buckets, processing_parameters,
-                        uses_radial_mapper)
+                        uses_radial_mapper, mapping_parameters)
 from kbm_compare_modes import compare_trace, simulate, synthetic_schedule
 
 
@@ -30,7 +30,7 @@ class PhysicalReplayTests(unittest.TestCase):
             "2,1,0,0,0\n0,2,10,0,0\n0,3,1,0,0\n", encoding="utf-8")
         return path
 
-    def schema_four_report(self, directory, mode, velocities, tau=8, filename="report.csv"):
+    def schema_four_report(self, directory, mode, velocities, tau=8, filename="report.csv", axial=False):
         path = Path(directory) / filename
         data = (
             f"# schema=4, processing_mode={mode}, fixed_window_ms=8, ema_tau_ms={tau}\n"
@@ -47,12 +47,27 @@ class PhysicalReplayTests(unittest.TestCase):
             thumb = round(velocity / threshold * 32767)
             data += f"{t},{dt},true,{dx},0,{velocity},0,{thumb},0,false,false,2\n"
         data += "59,38,true,0,0,0,0,0,0,false,false,2\n"
+        if axial:
+            lines = data.splitlines()
+            lines[1] = lines[1].replace("physical_linear_radial", "physical_linear_axial")
+            lines[2] = lines[2].replace("deadzone_compensation=false", "deadzone_compensation=true")
+            columns = lines[4].split(",")
+            for i in range(5, len(lines)):
+                row = dict(zip(columns, lines[i].split(",")))
+                row["raw_delta_y"] = row["raw_delta_x"]
+                speed = float(row["velocity_x"])
+                row["velocity_y"] = str(-speed)
+                row["thumb_x"] = str(round((.2 + .8 * speed / threshold) * 32767)) if speed else "0"
+                row["thumb_y"] = str(round(-(.4 + .6 * speed / threshold) * 32767)) if speed else "0"
+                lines[i] = ",".join(row[k] for k in columns)
+            lines.insert(4, "# anti_deadzone_shape=axial, minimum_response_x=0.2, minimum_response_y=0.4")
+            data = "\n".join(lines) + "\n"
         path.write_text(data, encoding="utf-8")
         path.with_suffix(".events.csv").write_text(
             "# schema=4\n"
             "kind,sequence,event_elapsed_us,delta_x,delta_y,velocity_x,velocity_y,"
             "previous_poll_offset_ms,reset_pending\n"
-            "2,1,0,0,0,0,0,0,true\n0,2,8000,8,0,0,0,0,false\n",
+            f"2,1,0,0,0,0,0,0,true\n0,2,8000,8,{8 if axial else 0},0,0,0,false\n",
             encoding="utf-8")
         return path
 
@@ -118,6 +133,35 @@ class PhysicalReplayTests(unittest.TestCase):
             self.assertGreater(report["replay_output_error_percentage_points_max"], 30)
             with self.assertRaisesRegex(ValueError, "stick replay differs"):
                 compare_trace(path)
+
+    def test_axial_mapping_replays_all_estimators_with_independent_minima(self):
+        alpha = -math.expm1(-1)
+        modes = {"direct": (1000, 0, 0, 0),
+                 "fixed_window": (1000, 1000, 0, 0),
+                 "ema": (1000 * alpha, 1000 * alpha * math.exp(-.625),
+                         1000 * alpha * math.exp(-1), 1000 * alpha * math.exp(-1.5))}
+        for mode, speeds in modes.items():
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                path = self.schema_four_report(directory, mode, speeds, axial=True)
+                result = analyze(path)
+                self.assertEqual(result["anti_deadzone_shape"], "axial")
+                self.assertEqual(result["event_bucket_check"]["bucket_mismatches"], 0)
+                self.assertAlmostEqual(result["replay_velocity_error_cps_p99"], 0)
+                self.assertLess(result["replay_output_error_percentage_points_max"], .003)
+                self.assertEqual(compare_trace(path)["anti_deadzone_shape"], "axial")
+
+    def test_axial_mapping_rejects_inconsistent_or_missing_parameters(self):
+        metadata = {"mapper": "physical_linear_axial", "anti_deadzone_shape": "axial",
+                    "minimum_response_x": ".2", "minimum_response_y": ".4",
+                    "deadzone_compensation": "true"}
+        self.assertEqual(mapping_parameters(metadata), ("axial", (.2, .4)))
+        for key, bad in (("anti_deadzone_shape", "radial"), ("minimum_response_x", "nan"),
+                         ("minimum_response_y", ".51")):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                mapping_parameters({**metadata, key: bad})
+        del metadata["minimum_response_x"]
+        with self.assertRaises(KeyError):
+            mapping_parameters(metadata)
 
     def test_unknown_schema_and_missing_metadata_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

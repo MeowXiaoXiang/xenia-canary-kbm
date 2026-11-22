@@ -7,7 +7,7 @@ import math
 from bisect import bisect_right
 from pathlib import Path
 
-from kbm_replay import (PhysicalEstimator, analyze, load_report, map_physical,
+from kbm_replay import (PhysicalEstimator, analyze, load_report, map_physical, mapping_parameters,
                         percentile)
 
 
@@ -58,7 +58,8 @@ def synthetic_schedule(end_ns, steps_ms, stall_every=None):
         yield now, None
 
 
-def simulate(events, schedule, parameters, threshold, minimum, invert_y=False):
+def simulate(events, schedule, parameters, threshold, minimum, invert_y=False,
+             shape="radial", axial_minimum=(.3, .3)):
     """Run a clean active segment. A 100 ms poll timeout clears all history."""
     estimator = PhysicalEstimator(*parameters, threshold, invert_y)
     cursor = 0
@@ -82,7 +83,7 @@ def simulate(events, schedule, parameters, threshold, minimum, invert_y=False):
         previous = now
         valid = dt <= 0.1
         velocity = estimator.sample(now, dt, dx, dy, valid)
-        yield now, velocity, map_physical(velocity, threshold, minimum), valid
+        yield now, velocity, map_physical(velocity, threshold, minimum, shape, axial_minimum), valid
 
 
 class MotionHistory:
@@ -162,6 +163,7 @@ def compare_trace(path):
     speed = float(meta["full_stick_speed_cm_s"])
     threshold = dpi * speed / 2.54
     minimum = float(meta["minimum_response"]) if meta["deadzone_compensation"] == "true" else 0
+    shape, axial_minimum = mapping_parameters(meta)
     invert_y = meta["invert_y"] == "true"
     history = MotionHistory(trace)
     schedules = {"recorded": schedule}
@@ -172,12 +174,14 @@ def compare_trace(path):
 
     results = {}
     for schedule_name, times in schedules.items():
-        run = [list(simulate(trace, times, p, threshold, minimum, invert_y)) for p in MODE_PARAMETERS]
+        run = [list(simulate(trace, times, p, threshold, minimum, invert_y,
+                             shape, axial_minimum)) for p in MODE_PARAMETERS]
         results[schedule_name] = {
             mode_label(*p): summarize_trace(samples, history, dpi, threshold, run[0])
             for p, samples in zip(MODE_PARAMETERS, run)
         }
     return {"report": path.name, "dpi": dpi, "full_stick_speed_cm_s": speed,
+            "anti_deadzone_shape": shape,
             "minimum_response": minimum, "active_section_seconds": end / 1e9,
             "event_bucket_check": check, "schedules": results}
 

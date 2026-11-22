@@ -47,9 +47,12 @@ class KbmMousePreview {
     }
     sampled_ = now;
     const auto sample = processor_.Consume(settings, true, now);
-    current_ = std::min(
-        1.0,
-        std::hypot(double(sample.thumb_x), double(sample.thumb_y)) / 32767.0);
+    current_ =
+        std::hypot(double(sample.thumb_x), double(sample.thumb_y)) / 32767.0;
+    if (!settings.deadzone_compensation ||
+        settings.anti_deadzone_shape != KbmAntiDeadzoneShape::kAxial) {
+      current_ = std::min(1.0, current_);
+    }
     peak_ = std::max(peak_, current_);
   }
   bool active() const { return active_; }

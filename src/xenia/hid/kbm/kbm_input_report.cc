@@ -57,10 +57,18 @@ KbmInputReportContents SerializeKbmInputReport(
       longest_interval_seconds * 1000.0);
   output += fmt::format(
       "# dpi={}, full_stick_speed_cm_s={}, deadzone_compensation={}, "
-      "minimum_response={}, invert_y={}, mapper=physical_linear_radial\n",
+      "minimum_response={}, invert_y={}, mapper={}\n",
       settings.dpi, settings.full_stick_speed_cm_s,
       settings.deadzone_compensation, settings.minimum_response,
-      settings.invert_y);
+      settings.invert_y,
+      settings.anti_deadzone_shape == KbmAntiDeadzoneShape::kAxial
+          ? "physical_linear_axial"
+          : "physical_linear_radial");
+  output += fmt::format(
+      "# anti_deadzone_shape={}, minimum_response_x={}, "
+      "minimum_response_y={}\n",
+      AntiDeadzoneShapeName(settings.anti_deadzone_shape),
+      settings.minimum_response_x, settings.minimum_response_y);
   output += fmt::format(
       "# schema=4, processing_mode={}, fixed_window_ms={}, ema_tau_ms={}, "
       "timestamp=host_processing_steady_clock, events={}, dropped_events={}\n",

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "xenia/hid/kbm/kbm_mouse_math.h"
 #include "xenia/hid/kbm/kbm_mouse_processing.h"
 
 namespace xe::hid::kbm {
@@ -57,6 +58,9 @@ struct KbmInputReportSettings {
   double minimum_response = 0.30;
   bool invert_y = false;
   KbmMouseProcessing processing;
+  KbmAntiDeadzoneShape anti_deadzone_shape = KbmAntiDeadzoneShape::kRadial;
+  double minimum_response_x = 0.30;
+  double minimum_response_y = 0.30;
 };
 
 struct KbmInputReportContents {

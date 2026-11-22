@@ -81,6 +81,28 @@ float ButtonWidth(StringId label) {
          ImGui::GetStyle().FramePadding.x * 2;
 }
 
+bool DrawMinimumOutput(const char* id, StringId label, double& minimum,
+                       float slider_width, float input_width) {
+  ImGui::PushID(id);
+  ImGui::TextUnformatted(Tr(label));
+  float percent = float(minimum * 100);
+  ImGui::SetNextItemWidth(slider_width);
+  bool changed = ImGui::SliderFloat("##Slider", &percent, 0, 50, "%.1f%%",
+                                    ImGuiSliderFlags_AlwaysClamp);
+  if (changed) {
+    minimum = percent / 100.0;
+  }
+  double precise = minimum * 100;
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(input_width);
+  if (ImGui::InputDouble("##Input", &precise, 0.0, 0.0, "%.1f%%")) {
+    minimum = precise / 100;
+    changed = true;
+  }
+  ImGui::PopID();
+  return changed;
+}
+
 bool BeginPollHud(int corner, float content_width, float opacity = 0.58f) {
   const bool right = corner % 2 != 0;
   const bool bottom = corner >= 2;
@@ -904,21 +926,69 @@ bool KbmConfigDialog::DrawMouseSettings() {
   changed |= ImGui::Checkbox(Tr(StringId::kKbmCompensateGameDeadzone),
                              &settings_.raw_mouse_deadzone_compensation);
   ImGui::BeginDisabled(!settings_.raw_mouse_deadzone_compensation);
-  ImGui::TextUnformatted(Tr(StringId::kKbmMinimumResponse));
-  float minimum_percent = float(settings_.raw_mouse_minimum_response * 100);
-  ImGui::SetNextItemWidth(slider_width);
-  if (ImGui::SliderFloat("##MinimumResponse", &minimum_percent, 0, 50, "%.1f%%",
-                         ImGuiSliderFlags_AlwaysClamp)) {
-    settings_.raw_mouse_minimum_response = minimum_percent / 100.0;
-    changed = true;
-  }
-  double precise_percent = settings_.raw_mouse_minimum_response * 100;
+  using hid::kbm::KbmAntiDeadzoneShape;
+  const float icon_size = ImGui::GetFontSize() * 0.6f;
+  const ImVec2 button_padding(ImGui::GetStyle().FramePadding.x + 2,
+                              ImGui::GetStyle().FramePadding.y);
+  const float buttons_width = ButtonWidth(StringId::kKbmAntiDeadzoneCircle) +
+                              ButtonWidth(StringId::kKbmAntiDeadzoneAxial) +
+                              ImGui::CalcTextSize("        ").x + 8;
+  NextButton(buttons_width);
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, button_padding);
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                      ImVec2(0, ImGui::GetStyle().ItemSpacing.y));
+  const auto shape_button = [&](KbmAntiDeadzoneShape shape, StringId label,
+                                StringId help) {
+    const bool selected = settings_.raw_mouse_anti_deadzone_shape == shape;
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(
+                                               selected ? ImGuiCol_ButtonActive
+                                                        : ImGuiCol_FrameBg));
+    const auto text = fmt::format("    {}", Tr(label));
+    const bool clicked = ImGui::Button(text.c_str());
+    ImGui::PopStyleColor();
+    const ImVec2 corner = ImGui::GetItemRectMin();
+    const ImVec2 center(
+        corner.x + ImGui::GetStyle().FramePadding.x + icon_size * 0.5f,
+        (corner.y + ImGui::GetItemRectMax().y) * 0.5f);
+    auto* draw = ImGui::GetWindowDrawList();
+    if (selected) {
+      draw->AddRect(corner, ImGui::GetItemRectMax(),
+                    ImGui::GetColorU32(ImGuiCol_CheckMark),
+                    ImGui::GetStyle().FrameRounding);
+    }
+    const ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+    const float radius = icon_size * 0.5f;
+    if (shape == KbmAntiDeadzoneShape::kRadial) {
+      draw->AddCircle(center, radius, color, 16, 1.0f);
+    } else {
+      draw->AddRect(ImVec2(center.x - radius, center.y - radius),
+                    ImVec2(center.x + radius, center.y + radius), color);
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+      ImGui::SetTooltip("%s", Tr(help));
+    }
+    if (clicked) {
+      settings_.raw_mouse_anti_deadzone_shape = shape;
+      changed = true;
+    }
+  };
+  shape_button(KbmAntiDeadzoneShape::kRadial, StringId::kKbmAntiDeadzoneCircle,
+               StringId::kKbmMinimumResponseHelp);
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(precise_width);
-  if (ImGui::InputDouble("##MinimumResponseInput", &precise_percent, 0.0, 0.0,
-                         "%.1f%%")) {
-    settings_.raw_mouse_minimum_response = precise_percent / 100;
-    changed = true;
+  shape_button(KbmAntiDeadzoneShape::kAxial, StringId::kKbmAntiDeadzoneAxial,
+               StringId::kKbmAxialResponseHelp);
+  ImGui::PopStyleVar(2);
+  if (settings_.raw_mouse_anti_deadzone_shape == KbmAntiDeadzoneShape::kAxial) {
+    changed |= DrawMinimumOutput(
+        "MinimumResponseX", StringId::kKbmMinimumResponseX,
+        settings_.raw_mouse_minimum_response_x, slider_width, precise_width);
+    changed |= DrawMinimumOutput(
+        "MinimumResponseY", StringId::kKbmMinimumResponseY,
+        settings_.raw_mouse_minimum_response_y, slider_width, precise_width);
+  } else {
+    changed |= DrawMinimumOutput(
+        "MinimumResponse", StringId::kKbmMinimumResponse,
+        settings_.raw_mouse_minimum_response, slider_width, precise_width);
   }
   ImGui::EndDisabled();
   changed |= ImGui::Checkbox(Tr(StringId::kKbmInvertVertical),
@@ -929,7 +999,10 @@ bool KbmConfigDialog::DrawMouseSettings() {
     ImGui::Spacing();
     ImGui::TextWrapped("%s", Tr(StringId::kKbmProcessingHelp));
     ImGui::Spacing();
-    ImGui::TextWrapped("%s", Tr(StringId::kKbmMinimumResponseHelp));
+    ImGui::TextWrapped("%s", Tr(settings_.raw_mouse_anti_deadzone_shape ==
+                                        hid::kbm::KbmAntiDeadzoneShape::kAxial
+                                    ? StringId::kKbmAxialResponseHelp
+                                    : StringId::kKbmMinimumResponseHelp));
     ImGui::TextDisabled("%s", Tr(StringId::kKbmSettingsFile));
     ImGui::TreePop();
   }
@@ -960,6 +1033,11 @@ void KbmConfigDialog::DrawPreview(bool visible) {
   const auto label = fmt::format("{:.1f}%", preview.current() * 100);
   ImGui::ProgressBar(float(preview.current()),
                      ImVec2(-1, ImGui::GetFrameHeight()), label.c_str());
+  if (settings_.raw_mouse_deadzone_compensation &&
+      settings_.raw_mouse_anti_deadzone_shape ==
+          hid::kbm::KbmAntiDeadzoneShape::kAxial) {
+    ImGui::TextWrapped("%s", Tr(StringId::kKbmAxialMagnitudeHelp));
+  }
   ImGui::TextWrapped(Tr(StringId::kKbmPreviewSpeed),
                      preview.speed_cm_s(settings_.raw_mouse_dpi),
                      settings_.raw_mouse_full_stick_speed_cm_s);
@@ -1094,14 +1172,16 @@ bool KbmConfigDialog::DrawDiagnostics() {
   if (ImGui::TreeNodeEx("KbmTechnicalDetails", 0, "%s",
                         Tr(StringId::kKbmTechnicalDetails))) {
     const auto diagnostics = driver->GetDiagnostics();
-    const float output = std::min(1.0f, std::hypot(float(diagnostics.thumb_x),
-                                                   float(diagnostics.thumb_y)) /
-                                            32767.0f);
+    const float output =
+        std::hypot(float(diagnostics.thumb_x), float(diagnostics.thumb_y)) /
+        32767.0f;
     const auto label = fmt::format(
-        fmt::runtime(Tr(StringId::kKbmLastStickOutput)), output * 100,
-        output >= 0.999f ? Tr(StringId::kKbmMaximum) : "");
+        fmt::runtime(Tr(StringId::kKbmLastStickOutput)), output * 100);
     ImGui::TextWrapped("%s", Tr(StringId::kKbmSnapshot));
-    ImGui::ProgressBar(output, ImVec2(-1, 0), label.c_str());
+    ImGui::ProgressBar(std::min(output, 1.0f), ImVec2(-1, 0), label.c_str());
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("%s", Tr(StringId::kKbmAxialMagnitudeHelp));
+    }
     ImGui::TextWrapped(Tr(StringId::kKbmRawSpeed),
                        diagnostics.raw_counts_per_second_x,
                        diagnostics.raw_counts_per_second_y, diagnostics.thumb_x,

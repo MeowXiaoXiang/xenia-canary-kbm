@@ -17,6 +17,7 @@
 
 #include "xenia/base/cvar.h"
 #include "xenia/hid/kbm/kbm_binding.h"
+#include "xenia/hid/kbm/kbm_mouse_math.h"
 #include "xenia/hid/kbm/kbm_mouse_processing.h"
 
 namespace xe::hid::kbm {
@@ -53,6 +54,10 @@ struct KbmSettings {
   double raw_mouse_full_stick_speed_cm_s = 10.0;
   bool raw_mouse_deadzone_compensation = true;
   double raw_mouse_minimum_response = 0.30;
+  KbmAntiDeadzoneShape raw_mouse_anti_deadzone_shape =
+      KbmAntiDeadzoneShape::kRadial;
+  double raw_mouse_minimum_response_x = 0.30;
+  double raw_mouse_minimum_response_y = 0.30;
   bool raw_mouse_invert_y = false;
   std::string raw_mouse_capture_toggle_key = "Key.F8";
   bool raw_mouse_capture_on_start = false;

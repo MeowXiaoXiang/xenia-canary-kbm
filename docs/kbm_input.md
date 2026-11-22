@@ -62,6 +62,10 @@ Start with Fixed 16 ms and your mouse's actual DPI. Use the
 [mouse tuning guide](KBM/tuning.md) to adjust slow aim, full-stick speed and
 anti-deadzone, or to compare Fixed window, EMA and Direct.
 
+The anti-deadzone buttons offer **Circle** with one minimum, or **Axial**
+with separate horizontal and vertical minima. See
+[anti-deadzone shapes](KBM/tuning.md#choose-an-anti-deadzone-shape) for tuning.
+
 ### Independent live preview
 
 Choose **Start test** in **Mouse**. Move slowly and then swipe quickly to see

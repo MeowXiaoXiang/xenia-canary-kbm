@@ -77,6 +77,95 @@ TEST_CASE("Physical mapping preserves radial direction and speed units",
       0.0);
 }
 
+TEST_CASE("Axial compensation preserves per-axis minima and reverses at zero",
+          "[kbm]") {
+  const double full = FullStickCountsPerSecond(800, 10);
+  for (int degree = 0; degree < 360; ++degree) {
+    const double angle = degree * 3.14159265358979323846 / 180;
+    for (double fraction : {0.001, 0.5, 1.0, 2.0}) {
+      const MouseVector input{std::cos(angle) * full * fraction,
+                              std::sin(angle) * full * fraction};
+      const auto output = MapMousePhysical(
+          input, 800, 10, .3, KbmAntiDeadzoneShape::kAxial, {.2, .4});
+      REQUIRE(std::isfinite(output.x));
+      REQUIRE(std::isfinite(output.y));
+      REQUIRE(std::abs(output.x) <= 1);
+      REQUIRE(std::abs(output.y) <= 1);
+      if (input.x) {
+        REQUIRE((std::abs(output.x) - .2) / .8 ==
+                Approx(std::abs(std::cos(angle)) * std::min(fraction, 1.0))
+                    .margin(1e-12));
+      } else {
+        REQUIRE(output.x == 0);
+      }
+      if (input.y) {
+        REQUIRE((std::abs(output.y) - .4) / .6 ==
+                Approx(std::abs(std::sin(angle)) * std::min(fraction, 1.0))
+                    .margin(1e-12));
+      } else {
+        REQUIRE(output.y == 0);
+      }
+    }
+  }
+  const auto map = [&](MouseVector v) {
+    return MapMousePhysical(v, 800, 10, .3, KbmAntiDeadzoneShape::kAxial,
+                            {.2, .4});
+  };
+  REQUIRE(map({}).x == 0);
+  REQUIRE(map({}).y == 0);
+  REQUIRE(map({100, 0}).y == 0);
+  REQUIRE(map({0, -100}).x == 0);
+  REQUIRE(map({100, 1e-9}).y == Approx(.4));
+  REQUIRE(map({100, -1e-9}).y == Approx(-.4));
+  const auto diagonal = map({full, full});
+  REQUIRE(std::hypot(diagonal.x, diagonal.y) > 1);
+  const auto invalid = map({std::numeric_limits<double>::infinity(), 0});
+  REQUIRE(invalid.x == 0);
+  REQUIRE(invalid.y == 0);
+  const auto sanitized =
+      MapMousePhysical({100, 100}, 800, 10, .3, KbmAntiDeadzoneShape::kAxial,
+                       {std::numeric_limits<double>::quiet_NaN(), 2});
+  REQUIRE(sanitized.x == Approx(.3 + .7 * 100 / full));
+  REQUIRE(sanitized.y == Approx(.5 + .5 * 100 / full));
+}
+
+TEST_CASE("Axial mapping is shared by preview and each gameplay estimator",
+          "[kbm]") {
+  using namespace std::chrono_literals;
+  KbmMouseSettings settings;
+  settings.anti_deadzone_shape = KbmAntiDeadzoneShape::kAxial;
+  settings.minimum_response_x = .2;
+  settings.minimum_response_y = .4;
+  settings.processing.mode = GENERATE(
+      KbmMouseMode::kFixedWindow, KbmMouseMode::kEma, KbmMouseMode::kDirect);
+  KbmMouseProcessor gameplay;
+  KbmMousePreview preview;
+  const auto start = std::chrono::steady_clock::now();
+  gameplay.Configure(settings.processing, start);
+  gameplay.Reset(start);
+  gameplay.Consume(settings, false,
+                   start + std::chrono::steady_clock::duration(1));
+  preview.Start(start, settings.processing);
+  gameplay.AddDelta(100, -60, start + 5ms);
+  preview.AddDelta(100, -60, start + 5ms);
+  const auto sample = gameplay.Consume(settings, true, start + 16ms);
+  preview.Sample(settings, start + 16ms);
+  REQUIRE(preview.current() ==
+          Approx(std::hypot(double(sample.thumb_x), double(sample.thumb_y)) /
+                 32767));
+  REQUIRE(preview.current() > 1);
+  settings.deadzone_compensation = false;
+  gameplay.Reset(start + 17ms);
+  gameplay.Consume(settings, true, start + 18ms);
+  gameplay.AddDelta(10, 0, start + 19ms);
+  const auto plain = gameplay.Consume(settings, true, start + 26ms);
+  const auto linear =
+      MapMousePhysical({plain.velocity_x, plain.velocity_y}, settings.dpi,
+                       settings.full_stick_speed_cm_s);
+  REQUIRE(plain.thumb_x == std::lround(linear.x * 32767));
+  REQUIRE(plain.thumb_y == 0);
+}
+
 TEST_CASE("Physical poll buckets use actual duration and stop without a tail",
           "[kbm]") {
   for (const auto micros : {1, 50, 1000, 8000, 16000, 33000, 100000, 100001}) {
@@ -440,6 +529,16 @@ TEST_CASE("Input reports identify the configured schema four processor",
   REQUIRE(report.events_csv.find("# schema=4") != std::string::npos);
   REQUIRE(report.events_csv.find("kind: 0=motion,1=reset,2=initial_state") !=
           std::string::npos);
+  settings.anti_deadzone_shape = KbmAntiDeadzoneShape::kAxial;
+  settings.minimum_response_x = .2;
+  settings.minimum_response_y = .4;
+  const auto axial =
+      SerializeKbmInputReport({sample}, {event}, 0, 0, settings, started);
+  REQUIRE(axial.poll_csv.find("mapper=physical_linear_axial") !=
+          std::string::npos);
+  REQUIRE(
+      axial.poll_csv.find("anti_deadzone_shape=axial, minimum_response_x=0.2, "
+                          "minimum_response_y=0.4") != std::string::npos);
 }
 
 TEST_CASE("Logical input state clears modifiers on focus reset", "[kbm]") {

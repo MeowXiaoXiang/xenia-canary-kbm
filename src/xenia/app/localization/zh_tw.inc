@@ -163,8 +163,7 @@ XE_LOCALIZATION_STRING(kKbmMinimumResponseHelp,
                        "小輸出過高會讓微調變粗。"
                        "估算鼠速歸零時，搖桿輸出也歸零。關閉後使用純線性輸出。")
 XE_LOCALIZATION_STRING(kKbmDiagnostics, "進階與診斷")
-XE_LOCALIZATION_STRING(kKbmLastStickOutput, "上次遊戲搖桿輸出：{:.0f}%{}")
-XE_LOCALIZATION_STRING(kKbmMaximum, "（最大值）")
+XE_LOCALIZATION_STRING(kKbmLastStickOutput, "滑鼠右搖桿合成幅度：{:.1f}%")
 XE_LOCALIZATION_STRING(
     kKbmRawSpeed, "Raw Input 速度 X %.0f / Y %.0f counts/s｜Stick X %d / Y %d")
 XE_LOCALIZATION_STRING(
@@ -420,3 +419,13 @@ XE_LOCALIZATION_STRING(kKbmResetHelp,
 XE_LOCALIZATION_STRING(kKbmResetConfirm, "還原整份草稿")
 XE_LOCALIZATION_STRING(kKbmSharedDraft,
                        "滑鼠、按鍵與控制器共用草稿；儲存全部後才會套用。")
+
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneCircle, "圓形")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneAxial, "逐軸")
+XE_LOCALIZATION_STRING(kKbmAxialMagnitudeHelp,
+                       "每軸上限為 100%，斜向合成幅度可能超過 100%。")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseX, "水平最低輸出（0–50%）")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseY, "垂直最低輸出（0–50%）")
+XE_LOCALIZATION_STRING(kKbmAxialResponseHelp,
+                       "水平與垂直方向各自補償，從各自設定的最低輸出開始。跨越"
+                       "軸線時，搖桿方向可能突然改變。")
