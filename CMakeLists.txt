@@ -36,6 +36,11 @@ message(STATUS "Target architecture: XE_TARGET_AARCH64=${XE_TARGET_AARCH64} XE_T
 # Options
 option(XENIA_BUILD_TESTS "Build test suites" OFF)
 option(XENIA_BUILD_MISC "Build misc subprojects (trace viewers, shader compiler, vfs-dump, demos)" OFF)
+option(XENIA_ENABLE_GPU_TRACE "Enable GPU trace capture in Release" OFF)
+
+if(XENIA_ENABLE_GPU_TRACE)
+  add_compile_definitions(XE_OPTION_GPU_TRACE=1)
+endif()
 
 # Toggle profiler
 add_compile_definitions(XE_OPTION_PROFILING=0)
@@ -82,6 +87,9 @@ file(MAKE_DIRECTORY "${PROJECT_SOURCE_DIR}/scratch")
 # Python for shader compilation scripts
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+include(cmake/XeniaMsvcDependencies.cmake)
+xe_detect_msvc_include_prefix()
+
 # Include helpers
 include(cmake/XeniaHelpers.cmake)
 
@@ -99,7 +107,9 @@ include_directories(SYSTEM
 # Global defines
 add_compile_definitions(
   VULKAN_HPP_NO_TO_STRING
-  IMGUI_DISABLE_DEFAULT_FONT
+  IMGUI_DISABLE_DEFAULT_FONT_BITMAP  # Keep the vector font for the fallback
+  IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+  IMGUI_USE_WCHAR32  # Characters above U+FFFF
   USE_CPP17  # Tabulate
 )
 
@@ -131,7 +141,6 @@ if(MSVC)
     _AMD64=1
     UNICODE
     _UNICODE
-    IMGUI_DISABLE_OBSOLETE_FUNCTIONS
   )
   add_link_options(
     /ignore:4006  # Ignores complaints about empty obj files

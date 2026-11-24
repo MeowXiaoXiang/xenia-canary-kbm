@@ -1,236 +1,133 @@
-# KBM Controller keyboard and Raw Input mouse input
+# KBM Controller Guide
 
-## Scope
+On Windows, KBM Controller maps keyboard and mouse input to an emulated Xbox
+360 controller.
 
-KBM Controller is a Windows-only, experimental input backend. It maps keyboard keys
-and mouse buttons to an emulated Xbox 360 controller, and translates Windows
-Raw Input mouse movement into the emulated right stick. It is deliberately a
-generic controller-input feature: it contains no game-specific memory hooks,
-patches, or per-title profiles.
-Windows is this fork's supported build and runtime target. Linux does not
-build or expose a KBM Controller backend, selector, or settings UI. It can
-build and test the portable KBM core in continuous integration.
-
-## Build provenance and upstream updates
-
-Every Windows build records two revisions. **Fork build commit** is the exact
-commit from this repository that was compiled. **Upstream base commit** is the
-merge base with `upstream/canary_experimental` — the Xenia Canary revision that
-is actually present in that fork commit. Both are shown in the title and
-startup log, and the Help menu opens each commit in its correct repository.
-Published Windows archives use `kbm-<12-character fork commit>` tags; the tag
-and the fork build commit refer to the same source revision.
-
-Do not edit either revision by hand. `xenia-build.py` calculates the upstream
-base automatically whenever it generates `build/version.h`. When updating
-upstream, fetch `upstream`, integrate the intended
-`upstream/canary_experimental` revision, then rebuild and confirm that the
-displayed upstream base has advanced as expected. This keeps the public fork
-traceable even when its own input commits are newer than the integrated Canary
-revision.
+[Quick start](#enable-and-configure) · [Tune your aim](KBM/tuning.md)
+· [How KBM works and how to test it](KBM/design-and-testing.md)
 
 ## Enable and configure
 
-1. On Windows, KBM Controller is selected by default. You can also select it
-   explicitly with `--hid=kbm`.
-2. Open **KBM Controller Settings** from the host menu. The menu appears when KBM Controller is
-   selected, or after a `kbm.toml` file already exists.
-3. Enable **KBM Controller**, select its controller slot, configure bindings,
-   then choose **Save settings**.
+1. Download the [Windows build](https://github.com/MeowXiaoXiang/xenia-canary-kbm/releases)
+   and open **KBM Controller Settings** from the menu.
+2. Enable **KBM Controller** and select a controller slot. Bind your keys and
+   mouse buttons under **Button bindings**.
+3. In **Mouse**, enable **Use mouse to control the right stick** and enter your
+   mouse's actual DPI. Start with **EMA smoothing** at **8 ms**.
+4. Choose **Save all and close**. In game, press **F8** to capture the mouse.
 
-When KBM Controller is selected for the first time, the backend creates
-`kbm.toml` in Xenia's storage root. This file intentionally remains
-separate from `xenia-canary.config.toml`. It does not import or migrate a
-previous `winkey.toml`; save the desired bindings again in the KBM Controller
-Settings dialog.
+If the menu is missing or KBM input is inactive, launch with `--hid=kbm` or
+set `hid = "kbm"` in `xenia-canary.config.toml`. KBM is the default Windows
+backend. Use `hid = "any"` for general hardware controllers or
+`hid = "keyboard"` for upstream keyboard passthrough. The menu can still
+appear when a `kbm.toml` file exists and another backend is active.
 
-New configurations use `schema_version = 3` and the current KBM defaults,
-including the 0.8 aim curve. The current format separates controller state,
-keyboard/mouse bindings, Raw Mouse behavior, and Raw Mouse tuning into
-`[HID.KBM.Controller]`, `[HID.KBM.Bindings]`, `[HID.KBM.RawMouse]`, and
-`[HID.KBM.RawMouse.Tuning]`. Incompatible files are intentionally not loaded
-or migrated: the settings page warns about them and leaves the file untouched
-until you choose **Restore defaults** and then **Save settings**.
+### Settings files and reset
 
-## Keyboard bindings
+When first selected, the KBM backend creates `kbm.toml` beside Xenia's main
+configuration in the storage root. Enter bindings from older `winkey.toml`
+files again.
 
-The settings window keeps its save controls visible while the content scrolls.
-Edits apply immediately for testing, but only **Save settings** writes them to
-`kbm.toml`. Use **Save settings and close** to return to gameplay, or
-close the window to restore the settings that were active when the page opened.
-The status line distinguishes applied-but-unsaved changes, saved changes, and
-a save failure that left the file unchanged. **Restore defaults** applies the
-current KBM defaults for testing; save explicitly if you want to keep them.
+If Xenia rejects an older or invalid `kbm.toml`, choose **Restore all defaults...**
+before saving. This resets all settings in the window, including bindings.
+**Save all** replaces the old file with schema v4. Copy the old file first if
+you want a backup. Startup, cancellation and a failed save leave the old file
+in place.
 
-Press Escape to cancel binding capture. Use the **Esc** button next to a binding
-to assign Escape itself. Multiple alternative keys for a stick direction count
-as one direction even when held together. Bindings use stable logical tokens in
-the saved file, not Windows virtual-key numbers: for example `Key.W`, `Key.F8`,
-`Key.ArrowUp`, `Key.LeftShift`, `Mouse.Left`, and `Mouse.X1`. Chords use the
-canonical order `Ctrl+Alt+Shift+Super+Key.F8`; a modifier by itself uses its
-key token such as `Key.LeftShift`. The UI continues to display friendly names
-like `F8` and `Mouse Left`. `Key.K` and `Ctrl+Key.K` may both activate while
-Ctrl+K is held. The `_` and `^` case prefixes remain available. Legacy bare
-keys, `VK_*`, and `0xNN` tokens are rejected by the current format.
+## Settings window
 
-Configuration saves write a temporary file before replacing `kbm.toml`, so a
-failed write does not truncate the previously saved configuration.
+- **Save all** writes all changes and applies them. **Save all and close** also
+  closes the window. Use live preview to test changes before saving.
+- **Cancel and close** discards edits since the last successful save. With
+  unsaved edits, closing from the title bar, pressing Escape outside an edit
+  or test, or choosing the menu entry again asks what to do.
+- The three sections are **Button bindings**, **Mouse**, and **Advanced and
+  diagnostics**. In a wide window, bindings and mouse settings appear side by
+  side. The save controls stay visible at the bottom.
 
-Controller state and keystrokes use the same evaluated bindings. Modifier
-chords work in either press order, and captured Raw Input mouse button
-transitions are retained even between polls. Settings loaded from disk and
-settings applied from the UI share range validation; non-finite sensitivity
-and curve values revert to defaults. A configuration with a wrong KBM value
-type or invalid binding is rejected as a whole, so no partial settings are
-applied.
+### Button bindings
 
-KBM bindings are stored under `[HID.KBM.Bindings]` in `kbm.toml`; their keys
-are concise names such as `a`, `left_trigger`, and `right_thumb_up` rather than
-the runtime `kbm_keybind_*` CVar names. The upstream `keybind_*` settings in
-the main configuration belong to the keyboard driver and do not control KBM.
-Earlier experimental KBM builds shared those names incorrectly; re-save your
-KBM bindings after updating.
+Click a binding to replace it, or use the **...** menu to add an alternative,
+assign Escape, or clear the row. Press Escape during capture to cancel it.
+Multiple bindings for the same stick direction count as one direction even
+when held together.
 
-If input is inactive, check that the main configuration selects `hid = "kbm"`.
-An explicit `hid = "any"` selects general hardware backends and does not enable
-KBM. Use `hid = "keyboard"` for upstream keyboard passthrough. The old
-`winkey` selector is no longer supported.
-Close host dialogs and focus the emulator before pressing F8. The log records
-capture hotkey events, host UI suspension, and Raw Input capture transitions.
-
-KBM Controller maps host input to the selected virtual Xbox 360 controller
-slot. Click a binding field and press the desired key, mouse button, or
-modifier chord. Use **+** to add an alternative binding and **x** to clear one.
-Bindings are displayed as names such as `F8` or `Ctrl+Shift+K`, rather than
-raw Windows virtual-key codes.
-
-KBM Controller does not expose keyboard passthrough. To expose a physical
-keyboard to the guest, start Xenia with `--hid=keyboard` and configure the
-upstream keyboard driver separately. `--hid=kbm` is the default Windows
-virtual controller with Raw Input mouse-to-right-stick support; use
-`--hid=any` for general hardware backend selection.
+In `kbm.toml`, bindings use tokens such as `Key.W`, `Mouse.Left` and
+`Ctrl+Shift+Key.F8`. See the [binding format](KBM/design-and-testing.md#binding-format)
+for the full rules.
 
 ## Raw Input mouse tuning
 
-Raw Input deltas are sampled as counts per second, optionally smoothed with a
-time-based velocity filter, multiplied by **Sensitivity**, shaped by **Aim
-curve** once over their combined X/Y speed, and converted to the right-stick
-range. This radial mapping preserves mouse direction and limits mouse output
-to a circle. The game still applies its own controller sensitivity, turn-speed,
-and deadzone behavior.
+Start with EMA 8 ms and your mouse's actual DPI. Use the
+[mouse tuning guide](KBM/tuning.md) to adjust slow aim, full-stick speed and
+anti-deadzone, or to compare EMA, Fixed window and Direct.
 
-- **Sensitivity** is a multiplier. **3600 DPI / 10x** is a starting point:
-  higher DPI usually needs a lower multiplier, while lower DPI can use a higher
-  one. The game's settings and controller limits still affect the result.
-- **Base full-stick speed** is the counts-per-second threshold at which the
-  emulated stick reaches full deflection at **1x sensitivity**. The default is
-  **24000 counts/s**; at 10x the effective threshold is **2400 counts/s**.
-  Lowering it reaches the game's maximum turn speed sooner; raising it leaves
-  more room for fine movement.
-- **Aim curve** defaults to **0.8**. It boosts low-speed output; **1.0** is
-  linear, and values above **1.0** slow small movements.
-- **Mouse smoothing** defaults to **8 ms**. **0 ms** applies no smoothing and
-  is most direct, but can expose input jitter. **4–12 ms** usually improves
-  fine adjustment; higher values add more lag.
-- **Minimum stick output** has a **0.0–0.5** range. Enable it only if the game
-  ignores subtle movement. Raising it can clear the game's deadzone, but too
-  much makes near-center adjustment difficult. Output returns to zero after
-  movement stops; a short filtered tail may be present before the motion gate
-  ends it.
-- Raw Mouse always uses radial mapping. Keyboard stick bindings still combine
-  with mouse output using per-axis saturation.
+The anti-deadzone buttons offer **Circle** with one minimum, or **Axial**
+with separate horizontal and vertical minima. See
+[anti-deadzone shapes](KBM/tuning.md#choose-an-anti-deadzone-shape) for tuning.
 
-The velocity filter uses the actual elapsed controller-query time, including
-intervals below 1 ms. It does not detect or synchronize with a game's tick.
+### Independent live preview
 
-Start from the defaults, adjust the game's own controller sensitivity, and
-then make small changes to the KBM Controller controls. DPI alone cannot predict the
-final turning distance because games map an analog stick differently.
+Choose **Start test** in **Mouse**. Move slowly and then swipe quickly to see
+the estimated speed, right-stick output and peak. You can test before loading
+a game. The preview uses the settings in the window.
 
-## Input sampling diagnostics
-
-The **Diagnostics** section can record a 60-second gameplay sample. Start the
-capture, close the settings window so guest input resumes, play normally, and
-open the settings again to see the saved report path. The CSV is stored beside
-`kbm.toml` as `kbm-input-report-<timestamp>.csv`.
-
-Each report includes the Raw Input delta, filtered velocity, mouse right-stick
-output, game input polling interval, capture state, and a summary of reset,
-stale, or dropped samples. New reports identify the fixed `mapper=radial` in
-their metadata. The report is written only when capture finishes, so recording
-does not add per-sample disk I/O.
-
-Schema 2 reports also write `kbm-input-report-<timestamp>.events.csv`, containing
-accepted Raw Input events, reset markers, and the initial filter/bucket state.
-The timestamps describe host processing, not hardware sampling. Event sequence
-numbers associate poll buckets with the event trace. The poll report is published
-last and marks a completed pair; a sidecar alone is not a complete report.
-Changing KBM settings finishes the current capture so its metadata stays valid.
-
-Skip all leading `#` metadata comments when importing, rather than a fixed
-number of lines. Schema 2 intervals are actual elapsed times; older reports used
-a 1 ms floor. Dropped counters describe recorder capacity, not OS packet loss.
-The event buffer supports up to 600,000 entries and the poll buffer 120,000;
-reports expose truncation counts. Keep both files when sharing a new capture.
-
-For read-only poll replay, run `python tools/kbm_replay.py <report.csv>`.
-Its output compares timing calculations, not measured camera response. Legacy
-reports cannot reconstruct individual hardware or Raw Input events.
+Press Escape, Enter, Space or **Stop test** to release the cursor. Losing focus,
+closing the window or collapsing the preview also stops the test.
+**Reset peak**, a new test or a change to the mapping clears the peak.
 
 ## Mouse capture
 
-The default capture hotkey is **F8**, configurable as a key or modifier chord.
-When capture is active, KBM Controller hides and clips the cursor, requests exclusive
-Raw Input, and sends a status notification. Press the hotkey again to release
-it. Losing focus releases capture; returning focus can restore a requested
-capture. Opening host UI temporarily suspends KBM Controller input so its controls
-remain usable.
+Press **F8** to capture or release the mouse. Choose a different keyboard key
+or combination under **Mouse**, or clear the binding to disable the hotkey.
+Enable **Capture mouse when KBM Controller starts** to request it on startup.
 
-Overlays and focus changes are controlled by Windows and may interrupt capture.
-If capture no longer behaves as expected, release it with the configured
-hotkey, focus the Xenia window, and enable it again.
+Capture hides and clips the cursor. Losing focus releases it, and returning
+can restore capture if it was requested. Host dialogs pause gameplay input.
+If capture feels stuck after leaving an overlay, release it, focus Xenia,
+then capture again.
+
+## In-game diagnostics
+
+See [Show in-game diagnostics](KBM/tuning.md#choose-a-processing-mode) to
+display the Fixed window statistics or the EMA chart while you play.
+
+## Input sampling diagnostics
+
+1. In **Advanced and diagnostics**, choose **Record 60-second diagnostics**.
+   The settings window closes so you can play. If you have edits, choose
+   **Save all and record for 60 seconds** to save them first.
+2. Play normally, then reopen settings to see the status or report path.
+   Recording ends after 60 seconds even if the game stops polling.
+   **Stop and save report** saves the recording so far. **Cancel sampling**
+   discards an active recording.
+3. Keep the report and its matching `.events.csv` file together. Both are
+   saved beside `kbm.toml` and include the game name and title ID when
+   available at the start of recording.
+
+The report measures controller input and output. See the
+[replay tools](KBM/design-and-testing.md#replay-tools) to check a recording
+and learn what it can tell you.
+
+## Mouse timing experiments
+
+See the [timing chart and experiments](KBM/design-and-testing.md#mouse-timing-experiments)
+for the same synthetic movement at several window lengths, along with the
+settings and commands to repeat the comparison.
 
 ## Limits
 
-- This is an experimental Windows input path, not native mouse support inside
-  an Xbox 360 title.
-- The emulated right stick has a finite range and games may impose turn-speed
-  limits, acceleration, or deadzones.
-- The backend is intended to coexist with upstream Xenia Canary behavior; do
-  not rely on it for competitive or anti-cheat-protected online play.
+KBM sends emulated right-stick input. The game still applies its controller
+deadzone, acceleration and turn-speed limit. This experimental backend is
+intended for general controller input on Windows.
 
 ## Build
 
-To try the Windows backend, download the unofficial archive from this fork's
-[Releases](https://github.com/MeowXiaoXiang/xenia-canary-kbm/releases). The
-archive is published only after the `main` build and portable KBM tests pass.
-You can also build the same source locally. Use the Windows section of
-[the included upstream build guide](building.md).
-On a Windows development environment, the normal verification commands are:
+See [build and test commands](KBM/design-and-testing.md#build) and
+[manual regression checks](KBM/design-and-testing.md#input-lifecycle-regression-checks)
+for changes to KBM. Linux CI covers portable KBM code.
 
-```powershell
-.\xb.bat setup
-.\xb.bat build --config=release
-```
+### Build provenance and upstream updates
 
-`xb.ps1` provides the same commands for PowerShell.
-
-The locally built Release executable is
-`build\bin\Windows\Release\xenia_canary.exe`.
-
-Linux does not produce a KBM runtime executable. To validate the portable KBM
-core and host UI localization catalog from WSL, configure a separate build
-directory with tests enabled:
-
-```bash
-cmake -S . -B build-linux-kbm -G Ninja -DXENIA_BUILD_TESTS=ON \
-  -DCMAKE_CXX_FLAGS=-mmovdir64b
-cmake --build build-linux-kbm \
-  --target xenia-hid-kbm-core-tests xenia-app-localization-tests
-ctest --test-dir build-linux-kbm -R "xenia-(hid-kbm-core-tests|app-localization-tests)" \
-  --output-on-failure
-```
-
-The extra `-mmovdir64b` flag works around an upstream GCC 15 configuration
-issue in Xenia's unrelated memory implementation; it is not a KBM runtime
-requirement.
+See [build provenance and upstream updates](KBM/design-and-testing.md#build-provenance-and-upstream-updates)
+for the revision identifiers and upstream verification.

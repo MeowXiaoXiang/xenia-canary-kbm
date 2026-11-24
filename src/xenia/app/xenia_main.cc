@@ -36,9 +36,6 @@
 
 // Available audio systems:
 #include "xenia/apu/nop/nop_audio_system.h"
-#if XE_PLATFORM_LINUX
-#include "xenia/apu/alsa/alsa_audio_system.h"
-#endif  // XE_PLATFORM_LINUX
 #if !XE_PLATFORM_ANDROID
 #include "xenia/apu/sdl/sdl_audio_system.h"
 #endif  // !XE_PLATFORM_ANDROID
@@ -71,11 +68,15 @@
 #endif  // XE_PLATFORM_WIN32
 
 #if XE_PLATFORM_WIN32
+#include "xenia/base/main_win.h"
+#endif  // XE_PLATFORM_WIN32
+
+#if XE_PLATFORM_WIN32
 #define APU_OPTIONS "[any, nop, sdl, xaudio2]"
 #define GPU_OPTIONS "[any, d3d12, vulkan, null]"
 #define HID_OPTIONS "[any, nop, sdl, keyboard, kbm, xinput]"
 #elif XE_PLATFORM_LINUX
-#define APU_OPTIONS "[any, alsa, nop, sdl]"
+#define APU_OPTIONS "[any, nop, sdl]"
 #define GPU_OPTIONS "[any, vulkan, null]"
 #define HID_OPTIONS "[any, nop, sdl, keyboard]"
 #else
@@ -91,6 +92,9 @@
 #endif
 
 DEFINE_string(apu, "any", "Audio system. Use: " APU_OPTIONS, "APU");
+// The ALSA audio system was removed: configs still set to it go back to the
+// default. Other values are kept.
+UPDATE_from_string(apu, 2026, 11, 12, 12, "alsa");
 DEFINE_string(gpu, "any", "Graphics system. Use: " GPU_OPTIONS, "GPU");
 DEFINE_string(hid, HID_DEFAULT, "Input system. Use: " HID_OPTIONS, "HID");
 
@@ -335,9 +339,6 @@ std::unique_ptr<apu::AudioSystem> EmulatorApp::CreateAudioSystem(
 #if XE_PLATFORM_WIN32
   factory.Add<apu::xaudio2::XAudio2AudioSystem>("xaudio2");
 #endif  // XE_PLATFORM_WIN32
-#if XE_PLATFORM_LINUX
-  factory.Add<apu::alsa::ALSAAudioSystem>("alsa");
-#endif  // XE_PLATFORM_LINUX
 #if !XE_PLATFORM_ANDROID
   factory.Add<apu::sdl::SDLAudioSystem>("sdl");
 #endif  // !XE_PLATFORM_ANDROID
@@ -554,6 +555,10 @@ bool EmulatorApp::OnInitialize() {
   cache_root = std::filesystem::absolute(cache_root);
   XELOGI("Host cache root: {}", cache_root);
 
+#if XE_PLATFORM_WIN32
+  xe::LogWin32StartupStatus();
+#endif  // XE_PLATFORM_WIN32
+
   if (cvars::discord) {
     discord::DiscordPresence::Initialize();
     discord::DiscordPresence::NotPlaying();
@@ -584,6 +589,14 @@ bool EmulatorApp::OnInitialize() {
 void EmulatorApp::OnDestroy() {
   ShutdownEmulatorThreadFromUIThread();
 
+#if XE_PLATFORM_WIN32
+  // quick_exit below skips driver destructors. Drain accepted KBM reports
+  // explicitly while logging and the emulator services are still available.
+  if (emulator_window_) {
+    emulator_window_->ShutdownKbmInputSampling();
+  }
+#endif  // XE_PLATFORM_WIN32
+
   if (cvars::discord) {
     discord::DiscordPresence::Shutdown();
   }
@@ -612,7 +625,7 @@ void EmulatorApp::EmulatorThread() {
   // Setup and initialize all subsystems. If we can't do something
   // (unsupported system, memory issues, etc) this will fail early.
   X_STATUS result = emulator_->Setup(
-      emulator_window_->window(), emulator_window_->imgui_drawer(), true,
+      emulator_window_->window(), emulator_window_->imgui_drawer(), true, true,
       CreateAudioSystem, CreateGraphicsSystem, CreateInputDrivers);
   if (XFAILED(result)) {
     XELOGE("Failed to setup emulator: {:08X}", result);

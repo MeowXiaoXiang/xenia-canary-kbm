@@ -48,6 +48,7 @@ class InputDriver;
 class InputSystem;
 }  // namespace hid
 namespace ui {
+struct CrashReport;
 class ImGuiDrawer;
 class Window;
 }  // namespace ui
@@ -134,6 +135,8 @@ class Emulator {
   // null.
   ui::ImGuiDrawer* imgui_drawer() const { return imgui_drawer_; }
 
+  void ShowCrashDialog(ui::CrashReport report);
+
   // Guest memory system modelling the RAM (both virtual and physical) of the
   // system.
   Memory* memory() const { return memory_.get(); }
@@ -183,7 +186,7 @@ class Emulator {
   // functions.
   X_STATUS Setup(
       ui::Window* display_window, ui::ImGuiDrawer* imgui_drawer,
-      bool require_cpu_backend,
+      bool require_cpu_backend, bool with_presentation,
       std::function<std::unique_ptr<apu::AudioSystem>(cpu::Processor*)>
           audio_system_factory,
       std::function<std::unique_ptr<gpu::GraphicsSystem>()>

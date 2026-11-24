@@ -252,7 +252,7 @@ TEST_CASE("ADD_CARRY_I8", "[arithmetic]") {
 }
 
 // ============================================================================
-// RECIP F32/F64 — exact reciprocal (1/x)
+// RECIP F32/F64 — fres, the console's reciprocal estimate
 // ============================================================================
 TEST_CASE("RECIP_F64", "[arithmetic]") {
   TestFunction test([](HIRBuilder& b) {
@@ -260,11 +260,11 @@ TEST_CASE("RECIP_F64", "[arithmetic]") {
     b.Return();
   });
   test.Run([](PPCContext* ctx) { ctx->f[4] = 2.0; },
-           [](PPCContext* ctx) { REQUIRE(ctx->f[3] == 0.5); });
+           [](PPCContext* ctx) { REQUIRE(ctx->f[3] == 0.498046875); });
   test.Run([](PPCContext* ctx) { ctx->f[4] = -4.0; },
-           [](PPCContext* ctx) { REQUIRE(ctx->f[3] == -0.25); });
+           [](PPCContext* ctx) { REQUIRE(ctx->f[3] == -0.2490234375); });
   test.Run([](PPCContext* ctx) { ctx->f[4] = 1.0; },
-           [](PPCContext* ctx) { REQUIRE(ctx->f[3] == 1.0); });
+           [](PPCContext* ctx) { REQUIRE(ctx->f[3] == 0.99609375); });
 }
 
 // ============================================================================
@@ -490,7 +490,11 @@ TEST_CASE("RESERVED_STORE_I32_NO_RESERVATION", "[atomic]") {
   auto* host_ptr =
       reinterpret_cast<uint32_t*>(test.memory->TranslateVirtual(guest_addr));
 
+  // Catch2 assertions are not thread-safe, so the worker records results here
+  // and the main thread checks them.
   std::atomic<bool> completed{false};
+  std::atomic<bool> store_succeeded{false};
+  std::atomic<bool> memory_changed{false};
   std::thread worker([&]() {
     test.Run(
         [&](PPCContext* ctx) {
@@ -499,8 +503,12 @@ TEST_CASE("RESERVED_STORE_I32_NO_RESERVATION", "[atomic]") {
           ctx->r[5] = 99;
         },
         [&](PPCContext* ctx) {
-          CHECK(ctx->r[3] == 0);   // store must fail
-          CHECK(*host_ptr == 42);  // memory unchanged
+          if (ctx->r[3] != 0) {
+            store_succeeded = true;
+          }
+          if (*host_ptr != 42) {
+            memory_changed = true;
+          }
         });
     completed.store(true);
   });
@@ -515,6 +523,8 @@ TEST_CASE("RESERVED_STORE_I32_NO_RESERVATION", "[atomic]") {
     FAIL("Timed out: no-reservation path likely has an infinite loop");
     std::_Exit(1);
   }
+  CHECK_FALSE(store_succeeded);
+  CHECK_FALSE(memory_changed);
 
   test.memory->SystemHeapFree(guest_addr);
 }
@@ -535,6 +545,8 @@ TEST_CASE("RESERVED_STORE_I64_NO_RESERVATION", "[atomic]") {
       reinterpret_cast<uint64_t*>(test.memory->TranslateVirtual(guest_addr));
 
   std::atomic<bool> completed{false};
+  std::atomic<bool> store_succeeded{false};
+  std::atomic<bool> memory_changed{false};
   std::thread worker([&]() {
     test.Run(
         [&](PPCContext* ctx) {
@@ -543,8 +555,12 @@ TEST_CASE("RESERVED_STORE_I64_NO_RESERVATION", "[atomic]") {
           ctx->r[5] = 99;
         },
         [&](PPCContext* ctx) {
-          CHECK(ctx->r[3] == 0);   // store must fail
-          CHECK(*host_ptr == 42);  // memory unchanged
+          if (ctx->r[3] != 0) {
+            store_succeeded = true;
+          }
+          if (*host_ptr != 42) {
+            memory_changed = true;
+          }
         });
     completed.store(true);
   });
@@ -559,6 +575,8 @@ TEST_CASE("RESERVED_STORE_I64_NO_RESERVATION", "[atomic]") {
     FAIL("Timed out: no-reservation path likely has an infinite loop");
     std::_Exit(1);
   }
+  CHECK_FALSE(store_succeeded);
+  CHECK_FALSE(memory_changed);
 
   test.memory->SystemHeapFree(guest_addr);
 }

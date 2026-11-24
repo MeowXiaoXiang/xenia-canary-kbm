@@ -29,6 +29,7 @@ struct CreateOptions {
   static constexpr uint32_t FILE_DIRECTORY_FILE = 0x00000001;
   // Optimization - files access will be sequential, not random.
   static constexpr uint32_t FILE_SEQUENTIAL_ONLY = 0x00000004;
+  static constexpr uint32_t FILE_NO_INTERMEDIATE_BUFFERING = 0x00000008;
   static constexpr uint32_t FILE_SYNCHRONOUS_IO_ALERT = 0x00000010;
   static constexpr uint32_t FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
   static constexpr uint32_t FILE_NON_DIRECTORY_FILE = 0x00000040;
@@ -60,7 +61,8 @@ dword_result_t NtCreateFile_entry(lpdword_t handle_out, dword_t desired_access,
   vfs::Entry* root_entry = nullptr;
 
   // Compute path, possibly attrs relative.
-  auto target_path = util::TranslateAnsiPath(kernel_memory(), object_name);
+  auto target_path = std::string(StripDosDevicesPrefix(
+      util::TranslateAnsiPath(kernel_memory(), object_name)));
 
   // Enforce that the path is ASCII.
   if (!IsValidPath(target_path, false)) {
@@ -94,7 +96,10 @@ dword_result_t NtCreateFile_entry(lpdword_t handle_out, dword_t desired_access,
     bool synchronous =
         (create_options & CreateOptions::FILE_SYNCHRONOUS_IO_ALERT) ||
         (create_options & CreateOptions::FILE_SYNCHRONOUS_IO_NONALERT);
-    file = object_ref<XFile>(new XFile(kernel_state(), vfs_file, synchronous));
+    bool allow_buffering =
+        !(create_options & CreateOptions::FILE_NO_INTERMEDIATE_BUFFERING);
+    file = object_ref<XFile>(
+        new XFile(kernel_state(), vfs_file, synchronous, allow_buffering));
 
     // Handle ref is incremented, so return that.
     handle = file->handle();
@@ -114,10 +119,11 @@ DECLARE_XBOXKRNL_EXPORT1(NtCreateFile, kFileSystem, kImplemented);
 dword_result_t NtOpenFile_entry(
     lpdword_t handle_out, dword_t desired_access,
     pointer_t<X_OBJECT_ATTRIBUTES> object_attributes,
-    pointer_t<X_IO_STATUS_BLOCK> io_status_block, dword_t open_options) {
+    pointer_t<X_IO_STATUS_BLOCK> io_status_block, dword_t share_access,
+    dword_t open_options) {
   return NtCreateFile_entry(
       handle_out, desired_access, object_attributes, io_status_block, nullptr,
-      0, 0, static_cast<uint32_t>(xe::vfs::FileDisposition::kOpen),
+      0, share_access, static_cast<uint32_t>(xe::vfs::FileDisposition::kOpen),
       open_options);
 }
 DECLARE_XBOXKRNL_EXPORT1(NtOpenFile, kFileSystem, kImplemented);
@@ -130,6 +136,7 @@ dword_result_t NtReadFile_entry(dword_t file_handle, dword_t event_handle,
   X_STATUS result = X_STATUS_SUCCESS;
 
   bool signal_event = false;
+  bool pending = false;
   auto ev = kernel_state()->object_table()->LookupObject<XEvent>(event_handle);
   if (event_handle && !ev) {
     result = X_STATUS_INVALID_HANDLE;
@@ -147,7 +154,8 @@ dword_result_t NtReadFile_entry(dword_t file_handle, dword_t event_handle,
       result = file->Read(
           buffer.guest_address(), buffer_length,
           byte_offset_ptr ? static_cast<uint64_t>(*byte_offset_ptr) : -1,
-          &bytes_read, apc_context);
+          &bytes_read, apc_context, true, &pending);
+
       if (io_status_block) {
         io_status_block->status = result;
         io_status_block->information = bytes_read;
@@ -162,10 +170,6 @@ dword_result_t NtReadFile_entry(dword_t file_handle, dword_t event_handle,
           thread->EnqueueApc(static_cast<uint32_t>(apc_routine_ptr) & ~1u,
                              apc_context, io_status_block, 0);
         }
-      }
-
-      if (!file->is_synchronous() && result != X_STATUS_END_OF_FILE) {
-        result = X_STATUS_PENDING;
       }
 
       // Mark that we should signal the event now. We do this after
@@ -211,7 +215,7 @@ dword_result_t NtReadFile_entry(dword_t file_handle, dword_t event_handle,
     ev->Set(0, false);
   }
 
-  return result;
+  return pending ? X_STATUS_PENDING : result;
 }
 DECLARE_XBOXKRNL_EXPORT2(NtReadFile, kFileSystem, kImplemented, kHighFrequency);
 
@@ -222,6 +226,7 @@ dword_result_t NtReadFileScatter_entry(
   X_STATUS result = X_STATUS_SUCCESS;
 
   bool signal_event = false;
+  bool pending = false;
   auto ev = kernel_state()->object_table()->LookupObject<XEvent>(event_handle);
   if (event_handle && !ev) {
     result = X_STATUS_INVALID_HANDLE;
@@ -239,7 +244,7 @@ dword_result_t NtReadFileScatter_entry(
       result = file->ReadScatter(
           segment_array.guest_address(), length,
           byte_offset_ptr ? static_cast<uint64_t>(*byte_offset_ptr) : -1,
-          &bytes_read, apc_context);
+          &bytes_read, apc_context, &pending);
       if (io_status_block) {
         io_status_block->status = result;
         io_status_block->information = bytes_read;
@@ -254,10 +259,6 @@ dword_result_t NtReadFileScatter_entry(
           thread->EnqueueApc(static_cast<uint32_t>(apc_routine_ptr) & ~1u,
                              apc_context, io_status_block, 0);
         }
-      }
-
-      if (!file->is_synchronous()) {
-        result = X_STATUS_PENDING;
       }
 
       // Mark that we should signal the event now. We do this after
@@ -288,7 +289,7 @@ dword_result_t NtReadFileScatter_entry(
     }
   }
 
-  if (XFAILED(result) && io_status_block) {
+  if (XFAILED(result) && io_status_block && !signal_event) {
     io_status_block->status = result;
     io_status_block->information = 0;
   }
@@ -297,7 +298,7 @@ dword_result_t NtReadFileScatter_entry(
     ev->Set(0, false);
   }
 
-  return result;
+  return pending ? X_STATUS_PENDING : result;
 }
 DECLARE_XBOXKRNL_EXPORT1(NtReadFileScatter, kFileSystem, kImplemented);
 
@@ -310,6 +311,7 @@ dword_result_t NtWriteFile_entry(dword_t file_handle, dword_t event_handle,
 
   // Grab event to signal.
   bool signal_event = false;
+  bool pending = false;
   auto ev = kernel_state()->object_table()->LookupObject<XEvent>(event_handle);
   if (event_handle && !ev) {
     result = X_STATUS_INVALID_HANDLE;
@@ -330,7 +332,7 @@ dword_result_t NtWriteFile_entry(dword_t file_handle, dword_t event_handle,
       result = file->Write(
           buffer.guest_address(), buffer_length,
           byte_offset_ptr ? static_cast<uint64_t>(*byte_offset_ptr) : -1,
-          &bytes_written, apc_context);
+          &bytes_written, apc_context, &pending);
 
       if (io_status_block) {
         io_status_block->status = result;
@@ -346,10 +348,6 @@ dword_result_t NtWriteFile_entry(dword_t file_handle, dword_t event_handle,
           thread->EnqueueApc(static_cast<uint32_t>(apc_routine) & ~1u,
                              apc_context, io_status_block, 0);
         }
-      }
-
-      if (!file->is_synchronous()) {
-        result = X_STATUS_PENDING;
       }
 
       // Mark that we should signal the event now. We do this after
@@ -384,7 +382,7 @@ dword_result_t NtWriteFile_entry(dword_t file_handle, dword_t event_handle,
     ev->Set(0, false);
   }
 
-  return result;
+  return pending ? X_STATUS_PENDING : result;
 }
 DECLARE_XBOXKRNL_EXPORT1(NtWriteFile, kFileSystem, kImplemented);
 
@@ -392,7 +390,8 @@ dword_result_t NtCreateIoCompletion_entry(
     lpdword_t out_handle, dword_t desired_access,
     pointer_t<X_OBJECT_ATTRIBUTES> object_attribs,
     dword_t num_concurrent_threads) {
-  auto completion = new XIOCompletion(kernel_state());
+  auto completion =
+      object_ref<XIOCompletion>(new XIOCompletion(kernel_state()));
   if (out_handle) {
     *out_handle = completion->handle();
   }
@@ -433,14 +432,13 @@ dword_result_t NtRemoveIoCompletion_entry(
   auto port =
       kernel_state()->object_table()->LookupObject<XIOCompletion>(handle);
   if (!port) {
-    status = X_STATUS_INVALID_HANDLE;
+    return X_STATUS_INVALID_HANDLE;
   }
 
-  uint64_t timeout_ticks =
-      timeout ? static_cast<uint32_t>(*timeout)
-              : static_cast<uint64_t>(std::numeric_limits<int64_t>::min());
+  uint64_t timeout_ticks = timeout ? static_cast<uint64_t>(*timeout) : 0;
   XIOCompletion::IONotification notification;
-  if (port->WaitForNotification(timeout_ticks, &notification)) {
+  if (port->WaitForNotification(timeout ? &timeout_ticks : nullptr,
+                                &notification)) {
     if (key_context) {
       *key_context = notification.key_context;
     }
@@ -487,7 +485,8 @@ dword_result_t NtQueryFullAttributesFile_entry(
     assert_always();
   }
 
-  auto target_path = util::TranslateAnsiPath(kernel_memory(), object_name);
+  auto target_path = std::string(StripDosDevicesPrefix(
+      util::TranslateAnsiPath(kernel_memory(), object_name)));
 
   // Enforce that the path is ASCII.
   if (!IsValidPath(target_path, false)) {
@@ -498,6 +497,7 @@ dword_result_t NtQueryFullAttributesFile_entry(
   auto entry = kernel_state()->file_system()->ResolvePath(target_path);
   if (entry) {
     // Found.
+    entry->update();
     file_info->creation_time = entry->create_timestamp();
     file_info->last_access_time = entry->access_timestamp();
     file_info->last_write_time = entry->write_timestamp();
@@ -509,7 +509,16 @@ dword_result_t NtQueryFullAttributesFile_entry(
     return X_STATUS_SUCCESS;
   }
 
-  return X_STATUS_NO_SUCH_FILE;
+  // A missing folder or drive on the way fails differently from a missing
+  // last name.
+  auto folder_path = xe::utf8::find_base_guest_path(target_path);
+
+  if (!folder_path.empty() &&
+      !kernel_state()->file_system()->ResolvePath(folder_path)) {
+    return X_STATUS_OBJECT_PATH_NOT_FOUND;
+  }
+
+  return X_STATUS_OBJECT_NAME_NOT_FOUND;
 }
 DECLARE_XBOXKRNL_EXPORT1(NtQueryFullAttributesFile, kFileSystem, kImplemented);
 
@@ -583,7 +592,8 @@ dword_result_t NtOpenSymbolicLinkObject_entry(
   auto object_name =
       kernel_memory()->TranslateVirtual<X_ANSI_STRING*>(object_attrs->name_ptr);
 
-  auto target_path = util::TranslateAnsiPath(kernel_memory(), object_name);
+  auto target_path = std::string(StripDosDevicesPrefix(
+      util::TranslateAnsiPath(kernel_memory(), object_name)));
 
   // Enforce that the path is ASCII.
   if (!IsValidPath(target_path, false)) {
@@ -594,14 +604,10 @@ dword_result_t NtOpenSymbolicLinkObject_entry(
     assert_always();
   }
 
-  if (utf8::starts_with(target_path, "\\??\\")) {
-    target_path = target_path.substr(4);  // Strip the full qualifier
-  }
-
   std::string link_path;
   if (!kernel_state()->file_system()->FindSymbolicLink(target_path,
                                                        link_path)) {
-    return X_STATUS_NO_SUCH_FILE;
+    return X_STATUS_OBJECT_NAME_NOT_FOUND;
   }
 
   object_ref<XSymbolicLink> symlink(new XSymbolicLink(kernel_state()));
@@ -614,15 +620,21 @@ dword_result_t NtOpenSymbolicLinkObject_entry(
 DECLARE_XBOXKRNL_EXPORT1(NtOpenSymbolicLinkObject, kFileSystem, kImplemented);
 
 // https://docs.microsoft.com/en-us/windows/win32/devnotes/ntquerysymboliclinkobject
-dword_result_t NtQuerySymbolicLinkObject_entry(
-    dword_t handle, pointer_t<X_ANSI_STRING> target) {
+dword_result_t NtQuerySymbolicLinkObject_entry(dword_t handle,
+                                               pointer_t<X_ANSI_STRING> target,
+                                               lpdword_t returned_length_ptr) {
   auto symlink =
       kernel_state()->object_table()->LookupObject<XSymbolicLink>(handle);
   if (!symlink) {
     return X_STATUS_NO_SUCH_FILE;
   }
-  auto length = std::min(static_cast<size_t>(target->maximum_length),
-                         symlink->target().size());
+  const auto length = static_cast<uint32_t>(symlink->target().size());
+  if (returned_length_ptr) {
+    *returned_length_ptr = length;
+  }
+  if (length > target->maximum_length) {
+    return X_STATUS_BUFFER_TOO_SMALL;
+  }
   if (length > 0) {
     auto target_buf = kernel_memory()->TranslateVirtual(target->pointer);
     std::memcpy(target_buf, symlink->target().c_str(), length);

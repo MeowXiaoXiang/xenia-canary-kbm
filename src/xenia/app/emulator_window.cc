@@ -9,7 +9,7 @@
 
 #include "xenia/app/emulator_window.h"
 
-#include <cmath>
+#include <algorithm>
 #include <cstdio>
 
 #include "third_party/imgui/imgui.h"
@@ -26,6 +26,11 @@
 #include "xenia/app/console_settings_dialog.h"
 #include "xenia/app/content_list_dialog.h"
 #include "xenia/app/localization.h"
+#if XE_PLATFORM_WIN32
+#include "xenia/app/kbm_config_dialog_win.h"
+#include "xenia/hid/kbm/kbm_config.h"
+#include "xenia/hid/kbm/kbm_input_driver.h"
+#endif  // XE_PLATFORM_WIN32
 #include "xenia/base/assert.h"
 #include "xenia/base/clock.h"
 #include "xenia/base/cvar.h"
@@ -150,6 +155,8 @@ DEFINE_bool(
     "depends on the 10bpc displaying capabilities of the actual display used.",
     "Display");
 
+DEFINE_bool(fps_overlay, false, "Show an FPS overlay.", "Display");
+
 DEFINE_int32(recent_titles_entry_amount, 10,
              "Allows user to define how many titles is saved in list of "
              "recently played titles.",
@@ -247,6 +254,17 @@ void EmulatorWindow::SetupGraphicsSystemPresenterPainting() {
 
   ApplyDisplayConfigForCvars();
 
+  emulator_->graphics_system()->SetFrameRateCallback([this]() {
+    if (frame_rate_update_pending_.exchange(true)) {
+      return;
+    }
+
+    app_context_.CallInUIThread([this]() {
+      frame_rate_update_pending_ = false;
+      OnFrameRateUpdated();
+    });
+  });
+
   window_->SetPresenter(presenter);
 
   immediate_drawer_ =
@@ -257,10 +275,29 @@ void EmulatorWindow::SetupGraphicsSystemPresenterPainting() {
                                                   immediate_drawer_.get());
     Profiler::SetUserIO(kZOrderProfiler, window_.get(), presenter,
                         immediate_drawer_.get());
+    ApplyFrameRateOverlay();
   }
 }
 
+void EmulatorWindow::ApplyFrameRateOverlay() {
+  if (cvars::fps_overlay && immediate_drawer_) {
+    imgui_drawer_->SetOverlay([this]() { DrawFrameRateOverlay(); });
+  } else {
+    imgui_drawer_->SetOverlay(nullptr);
+  }
+}
+
+void EmulatorWindow::ToggleFrameRateOverlay() {
+  OVERRIDE_bool(fps_overlay, !cvars::fps_overlay);
+  ApplyFrameRateOverlay();
+}
+
 void EmulatorWindow::ShutdownGraphicsSystemPresenterPainting() {
+  if (gpu::GraphicsSystem* graphics_system = emulator_->graphics_system()) {
+    graphics_system->SetFrameRateCallback(nullptr);
+  }
+
+  imgui_drawer_->SetOverlay(nullptr);
   Profiler::SetUserIO(kZOrderProfiler, window_.get(), nullptr, nullptr);
   imgui_drawer_->SetPresenterAndImmediateDrawer(nullptr, nullptr);
   immediate_drawer_.reset();
@@ -298,6 +335,7 @@ void EmulatorWindow::OnEmulatorInitialized() {
       // initialization. Rebuild the initially-created menu so its settings
       // page is available only when auto-selection actually chose Kbm.
       BuildMainMenu();
+      KbmConfigDialog::UpdatePollHud(*this);
     }
   }
 #endif  // XE_PLATFORM_WIN32
@@ -331,6 +369,22 @@ void EmulatorWindow::OnEmulatorInitialized() {
     Gamepad_HotKeys_Listener->set_name("Gamepad HotKeys Listener");
   }
 }
+
+#if XE_PLATFORM_WIN32
+void EmulatorWindow::ShutdownKbmInputSampling() {
+  // Menus/input are enabled only after initialization has completed on the UI
+  // thread. Avoid reading the driver list while startup is still populating it.
+  if (!emulator_initialized_) {
+    return;
+  }
+  if (auto* input_system = emulator_->input_system()) {
+    if (auto* driver = input_system->GetDriver<hid::kbm::KbmInputDriver>()) {
+      // GetDriver has released its lock; joining must hold no input locks.
+      driver->ShutdownInputSampling();
+    }
+  }
+}
+#endif  // XE_PLATFORM_WIN32
 
 void EmulatorWindow::EmulatorWindowListener::OnClosing(ui::UIEvent& e) {
   emulator_window_.app_context_.QuitFromUIThread();
@@ -627,514 +681,6 @@ void EmulatorWindow::DisplayConfigDialog::OnDraw(ImGuiIO& io) {
   }
 }
 
-#if XE_PLATFORM_WIN32
-EmulatorWindow::KbmConfigDialog::KbmConfigDialog(
-    ui::ImGuiDrawer* imgui_drawer, EmulatorWindow& emulator_window)
-    : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
-  settings_ = hid::kbm::GetSettingsFromCvars();
-  original_settings_ = settings_;
-  saved_ = hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kCompatible;
-}
-
-EmulatorWindow::KbmConfigDialog::~KbmConfigDialog() {
-  CancelBindingCapture();
-  if (!committed_or_restored_) {
-    RestoreOriginal();
-  }
-}
-
-hid::kbm::KbmInputDriver* EmulatorWindow::KbmConfigDialog::GetDriver() const {
-  hid::InputSystem* input_system = emulator_window_.emulator_->input_system();
-  return input_system ? input_system->GetDriver<hid::kbm::KbmInputDriver>()
-                      : nullptr;
-}
-
-void EmulatorWindow::KbmConfigDialog::ApplyDraft() {
-  committed_or_restored_ = false;
-  dirty_ = true;
-  saved_ = false;
-  if (auto* driver = GetDriver()) {
-    driver->ApplySettings(settings_);
-  } else {
-    hid::kbm::ApplySettingsToCvars(settings_);
-  }
-}
-
-void EmulatorWindow::KbmConfigDialog::RestoreOriginal() {
-  settings_ = original_settings_;
-  if (auto* driver = GetDriver()) {
-    driver->ApplySettings(settings_);
-  } else {
-    hid::kbm::ApplySettingsToCvars(settings_);
-  }
-  committed_or_restored_ = true;
-}
-
-void EmulatorWindow::KbmConfigDialog::StartBindingCapture(std::string* target,
-                                                          bool append) {
-  binding_capture_target_ = target;
-  binding_capture_append_ = append;
-  if (auto* driver = GetDriver()) {
-    driver->BeginBindingCapture();
-  }
-}
-
-void EmulatorWindow::KbmConfigDialog::CancelBindingCapture() {
-  if (auto* driver = GetDriver()) {
-    driver->CancelBindingCapture();
-  }
-  binding_capture_target_ = nullptr;
-  binding_capture_append_ = false;
-}
-
-bool EmulatorWindow::KbmConfigDialog::HandleBindingCaptureResult() {
-  auto* driver = GetDriver();
-  if (!driver || !binding_capture_target_) {
-    return false;
-  }
-  const auto result = driver->ConsumeBindingCaptureResult();
-  using Status = hid::kbm::KbmInputDriver::BindingCaptureStatus;
-  switch (result.status) {
-    case Status::kCaptured:
-      if (binding_capture_append_ && !binding_capture_target_->empty()) {
-        *binding_capture_target_ += " " + result.value;
-      } else {
-        *binding_capture_target_ = result.value;
-      }
-      binding_capture_target_ = nullptr;
-      binding_capture_append_ = false;
-      return true;
-    case Status::kCleared:
-      binding_capture_target_->clear();
-      binding_capture_target_ = nullptr;
-      binding_capture_append_ = false;
-      return true;
-    case Status::kCancelled:
-      binding_capture_target_ = nullptr;
-      binding_capture_append_ = false;
-      return false;
-    default:
-      return false;
-  }
-}
-
-void EmulatorWindow::KbmConfigDialog::OnDraw(ImGuiIO& io) {
-  using localization::StringId;
-  const auto tr = [](StringId id) { return localization::Get(id); };
-
-  ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(560, 660), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowBgAlpha(0.94f);
-
-  bool dialog_open = true;
-  const std::string title =
-      fmt::format("{}###KbmSettings", tr(StringId::kKbmTitle));
-  if (!ImGui::Begin(title.c_str(), &dialog_open, ImGuiWindowFlags_NoCollapse)) {
-    ImGui::End();
-    return;
-  }
-
-  if (!GetDriver()) {
-    ImGui::TextWrapped("%s", tr(StringId::kKbmBackendInactive));
-    ImGui::Spacing();
-  }
-  if (hid::kbm::GetConfigState() == hid::kbm::KbmConfigState::kIncompatible) {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
-    ImGui::TextWrapped("%s", tr(StringId::kKbmConfigIncompatible));
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-  }
-
-  bool changed = HandleBindingCaptureResult();
-  bool close_after_start_sampling = false;
-  ImGui::TextWrapped("%s", tr(StringId::kKbmInputPaused));
-  ImGui::Text("%s %s", tr(StringId::kKbmCaptureToggle),
-              hid::kbm::FormatKbmBinding(settings_.raw_mouse_capture_toggle_key)
-                  .c_str());
-  ImGui::BeginChild("KbmSettingsBody",
-                    ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3), false);
-  auto draw_binding = [&](const char* id, std::string& binding,
-                          bool allow_alternatives = true) {
-    ImGui::PushID(id);
-    const bool capturing = binding_capture_target_ == &binding;
-    const std::string label = capturing ? tr(StringId::kKbmPressBinding)
-                              : binding.empty()
-                                  ? tr(StringId::kKbmUnbound)
-                                  : hid::kbm::FormatKbmBinding(binding);
-    const std::string binding_button_id = label + "##BindingValue";
-    const float action_width = ImGui::CalcTextSize("Esc").x +
-                               ImGui::GetStyle().FramePadding.x * 2 +
-                               (allow_alternatives ? 64.0f : 40.0f);
-    ImGui::BeginDisabled(GetDriver() == nullptr);
-    if (ImGui::Button(binding_button_id.c_str(),
-                      ImVec2(std::max(80.0f, ImGui::GetContentRegionAvail().x -
-                                                 action_width),
-                             0.0f))) {
-      StartBindingCapture(&binding, false);
-    }
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", tr(StringId::kKbmBindingTooltip));
-    }
-    if (allow_alternatives) {
-      ImGui::SameLine();
-      if (ImGui::SmallButton("+##AddAlternativeBinding")) {
-        StartBindingCapture(&binding, true);
-      }
-      if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", tr(StringId::kKbmAddAlternativeBinding));
-      }
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Esc##BindEscape")) {
-      CancelBindingCapture();
-      binding = "Key.Escape";
-      changed = true;
-    }
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", tr(StringId::kKbmBindEscape));
-    }
-    ImGui::SameLine();
-    if (ImGui::SmallButton("x##ClearBinding")) {
-      if (capturing) {
-        CancelBindingCapture();
-      }
-      binding.clear();
-      changed = true;
-    }
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", tr(StringId::kKbmClearBinding));
-    }
-    ImGui::PopID();
-  };
-  if (ImGui::TreeNodeEx(
-          tr(StringId::kKbmKeyboard),
-          ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    if (ImGui::Checkbox(tr(StringId::kKbmEnableController),
-                        &settings_.enabled)) {
-      changed = true;
-    }
-
-    if (settings_.enabled) {
-      int controller_slot = std::clamp(settings_.user_index, 0, 3);
-      const char* controller_slot_names[] = {
-          tr(StringId::kKbmPlayer1), tr(StringId::kKbmPlayer2),
-          tr(StringId::kKbmPlayer3), tr(StringId::kKbmPlayer4)};
-      if (ImGui::BeginCombo(tr(StringId::kKbmControllerSlot),
-                            controller_slot_names[controller_slot])) {
-        for (int i = 0; i < 4; ++i) {
-          if (ImGui::Selectable(controller_slot_names[i],
-                                controller_slot == i)) {
-            settings_.user_index = i;
-            changed = true;
-          }
-        }
-        ImGui::EndCombo();
-      }
-
-      ImGui::TextWrapped("%s", tr(StringId::kKbmBindingHelp));
-      if (ImGui::BeginTable("KbmBindings", 2,
-                            ImGuiTableFlags_BordersInnerV |
-                                ImGuiTableFlags_RowBg |
-                                ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn(tr(StringId::kKbmXboxInput),
-                                ImGuiTableColumnFlags_WidthFixed, 165.0f);
-        ImGui::TableSetupColumn(tr(StringId::kKbmKeyboardMouse));
-        ImGui::TableHeadersRow();
-#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
-  ImGui::TableNextRow();                                                       \
-  ImGui::TableSetColumnIndex(0);                                               \
-  ImGui::TextUnformatted(tr(StringId::kKbmBind##button));                      \
-  ImGui::TableSetColumnIndex(1);                                               \
-  draw_binding(#cvar_name, settings_.cvar_name);
-#include "xenia/hid/kbm/kbm_binding_table.inc"
-#undef XE_HID_KBM_BINDING
-        ImGui::EndTable();
-      }
-    }
-    ImGui::TreePop();
-  }
-
-  if (ImGui::TreeNodeEx(
-          tr(StringId::kKbmMouse),
-          ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-    const bool mouse_controls_available = settings_.enabled;
-    ImGui::BeginDisabled(!mouse_controls_available);
-    if (ImGui::Checkbox(tr(StringId::kKbmEnableRawMouse),
-                        &settings_.raw_mouse)) {
-      changed = true;
-    }
-    ImGui::EndDisabled();
-    if (!mouse_controls_available) {
-      ImGui::TextWrapped("%s", tr(StringId::kKbmRawMouseRequiresController));
-    }
-
-    ImGui::BeginDisabled(!mouse_controls_available);
-    ImGui::Spacing();
-    ImGui::TextUnformatted(tr(StringId::kKbmSensitivity));
-    float sensitivity = float(settings_.raw_mouse_sensitivity);
-    ImGui::SetNextItemWidth(
-        std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-    if (ImGui::SliderFloat(
-            "##MouseSensitivitySlider", &sensitivity, 0.01f, 256.0f, "%.3f x",
-            ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
-      settings_.raw_mouse_sensitivity = sensitivity;
-      changed = true;
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(90.0f);
-    if (ImGui::InputDouble("##MouseSensitivityInput",
-                           &settings_.raw_mouse_sensitivity, 0.0, 0.0, "%.3f",
-                           ImGuiInputTextFlags_CharsDecimal)) {
-      settings_.raw_mouse_sensitivity =
-          std::clamp(settings_.raw_mouse_sensitivity, 0.01, 256.0);
-      changed = true;
-    }
-    ImGui::SameLine();
-    const std::string reset_sensitivity =
-        fmt::format("{}##MouseSensitivity", tr(StringId::kPostReset));
-    if (ImGui::Button(reset_sensitivity.c_str())) {
-      settings_.raw_mouse_sensitivity = 10.0;
-      changed = true;
-    }
-    ImGui::TextWrapped("%s", tr(StringId::kKbmSensitivityGuide));
-
-    if (ImGui::Checkbox(tr(StringId::kKbmCompensateGameDeadzone),
-                        &settings_.raw_mouse_deadzone_compensation)) {
-      changed = true;
-    }
-    if (settings_.raw_mouse_deadzone_compensation) {
-      ImGui::TextUnformatted(tr(StringId::kKbmMinimumResponse));
-      float minimum_response = float(settings_.raw_mouse_minimum_response);
-      ImGui::SetNextItemWidth(
-          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-      if (ImGui::SliderFloat("##MinimumResponse", &minimum_response, 0.0f, 0.5f,
-                             "%.3f", ImGuiSliderFlags_AlwaysClamp)) {
-        settings_.raw_mouse_minimum_response = minimum_response;
-        changed = true;
-      }
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(90.0f);
-      if (ImGui::InputDouble("##MinimumResponseInput",
-                             &settings_.raw_mouse_minimum_response, 0.0, 0.0,
-                             "%.3f", ImGuiInputTextFlags_CharsDecimal)) {
-        settings_.raw_mouse_minimum_response =
-            std::clamp(settings_.raw_mouse_minimum_response, 0.0, 0.5);
-        changed = true;
-      }
-    }
-    ImGui::TextWrapped("%s", tr(StringId::kKbmMinimumResponseHelp));
-
-    if (ImGui::Checkbox(tr(StringId::kKbmInvertVertical),
-                        &settings_.raw_mouse_invert_y)) {
-      changed = true;
-    }
-    if (ImGui::Checkbox(tr(StringId::kKbmCaptureOnStart),
-                        &settings_.raw_mouse_capture_on_start)) {
-      changed = true;
-    }
-    ImGui::TextUnformatted(tr(StringId::kKbmCaptureToggle));
-    draw_binding("CaptureToggle", settings_.raw_mouse_capture_toggle_key,
-                 false);
-
-    if (ImGui::TreeNodeEx(tr(StringId::kKbmFineTuning),
-                          ImGuiTreeNodeFlags_Framed)) {
-      ImGui::TextUnformatted(tr(StringId::kKbmAimCurve));
-      float curve = float(settings_.raw_mouse_response_curve);
-      ImGui::SetNextItemWidth(
-          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-      if (ImGui::SliderFloat(
-              "##MouseCurve", &curve, 0.1f, 4.0f, "%.3f",
-              ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
-        settings_.raw_mouse_response_curve = curve;
-        changed = true;
-      }
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(90.0f);
-      if (ImGui::InputDouble("##MouseCurveInput",
-                             &settings_.raw_mouse_response_curve, 0.0, 0.0,
-                             "%.3f", ImGuiInputTextFlags_CharsDecimal)) {
-        settings_.raw_mouse_response_curve =
-            std::clamp(settings_.raw_mouse_response_curve, 0.1, 4.0);
-        changed = true;
-      }
-      ImGui::TextWrapped("%s", tr(StringId::kKbmAimCurveHelp));
-
-      ImGui::TextUnformatted(tr(StringId::kKbmMouseSmoothing));
-      float smoothing_time_ms = float(settings_.raw_mouse_smoothing_time_ms);
-      ImGui::SetNextItemWidth(
-          std::max(80.0f, ImGui::GetContentRegionAvail().x - 180.0f));
-      if (ImGui::SliderFloat("##MouseSmoothing", &smoothing_time_ms, 0.0f,
-                             20.0f, "%.1f ms", ImGuiSliderFlags_AlwaysClamp)) {
-        settings_.raw_mouse_smoothing_time_ms = smoothing_time_ms;
-        changed = true;
-      }
-      ImGui::TextWrapped("%s", tr(StringId::kKbmMouseSmoothingHelp));
-
-      ImGui::TextUnformatted(tr(StringId::kKbmFullStickThreshold));
-      ImGui::SetNextItemWidth(220.0f);
-      if (ImGui::InputDouble(
-              "##FullScaleVelocity", &settings_.raw_mouse_full_scale_velocity,
-              100.0, 1000.0, "%.0f", ImGuiInputTextFlags_CharsDecimal)) {
-        settings_.raw_mouse_full_scale_velocity =
-            std::clamp(settings_.raw_mouse_full_scale_velocity, 1.0, 1000000.0);
-        changed = true;
-      }
-      ImGui::TextWrapped(tr(StringId::kKbmFullStickHelp),
-                         settings_.raw_mouse_sensitivity,
-                         settings_.raw_mouse_full_scale_velocity /
-                             std::max(settings_.raw_mouse_sensitivity, 0.01));
-      ImGui::TreePop();
-    }
-    ImGui::EndDisabled();
-
-    if (ImGui::TreeNodeEx(tr(StringId::kKbmDiagnostics),
-                          ImGuiTreeNodeFlags_Framed)) {
-      if (auto* driver = GetDriver()) {
-        const auto diagnostics = driver->GetDiagnostics();
-        const float stick_output =
-            std::max(std::abs(float(diagnostics.thumb_x)) / 32767.0f,
-                     std::abs(float(diagnostics.thumb_y)) / 32767.0f);
-        const std::string stick_label = fmt::format(
-            fmt::runtime(tr(StringId::kKbmLastStickOutput)),
-            stick_output * 100.0f,
-            stick_output >= 0.999f ? tr(StringId::kKbmMaximum) : "");
-        ImGui::ProgressBar(stick_output, ImVec2(-1.0f, 0.0f),
-                           stick_label.c_str());
-        ImGui::TextWrapped(tr(StringId::kKbmRawSpeed),
-                           diagnostics.raw_counts_per_second_x,
-                           diagnostics.raw_counts_per_second_y,
-                           diagnostics.thumb_x, diagnostics.thumb_y);
-        ImGui::Text(tr(StringId::kKbmRawInputStatus),
-                    diagnostics.raw_mouse_requested ? tr(StringId::kKbmOn)
-                                                    : tr(StringId::kKbmOff),
-                    diagnostics.raw_mouse_registered ? tr(StringId::kKbmReady)
-                                                     : tr(StringId::kKbmOff),
-                    diagnostics.capture_requested ? tr(StringId::kKbmOn)
-                                                  : tr(StringId::kKbmOff),
-                    diagnostics.capture_active ? tr(StringId::kKbmActive)
-                                               : tr(StringId::kKbmReleased));
-        ImGui::TextWrapped("%s", tr(StringId::kKbmSnapshot));
-
-        ImGui::Separator();
-        ImGui::TextUnformatted(tr(StringId::kKbmInputSampling));
-        const auto sampling = driver->GetInputSamplingStatus();
-        if (sampling.active) {
-          ImGui::Text(tr(StringId::kKbmInputSamplingProgress),
-                      sampling.seconds_remaining, sampling.sample_count);
-          if (ImGui::Button(tr(StringId::kKbmStopAndSaveInputSampling))) {
-            driver->StopInputSampling();
-          }
-          ImGui::SameLine();
-          if (ImGui::Button(tr(StringId::kKbmCancelInputSampling))) {
-            driver->CancelInputSampling();
-          }
-        } else {
-          const bool save_and_start =
-              dirty_ || hid::kbm::GetConfigState() ==
-                            hid::kbm::KbmConfigState::kIncompatible;
-          if (ImGui::Button(tr(save_and_start
-                                   ? StringId::kKbmSaveAndStartInputSampling
-                                   : StringId::kKbmStartInputSampling))) {
-            if (save_and_start) {
-              CancelBindingCapture();
-              ApplyDraft();
-              if (hid::kbm::SaveConfig()) {
-                original_settings_ = settings_;
-                committed_or_restored_ = true;
-                save_failed_ = false;
-                dirty_ = false;
-                saved_ = true;
-              } else {
-                save_failed_ = true;
-              }
-            }
-            if (!save_failed_) {
-              driver->StartInputSampling();
-              committed_or_restored_ = true;
-              close_after_start_sampling = true;
-            }
-          }
-          ImGui::TextWrapped("%s", tr(StringId::kKbmInputSamplingHelp));
-          if (!sampling.report_path.empty()) {
-            ImGui::TextWrapped(tr(StringId::kKbmInputSamplingReportSaved),
-                               sampling.report_path.c_str());
-          } else if (sampling.report_write_failed) {
-            ImGui::TextDisabled("%s",
-                                tr(StringId::kKbmInputSamplingReportFailed));
-          } else {
-            ImGui::TextDisabled("%s", tr(StringId::kKbmInputSamplingNoReport));
-          }
-        }
-      } else {
-        ImGui::TextDisabled("%s", tr(StringId::kKbmDiagnosticsUnavailable));
-      }
-      ImGui::TreePop();
-    }
-    ImGui::TreePop();
-  }
-
-  ImGui::EndChild();
-  if (changed) {
-    ApplyDraft();
-  }
-
-  if (close_after_start_sampling) {
-    Close();
-    ImGui::End();
-    emulator_window_.ToggleKbmConfigDialog();
-    return;
-  }
-
-  ImGui::Separator();
-  if (save_failed_) {
-    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
-                       tr(StringId::kKbmAppliedSaveFailed));
-  } else if (dirty_) {
-    ImGui::TextUnformatted(tr(StringId::kKbmAppliedUnsaved));
-  } else if (saved_) {
-    ImGui::TextUnformatted(tr(StringId::kKbmAppliedSaved));
-  }
-  const bool save = ImGui::Button(tr(StringId::kKbmSave));
-  ImGui::SameLine();
-  const bool save_and_close = ImGui::Button(tr(StringId::kKbmSaveClose));
-  if (save || save_and_close) {
-    CancelBindingCapture();
-    ApplyDraft();
-    if (hid::kbm::SaveConfig()) {
-      original_settings_ = settings_;
-      committed_or_restored_ = true;
-      save_failed_ = false;
-      dirty_ = false;
-      saved_ = true;
-      if (save_and_close) {
-        Close();
-        ImGui::End();
-        emulator_window_.ToggleKbmConfigDialog();
-        return;
-      }
-    } else {
-      save_failed_ = true;
-    }
-  }
-  ImGui::SameLine();
-  if (ImGui::Button(tr(StringId::kKbmRestoreDefaults))) {
-    CancelBindingCapture();
-    settings_ = hid::kbm::KbmSettings();
-    ApplyDraft();
-  }
-  ImGui::TextDisabled("%s", tr(StringId::kKbmSettingsFile));
-
-  ImGui::End();
-  if (!dialog_open) {
-    CancelBindingCapture();
-    RestoreOriginal();
-    Close();
-    emulator_window_.ToggleKbmConfigDialog();
-  }
-}
-#endif  // XE_PLATFORM_WIN32
-
 void EmulatorWindow::ContentInstallDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(20, 20), ImGuiCond_FirstUseEver);
@@ -1155,12 +701,7 @@ void EmulatorWindow::ContentInstallDialog::OnDraw(ImGuiIO& io) {
     ImGui::BeginTable(fmt::format("table_{}", entry.name_).c_str(), 2);
     ImGui::TableNextRow(0);
     ImGui::TableSetColumnIndex(0);
-    if (entry.icon_) {
-      ImGui::Image(reinterpret_cast<ImTextureID>(entry.icon_.get()),
-                   ui::default_image_icon_size);
-    } else {
-      ImGui::Dummy(ui::default_image_icon_size);
-    }
+    ui::TitleIcon(entry.icon_.get());
     ImGui::TableNextColumn();
 
     ImGui::Text("Name: %s", entry.name_.c_str());
@@ -1233,51 +774,72 @@ void EmulatorWindow::XMPConfigDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowSize(ImVec2(20, 20), ImGuiCond_FirstUseEver);
 
   bool dialog_open = true;
-  if (!ImGui::Begin(localization::Get(StringId::kXmpTitle), &dialog_open,
-                    ImGuiWindowFlags_NoCollapse |
-                        ImGuiWindowFlags_AlwaysAutoResize |
-                        ImGuiWindowFlags_HorizontalScrollbar)) {
+  if (!ImGui::Begin(
+          localization::Get(StringId::kXmpTitle), &dialog_open,
+          ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
     Close();
     ImGui::End();
     return;
   }
 
   auto audio_player = emulator_window_.emulator_->audio_media_player();
-  using xmp_state = kernel::xam::apps::XmpApp::State;
-  if (audio_player) {
+  if (!audio_player) {
+    ImGui::TextDisabled("%s", localization::Get(StringId::kXmpUnavailable));
+  } else if (ImGui::BeginTable("##AudioPlayer", 2,
+                               ImGuiTableFlags_SizingFixedFit)) {
+    using xmp_state = kernel::xam::apps::XmpApp::State;
+    const xmp_state state = audio_player->GetState();
+    const float control_width = ImGui::GetFontSize() * 14.0f;
+    const float button_width = ImGui::GetFontSize() * 5.0f;
+
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(localization::Get(StringId::kXmpStatus));
-    ImGui::SameLine();
-    switch (audio_player->GetState()) {
-      case xmp_state::kIdle:
-        ImGui::TextUnformatted(localization::Get(StringId::kXmpIdle));
+    ImGui::TableNextColumn();
+    const float control_x = ImGui::GetCursorPosX();
+    ImGui::AlignTextToFramePadding();
+    switch (state) {
+      case xmp_state::kPlaying:
+        ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "%s",
+                           localization::Get(StringId::kXmpPlaying));
         break;
       case xmp_state::kPaused:
-        ImGui::TextUnformatted(localization::Get(StringId::kXmpPaused));
-        break;
-      case xmp_state::kPlaying:
-        ImGui::TextUnformatted(localization::Get(StringId::kXmpPlaying));
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1.0f), "%s",
+                           localization::Get(StringId::kXmpPaused));
         break;
       default:
+        ImGui::TextDisabled("%s", localization::Get(StringId::kXmpIdle));
         break;
     }
-
-    if (audio_player->IsPlaying()) {
-      if (ImGui::Button(localization::Get(StringId::kXmpPause))) {
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(control_x + control_width - button_width);
+    ImGui::BeginDisabled(state == xmp_state::kIdle);
+    if (ImGui::Button(localization::Get(state == xmp_state::kPaused
+                                            ? StringId::kXmpResume
+                                            : StringId::kXmpPause),
+                      ImVec2(button_width, 0.0f))) {
+      if (state == xmp_state::kPaused) {
+        audio_player->Continue();
+      } else {
         audio_player->Pause();
       }
-    } else if (audio_player->IsPaused()) {
-      if (ImGui::Button(localization::Get(StringId::kXmpResume))) {
-        audio_player->Continue();
-      }
+    }
+    ImGui::EndDisabled();
+
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(localization::Get(StringId::kXmpVolume));
+    ImGui::TableNextColumn();
+    int volume_percent =
+        static_cast<int>(audio_player->GetVolume()->load() * 100.0f + 0.5f);
+    ImGui::SetNextItemWidth(control_width);
+    if (ImGui::SliderInt("##Volume", &volume_percent, 0, 100, "%d%%")) {
+      audio_player->SetVolume(volume_percent / 100.0f);
     }
 
-    volume_ =
-        emulator_window_.emulator_->audio_media_player()->GetVolume()->load();
-
-    if (ImGui::SliderFloat(localization::Get(StringId::kXmpVolume), &volume_,
-                           0.0f, 1.0f, "%.2f")) {
-      audio_player->SetVolume(volume_);
-    }
+    ImGui::EndTable();
   }
 
   ImGui::End();
@@ -1426,8 +988,14 @@ void EmulatorWindow::BuildMainMenu() {
         MenuItem::Type::kString, tr(StringId::kMenuFullscreen), "F11",
         std::bind(&EmulatorWindow::ToggleFullscreen, this)));
     display_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuFpsOverlay), "",
+        std::bind(&EmulatorWindow::ToggleFrameRateOverlay, this)));
+    display_menu->AddChild(MenuItem::Create(
         MenuItem::Type::kString, tr(StringId::kMenuScreenshot), "F12",
         std::bind(&EmulatorWindow::TakeScreenshot, this)));
+    display_menu->AddChild(MenuItem::Create(
+        MenuItem::Type::kString, tr(StringId::kMenuResetWindowSize), "",
+        [this] { window_->ResetLogicalSizeToDefault(); }));
   }
   main_menu->AddChild(std::move(display_menu));
 
@@ -2047,8 +1615,7 @@ void EmulatorWindow::ExtractZarchive() {
         abs_extract_dir = std::filesystem::absolute(extract_dir);
       }
 
-      XELOGI("Extracting zar package: {}\n",
-             zarchive_file_path.filename().string());
+      XELOGI("Extracting zar package: {}\n", zarchive_file_path.filename());
 
       auto result =
           emulator_->ExtractZarchivePackage(abs_path, abs_extract_dir);
@@ -2056,9 +1623,7 @@ void EmulatorWindow::ExtractZarchive() {
       if (result != X_STATUS_SUCCESS) {
         std::error_code ec;
 
-        if (!std::filesystem::is_empty(abs_extract_dir)) {
-          std::filesystem::remove(abs_extract_dir, ec);
-        }
+        std::filesystem::remove(abs_extract_dir, ec);
 
         summary += fmt::format("\nFailed: {}", zarchive_file_path);
 
@@ -2098,7 +1663,8 @@ void EmulatorWindow::CreateZarchive() {
     file_picker->set_mode(ui::FilePicker::Mode::kSave);
     file_picker->set_type(ui::FilePicker::Type::kFile);
     file_picker->set_multi_selection(false);
-    file_picker->set_file_name(content_dirs.front().filename().string());
+    file_picker->set_file_name(
+        xe::path_to_utf8(content_dirs.front().filename()));
     file_picker->set_default_extension("zar");
     file_picker->set_title("Zarchive File");
     file_picker->set_extensions({
@@ -2149,7 +1715,7 @@ void EmulatorWindow::CreateZarchive() {
       // Normalize the path and make absolute.
       auto abs_content_dir = std::filesystem::absolute(content_path);
 
-      XELOGI("Creating zar package: {}\n", zarchive_file.filename().string());
+      XELOGI("Creating zar package: {}\n", zarchive_file.filename());
 
       auto result =
           emulator_->CreateZarchivePackage(abs_content_dir, zarchive_file);
@@ -2273,8 +1839,9 @@ void EmulatorWindow::ToggleKbmConfigDialog() {
         std::make_unique<KbmConfigDialog>(imgui_drawer_.get(), *this);
   } else if (kbm_config_dialog_->IsClosing()) {
     kbm_config_dialog_.release();
+    KbmConfigDialog::UpdatePollHud(*this);
   } else {
-    kbm_config_dialog_.reset();
+    kbm_config_dialog_->RequestClose();
   }
 }
 #endif  // XE_PLATFORM_WIN32
@@ -2289,7 +1856,7 @@ void EmulatorWindow::ToggleProfilesConfigDialog() {
 
     emulator_->kernel_state()->BroadcastNotification(kXNotificationSystemUI,
                                                      true);
-    emulator_->kernel_state()->xam_state()->is_xam_dialog_present_.store(true);
+    emulator_->kernel_state()->xam_state()->SetUIActive(true);
 
     profile_config_dialog_ =
         std::make_unique<ProfileConfigDialog>(imgui_drawer_.get(), this);
@@ -2302,7 +1869,7 @@ void EmulatorWindow::ToggleProfilesConfigDialog() {
     } else {
       profile_config_dialog_.reset();
     }
-    emulator_->kernel_state()->xam_state()->is_xam_dialog_present_.store(false);
+    emulator_->kernel_state()->xam_state()->SetUIActive(false);
   }
 }
 
@@ -2424,6 +1991,10 @@ void EmulatorWindow::UpdateTitle() {
       sb.Append(graphics_name);
       sb.Append(">");
     }
+
+    if (emulator()->is_title_open()) {
+      sb.AppendFormat(" | {:.2f} FPS", graphics_system->GetFramesPerSecond());
+    }
   }
 
   if (Clock::guest_time_scalar() != 1.0) {
@@ -2445,6 +2016,50 @@ void EmulatorWindow::UpdateTitle() {
   }
 
   window_->SetTitle(sb.to_string_view());
+}
+
+void EmulatorWindow::OnFrameRateUpdated() {
+  UpdateTitle();
+
+  if (!cvars::fps_overlay) {
+    return;
+  }
+
+  // Repaint even if the title isn't swapping.
+  if (ui::Presenter* presenter = GetGraphicsSystemPresenter()) {
+    presenter->RequestUIPaintFromUIThread();
+  }
+}
+
+void EmulatorWindow::DrawFrameRateOverlay() {
+  if (!emulator()->is_title_open()) {
+    return;
+  }
+
+  GraphicsSystem* graphics_system = emulator()->graphics_system();
+  if (!graphics_system) {
+    return;
+  }
+
+  // Fits every reading below 100 FPS, so the box doesn't resize as it changes.
+  const float min_width = ImGui::CalcTextSize("00.00 FPS").x +
+                          ImGui::GetStyle().WindowPadding.x * 2.0f;
+
+  ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(min_width, 0.0f),
+                                      ImVec2(FLT_MAX, FLT_MAX));
+  ImGui::SetNextWindowBgAlpha(0.5f);
+
+  if (ImGui::Begin("##FrameRateOverlay", nullptr,
+                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                       ImGuiWindowFlags_NoNav |
+                       ImGuiWindowFlags_NoFocusOnAppearing |
+                       ImGuiWindowFlags_NoBringToFrontOnFocus |
+                       ImGuiWindowFlags_NoSavedSettings |
+                       ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::Text("%.2f FPS", graphics_system->GetFramesPerSecond());
+  }
+  ImGui::End();
 }
 
 void EmulatorWindow::SetInitializingShaderStorage(bool initializing) {
@@ -2715,9 +2330,9 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
 
     // Use filename if title name is empty
     if (recently_launched_titles_[selected_title_index].title_name.empty()) {
-      title_name = recently_launched_titles_[selected_title_index]
-                       .path_to_file.filename()
-                       .string();
+      title_name =
+          xe::path_to_utf8(recently_launched_titles_[selected_title_index]
+                               .path_to_file.filename());
     } else {
       title_name = recently_launched_titles_[selected_title_index].title_name;
     }
@@ -2769,7 +2384,7 @@ void EmulatorWindow::VibrateController(xe::hid::InputSystem* input_sys,
 }
 
 void EmulatorWindow::GamepadHotKeys() {
-  X_INPUT_STATE state;
+  X_INPUT_STATE state = {};
 
   constexpr std::chrono::milliseconds thread_delay(75);
 
@@ -2784,8 +2399,8 @@ void EmulatorWindow::GamepadHotKeys() {
         auto input_lock = input_sys->lock();
         for (uint32_t user_index = 0; user_index < XUserMaxUserCount;
              ++user_index) {
-          X_RESULT result = input_sys->GetState(
-              user_index, X_INPUT_FLAG::X_INPUT_FLAG_GAMEPAD, &state);
+          X_RESULT result =
+              input_sys->GetStateForHostHotkeys(user_index, &state);
           controller_states[user_index] = {result == X_ERROR_SUCCESS, state};
         }
       }  // Lock is released here when input_lock goes out of scope
@@ -2958,21 +2573,6 @@ xe::X_STATUS EmulatorWindow::RunTitle(
   auto result = emulator_->LaunchPath(abs_path);
 
   disable_hotkeys_ = false;
-
-  if (profile_config_dialog_) {
-    profile_config_dialog_.reset();
-    emulator_->kernel_state()->xam_state()->is_xam_dialog_present_.store(false);
-  }
-
-  if (display_config_dialog_) {
-    display_config_dialog_.reset();
-  }
-
-#if XE_PLATFORM_WIN32
-  if (kbm_config_dialog_) {
-    kbm_config_dialog_.reset();
-  }
-#endif  // XE_PLATFORM_WIN32
   ClearDialogs();
 
   if (result) {
@@ -3009,7 +2609,7 @@ void EmulatorWindow::FillRecentlyLaunchedTitlesMenu(
 
     const RecentTitleEntry& entry = recently_launched_titles_[i];
     const std::string item_text = entry.title_name.empty()
-                                      ? entry.path_to_file.string()
+                                      ? xe::path_to_utf8(entry.path_to_file)
                                       : entry.title_name;
 
     recent_menu->AddChild(MenuItem::Create(
@@ -3044,15 +2644,17 @@ void EmulatorWindow::LoadRecentlyLaunchedTitles() {
       std::string title_name =
           entry_table->get_as<std::string>("title_name")->get();
       std::string path = entry_table->get_as<std::string>("path")->get();
+      std::filesystem::path path_to_file = xe::to_path(path);
       std::time_t last_run_time =
           entry_table->get_as<int64_t>("last_run_time")->get();
 
       std::error_code ec = {};
-      if (path.empty() || !std::filesystem::exists(path, ec)) {
+      if (path.empty() || !std::filesystem::exists(path_to_file, ec)) {
         continue;
       }
 
-      recently_launched_titles_.push_back({title_name, path, last_run_time});
+      recently_launched_titles_.push_back(
+          {title_name, path_to_file, last_run_time});
     }
   }
 }
@@ -3102,6 +2704,13 @@ void EmulatorWindow::AddRecentlyLaunchedTitle(
 }
 
 void EmulatorWindow::ClearDialogs() {
+#if XE_PLATFORM_WIN32
+  if (kbm_config_dialog_) {
+    kbm_config_dialog_.reset();
+    KbmConfigDialog::UpdatePollHud(*this);
+  }
+#endif  // XE_PLATFORM_WIN32
+
   if (profile_config_dialog_) {
     profile_config_dialog_.reset();
   }
@@ -3123,7 +2732,7 @@ void EmulatorWindow::ClearDialogs() {
   }
 
   imgui_drawer_.get()->ClearDialogs();
-  emulator_->kernel_state()->xam_state()->is_xam_dialog_present_.store(false);
+  emulator_->kernel_state()->xam_state()->SetUIActive(false);
 }
 
 }  // namespace app

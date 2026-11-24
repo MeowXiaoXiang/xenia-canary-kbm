@@ -11,12 +11,16 @@
 
 #include "xenia/base/byte_stream.h"
 #include "xenia/base/logging.h"
+#include "xenia/base/string.h"
+#include "xenia/base/utf8.h"
 #include "xenia/base/xxhash.h"
 #include "xenia/cpu/elf_module.h"
 #include "xenia/emulator.h"
 
 namespace xe {
 namespace kernel {
+
+constexpr uint32_t kLoadFlagTitleProcess = 1;
 
 UserModule::UserModule(KernelState* kernel_state)
     : XModule(kernel_state, ModuleType::kUserModule) {}
@@ -248,8 +252,29 @@ X_STATUS UserModule::LoadContinue() {
 
   ldr_data->dll_base = 0;  // GetProcAddress will read this.
   ldr_data->xex_header_base = guest_xex_header_;
+  ldr_data->image_size = security_header->image_size;
   ldr_data->full_image_size = security_header->image_size;
   ldr_data->image_base = this->xex_module()->base_address();
+  ldr_data->load_count = 1;
+  if (!is_dll_module_) {
+    ldr_data->load_flags = kLoadFlagTitleProcess;
+  }
+
+  // The file name, extension included, as a counted UTF-16 string.
+  const auto base_name = xe::to_utf16(
+      path_.empty() ? name_ : utf8::find_name_from_guest_path(path_));
+  const uint32_t name_bytes = uint32_t(base_name.size() * 2);
+  const uint32_t name_ptr = memory()->SystemHeapAlloc(name_bytes + 2);
+  if (name_ptr) {
+    auto name_chars = memory()->TranslateVirtual<xe::be<uint16_t>*>(name_ptr);
+    for (size_t i = 0; i < base_name.size(); ++i) {
+      name_chars[i] = base_name[i];
+    }
+    name_chars[base_name.size()] = 0;
+    ldr_data->base_dll_name.length = uint16_t(name_bytes);
+    ldr_data->base_dll_name.maximum_length = uint16_t(name_bytes + 2);
+    ldr_data->base_dll_name.pointer = name_ptr;
+  }
 
   ldr_data->entry_point = entry_point_;
 
@@ -267,6 +292,16 @@ X_STATUS UserModule::Unload() {
 
   if (module_format_ == kModuleFormatXex && processor_module_ &&
       xex_module()->Unload()) {
+    if (hmodule_ptr_) {
+      auto ldr_data =
+          memory()->TranslateVirtual<X_LDR_DATA_TABLE_ENTRY*>(hmodule_ptr_);
+      if (ldr_data->base_dll_name.pointer) {
+        memory()->SystemHeapFree(ldr_data->base_dll_name.pointer);
+        ldr_data->base_dll_name.pointer = 0;
+        ldr_data->base_dll_name.length = 0;
+        ldr_data->base_dll_name.maximum_length = 0;
+      }
+    }
     OnUnload();
     return X_STATUS_SUCCESS;
   }
@@ -595,10 +630,33 @@ void UserModule::Dump() {
             static_cast<char>(opt_delta_patch_descriptor->info.patch_data[0]));
       } break;
       case XEX_HEADER_BASE_REFERENCE: {
-        sb.Append("  XEX_HEADER_BASE_REFERENCE (TODO):\n");
+        auto opt_base_reference =
+            reinterpret_cast<const XEX_BASE_REFERENCE*>(opt_header_ptr);
+        sb.AppendFormat("  XEX_HEADER_BASE_REFERENCE:\n");
+        sb.AppendFormat("    Unknown 1: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_base_reference->unk1));
+        sb.AppendFormat("    Unknown 2: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_base_reference->unk2));
+        sb.AppendFormat("    Unknown 3: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_base_reference->unk3));
+        sb.AppendFormat("    Unknown 4: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_base_reference->unk4));
+        sb.AppendFormat("    Unknown 5: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_base_reference->unk5));
       } break;
-      case XEX_HEADER_DISC_PROFILE_ID: {  // 4D530919, 4156091D
-        sb.Append("  XEX_HEADER_DISC_PROFILE_ID (TODO):\n");
+      case XEX_HEADER_DISC_PROFILE_ID: {  // 4D530919, 4156091D, 464F07FE,
+                                          // 434307FC
+        auto opt_profile_id =
+            reinterpret_cast<const XEX_DISC_PROFILE_ID*>(opt_header_ptr);
+        sb.AppendFormat("  XEX_HEADER_DISC_PROFILE_ID:\n");
+        sb.AppendFormat("    Unknown 1: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_profile_id->unk1));
+        sb.AppendFormat("    Unknown 2: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_profile_id->unk2));
+        sb.AppendFormat("    Unknown 3: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_profile_id->unk3));
+        sb.AppendFormat("    Unknown 4: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_profile_id->unk4));
       } break;
       case XEX_HEADER_BOUNDING_PATH: {
         auto opt_bound_path =
@@ -607,7 +665,19 @@ void UserModule::Dump() {
                         opt_bound_path->path);
       } break;
       case XEX_HEADER_DEVICE_ID: {
-        sb.Append("  XEX_HEADER_DEVICE_ID (TODO):\n");
+        sb.Append("  XEX_HEADER_DEVICE_ID:\n");
+        auto opt_device_id =
+            reinterpret_cast<const XEX_DEVICE_ID*>(opt_header_ptr);
+        sb.AppendFormat("    Unknown 1: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_device_id->unk1));
+        sb.AppendFormat("    Unknown 2: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_device_id->unk2));
+        sb.AppendFormat("    Unknown 3: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_device_id->unk3));
+        sb.AppendFormat("    Unknown 4: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_device_id->unk4));
+        sb.AppendFormat("    Unknown 5: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_device_id->unk5));
       } break;
       case XEX_HEADER_ORIGINAL_BASE_ADDRESS: {
         sb.AppendFormat("  XEX_HEADER_ORIGINAL_BASE_ADDRESS: {:08X}\n",
@@ -673,6 +743,14 @@ void UserModule::Dump() {
           library_offset += library->size;
         }
       } break;
+      case XEX1_XEX25_HEADER_VERSION_DEPENDENT: {
+        if (header->magic == make_fourcc("XEX1")) {
+          sb.Append("  XEX1_HEADER_PE_EXPORTS: (TODO)\n");
+        } else {
+          sb.AppendFormat("  XEX25_HEADER_STACK_SIZE: 0x{:08X}\n",
+                          (uint32_t)opt_header.value);
+        }
+      } break;
       case XEX_HEADER_CHECKSUM_TIMESTAMP: {
         // TODO(Byrom): Relocate parts of this to somewhere more suitable
         // (if possible) to leave only the log printing portion.
@@ -713,7 +791,8 @@ void UserModule::Dump() {
             static_cast<uint32_t>(opt_call_cap_imports->end_func_thunk_addr));
       } break;
       case XEX_HEADER_ENABLED_FOR_FASTCAP: {
-        sb.Append("  XEX_HEADER_ENABLED_FOR_FASTCAP (TODO):\n");
+        sb.AppendFormat("  XEX_HEADER_ENABLED_FOR_FASTCAP: 0x{:08X}\n",
+                        (uint32_t)opt_header.value);
       } break;
       case XEX_HEADER_ORIGINAL_PE_NAME: {
         auto opt_pe_name =
@@ -763,7 +842,14 @@ void UserModule::Dump() {
                         static_cast<uint32_t>(opt_header.value));
       } break;
       case XEX_HEADER_PAGE_HEAP_SIZE_AND_FLAGS: {
-        sb.Append("  XEX_HEADER_PAGE_HEAP_SIZE_AND_FLAGS (TODO):\n");
+        sb.Append("  XEX_HEADER_PAGE_HEAP_SIZE_AND_FLAGS:\n");
+        auto opt_heap_and_flags =
+            reinterpret_cast<const XEX_PAGE_HEAP_SIZE_AND_FLAGS*>(
+                opt_header_ptr);
+        sb.AppendFormat("    Unknown 1: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_heap_and_flags->unk1));
+        sb.AppendFormat("    Unknown 2: 0x{:08X}\n",
+                        static_cast<uint32_t>(opt_heap_and_flags->unk2));
       } break;
       case XEX_HEADER_SYSTEM_FLAGS: {
         sb.AppendFormat("  XEX_HEADER_SYSTEM_FLAGS: {:08X}\n",
@@ -809,6 +895,26 @@ void UserModule::Dump() {
                         static_cast<uint32_t>(opt_exec_info->title_id));
         sb.AppendFormat("    Disc Number / Total: {} / {}\n",
                         opt_exec_info->disc_number, opt_exec_info->disc_count);
+      } break;
+      case XEX_HEADER_SERVICE_ID_LIST: {
+        sb.Append("  XEX_HEADER_SERVICE_ID_LIST:");
+        auto opt_service_ids =
+            reinterpret_cast<const xex2_opt_generic_u32*>(opt_header_ptr);
+
+        std::string service_ids = "";
+
+        for (uint32_t i = 0; i < opt_service_ids->count(); i++) {
+          if (opt_service_ids->values[i] != 0) {
+            service_ids.append(
+                fmt::format(" 0x{:08X},", opt_service_ids->values[i].get()));
+          }
+        }
+        // Remove last character as it is not necessary
+        if (!service_ids.empty()) {
+          service_ids.pop_back();
+          sb.AppendFormat("{}", service_ids);
+        }
+        sb.Append("\n");
       } break;
       case XEX_HEADER_TITLE_WORKSPACE_SIZE: {
         sb.AppendFormat("  XEX_HEADER_TITLE_WORKSPACE_SIZE: {}\n",
@@ -923,13 +1029,22 @@ void UserModule::Dump() {
         auto opt_ms_logo =
             reinterpret_cast<const xex2_opt_ms_logo*>(opt_header_ptr);
 
-        sb.AppendFormat("          Section Size: {}\n",
+        sb.AppendFormat("          Section Size: 0x{:08X}\n",
                         static_cast<uint32_t>(opt_ms_logo->section_size));
-        sb.AppendFormat("          Logo Size: {}\n",
+        sb.AppendFormat("          Logo Size: 0x{:08X}\n",
                         static_cast<uint32_t>(opt_ms_logo->logo_size));
       } break;
-      case XEX_HEADER_MULTIDISC_MEDIA_IDS: {  // 4D5307DF
-        sb.Append("  XEX_HEADER_MULTIDISC_MEDIA_IDS (TODO):\n");
+      case XEX_HEADER_MULTIDISC_MEDIA_IDS: {  // 4D5307DF, 4541095D, 5454086C
+        sb.Append("  XEX_HEADER_MULTIDISC_MEDIA_IDS:");
+        auto opt_media_ids =
+            reinterpret_cast<const xex2_opt_generic_u32*>(opt_header_ptr);
+
+        for (uint32_t disc = 0; disc < opt_media_ids->count() / 4; ++disc) {
+          auto* id = &opt_media_ids->values[disc * 4];
+          sb.AppendFormat("\n    Disc {}: {:08X}{:08X}{:08X}{:08X}", disc + 1,
+                          id[0].get(), id[1].get(), id[2].get(), id[3].get());
+        }
+        sb.Append("\n");
       } break;
       case XEX_HEADER_ALTERNATE_TITLE_IDS: {
         sb.Append("  XEX_HEADER_ALTERNATE_TITLE_IDS:");

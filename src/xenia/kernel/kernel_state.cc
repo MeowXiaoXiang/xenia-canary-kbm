@@ -56,7 +56,6 @@ KernelState::KernelState(Emulator* emulator)
     : emulator_(emulator),
       memory_(emulator->memory()),
       dispatch_thread_running_(false),
-      dpc_list_(emulator->memory()),
       kernel_trampoline_group_(emulator->processor()->backend()) {
   assert_null(shared_kernel_state_);
   shared_kernel_state_ = this;
@@ -66,6 +65,7 @@ KernelState::KernelState(Emulator* emulator)
   smc_ = std::make_unique<SystemManagementController>();
   xconfig_ =
       std::make_unique<XConfig>(emulator->storage_root() / "xconfig.settings");
+  nui_ = std::make_unique<NUIController>();
 
   InitializeKernelGuestGlobals();
   kernel_version_ = KernelVersion(cvars::kernel_build_version);
@@ -77,6 +77,20 @@ KernelState::KernelState(Emulator* emulator)
       kMemoryProtectRead | kMemoryProtectWrite);
 
   xenia_assert(fixed_alloc_worked);
+}
+
+KernelState::KernelState(Memory* memory, cpu::Processor* processor,
+                         vfs::VirtualFileSystem* file_system)
+    : emulator_(nullptr),
+      memory_(memory),
+      processor_(processor),
+      file_system_(file_system),
+      dispatch_thread_running_(false),
+      kernel_trampoline_group_(processor->backend()) {
+  assert_null(shared_kernel_state_);
+  shared_kernel_state_ = this;
+  InitializeKernelGuestGlobals();
+  kernel_version_ = KernelVersion(cvars::kernel_build_version);
 }
 
 KernelState::~KernelState() {
@@ -298,9 +312,38 @@ void KernelState::RemoveTitleTerminateNotification(uint32_t routine) {
   }
 }
 
-void KernelState::RegisterModule(XModule* module) {}
+// Links the module's loader entry onto the end of the loaded module list,
+// once, so a title walking InLoadOrderLinks finds every module
+void KernelState::RegisterModule(XModule* module) {
+  if (!kernel_guest_globals_ || !module->hmodule_ptr()) {
+    return;
+  }
+  auto global_lock = global_critical_region_.Acquire();
+  auto ldr_data =
+      memory_->TranslateVirtual<X_LDR_DATA_TABLE_ENTRY*>(module->hmodule_ptr());
+  if (ldr_data->in_load_order_links.flink_ptr) {
+    return;
+  }
+  auto block =
+      memory_->TranslateVirtual<KernelGuestGlobals*>(kernel_guest_globals_);
+  util::XeInsertTailList(&block->loaded_modules, &ldr_data->in_load_order_links,
+                         memory_);
+}
 
-void KernelState::UnregisterModule(XModule* module) {}
+void KernelState::UnregisterModule(XModule* module) {
+  if (!module->hmodule_ptr()) {
+    return;
+  }
+  auto global_lock = global_critical_region_.Acquire();
+  auto ldr_data =
+      memory_->TranslateVirtual<X_LDR_DATA_TABLE_ENTRY*>(module->hmodule_ptr());
+  if (!ldr_data->in_load_order_links.flink_ptr) {
+    return;
+  }
+  util::XeRemoveEntryList(&ldr_data->in_load_order_links, memory_);
+  ldr_data->in_load_order_links.flink_ptr = 0;
+  ldr_data->in_load_order_links.blink_ptr = 0;
+}
 
 bool KernelState::RegisterUserModule(object_ref<UserModule> module) {
   auto lock = global_critical_region_.Acquire();
@@ -798,7 +841,10 @@ bool KernelState::IsPatchSignatureProper(
   patch_module->GetOptHeader(XEX_HEADER_DELTA_PATCH_DESCRIPTOR,
                              reinterpret_cast<void**>(&patch_header));
 
-  assert_not_null(patch_header);
+  if (!patch_header) {
+    XELOGE("XEX patch has no delta patch descriptor");
+    return false;
+  }
 
   // Compare hash inside delta descriptor to base XEX signature
   uint8_t digest[0x14];
@@ -861,6 +907,7 @@ void KernelState::UnloadUserModule(const object_ref<UserModule>& module,
   assert_true(iter != user_modules_.end());  // Unloading an unregistered module
                                              // is probably really bad
   user_modules_.erase(iter);
+  UnregisterModule(module.get());
 
   // Ensure this module was not somehow registered twice
   assert_true(std::find_if(user_modules_.begin(), user_modules_.end(),
@@ -1046,7 +1093,12 @@ void KernelState::RegisterNotifyListener(XNotifyListener* listener) {
     listener->EnqueueNotification(kXNotificationSystemUI,
                                   xam_state()->IsUIActive());
     listener->EnqueueNotification(kXNotificationSystemSignInChanged, 1);
-    listener->EnqueueNotification(kXNotificationSystemStorageDevicesChanged, 0);
+    // 415607FA: Doesn't like receiving this notification on boot. Causes game
+    // to crash.
+    if (title_id() == kDashboardID) {
+      listener->EnqueueNotification(kXNotificationSystemStorageDevicesChanged,
+                                    0);
+    }
   }
   if (!has_notified_live_startup_ && listener->mask() & kXNotifyLive) {
     has_notified_live_startup_ = true;
@@ -1095,8 +1147,9 @@ void KernelState::CompleteOverlappedEx(uint32_t overlapped_ptr, X_RESULT result,
   XOverlappedSetResult(ptr, result);
   XOverlappedSetExtendedError(ptr, extended_error);
   XOverlappedSetLength(ptr, length);
+  // The event is left unsignaled when there is a completion routine.
   X_HANDLE event_handle = XOverlappedGetEvent(ptr);
-  if (event_handle) {
+  if (event_handle && !XOverlappedGetCompletionRoutine(ptr)) {
     auto ev = object_table()->LookupObject<XEvent>(event_handle);
     assert_not_null(ev);
     if (ev) {
@@ -1200,6 +1253,12 @@ void KernelState::CompleteOverlappedDeferredEx(
       post_callback();
     }
   });
+  dispatch_cond_.notify_all();
+}
+
+void KernelState::Dispatch(std::function<void()> fn) {
+  auto global_lock = global_critical_region_.Acquire();
+  dispatch_queue_.push_back(std::move(fn));
   dispatch_cond_.notify_all();
 }
 
@@ -1334,8 +1393,10 @@ bool KernelState::Restore(ByteStream* stream) {
     return false;
   }
 
-  // Restore the object table
-  object_table_.Restore(stream);
+  // Restore the object table.
+  if (!object_table_.Restore(stream)) {
+    return false;
+  }
 
   // TLS bitmap is now stored per-process in X_KPROCESS structures (in guest
   // memory) Skip reading old global TLS bitmap if present in old save files
@@ -1395,6 +1456,84 @@ void KernelState::EndDPCImpersonation(cpu::ppc::PPCContext* context,
   kpcr->current_irql = end_scope.previous_irql_;
   kpcr->prcb_data.dpc_active = 0;
 }
+
+bool KernelState::QueueDpc(uint32_t pcr, uint32_t dpc) {
+  auto global_lock = global_critical_region_.Acquire();
+  for (const auto& queued : queued_dpcs_) {
+    if (queued.second == dpc) {
+      return false;
+    }
+  }
+
+  queued_dpcs_.emplace_back(pcr, dpc);
+  ++queued_dpc_count_;
+  return true;
+}
+
+bool KernelState::DequeueDpc(uint32_t dpc) {
+  auto global_lock = global_critical_region_.Acquire();
+  for (auto it = queued_dpcs_.begin(); it != queued_dpcs_.end(); ++it) {
+    if (it->second == dpc) {
+      queued_dpcs_.erase(it);
+      --queued_dpc_count_;
+      return true;
+    }
+  }
+  return false;
+}
+
+void KernelState::RunQueuedDpcs(cpu::ppc::PPCContext* context) {
+  if (!queued_dpc_count_) {
+    return;
+  }
+  auto thread = XThread::GetCurrentThread();
+  if (!thread) {
+    return;
+  }
+
+  uint32_t pcr = static_cast<uint32_t>(context->r[13]);
+  auto kpcr = context->TranslateVirtualGPR<X_KPCR*>(context->r[13]);
+
+  // A DPC queued from inside a DPC runs once the running one returns.
+  if (kpcr->current_irql >= 2 || kpcr->prcb_data.dpc_active) {
+    return;
+  }
+
+  while (true) {
+    uint32_t dpc_ptr = 0;
+    {
+      auto global_lock = global_critical_region_.Acquire();
+      for (auto it = queued_dpcs_.begin(); it != queued_dpcs_.end(); ++it) {
+        if (it->first == pcr) {
+          dpc_ptr = it->second;
+          queued_dpcs_.erase(it);
+          --queued_dpc_count_;
+          break;
+        }
+      }
+    }
+
+    if (!dpc_ptr) {
+      break;
+    }
+
+    auto dpc = memory()->TranslateVirtual<XDPC*>(dpc_ptr);
+    uint32_t routine = dpc->routine;
+    if (!routine) {
+      continue;
+    }
+
+    uint64_t args[] = {dpc_ptr, uint32_t(dpc->context), uint32_t(dpc->arg1),
+                       uint32_t(dpc->arg2)};
+
+    DPCImpersonationScope dpc_scope{};
+    BeginDPCImpersonation(context, dpc_scope);
+    processor_->Execute(thread->thread_state(), routine, args,
+                        xe::countof(args));
+    EndDPCImpersonation(context, dpc_scope);
+  }
+}
+
 void KernelState::EmulateCPInterruptDPC(uint32_t interrupt_callback,
                                         uint32_t interrupt_callback_data,
                                         uint32_t source, uint32_t cpu) {
@@ -1435,6 +1574,7 @@ void KernelState::EmulateCPInterruptDPC(uint32_t interrupt_callback,
   xboxkrnl::xeKeSetCurrentProcessType(X_PROCTYPE_IDLE, current_context);
 
   EndDPCImpersonation(current_context, dpc_scope);
+  RunQueuedDpcs(current_context);
 }
 
 void KernelState::InitializeProcess(X_KPROCESS* process, uint32_t type,
@@ -1550,6 +1690,7 @@ void KernelState::InitializeKernelGuestGlobals() {
   KernelGuestGlobals* block =
       memory_->TranslateVirtual<KernelGuestGlobals*>(kernel_guest_globals_);
   memset(block, 0, sizeof(KernelGuestGlobals));
+  util::XeInitializeListHead(&block->loaded_modules, memory_);
 
   auto idle_process = memory()->TranslateVirtual<X_KPROCESS*>(GetIdleProcess());
   InitializeProcess(idle_process, X_PROCTYPE_IDLE, 0, 0, 0);
@@ -1670,10 +1811,19 @@ void KernelState::InitializeKernelGuestGlobals() {
       {XObject::Type::Mutant,
        kernel_guest_globals_ +
            offsetof32(KernelGuestGlobals, ExMutantObjectType)},
+      {XObject::Type::Timer,
+       kernel_guest_globals_ +
+           offsetof32(KernelGuestGlobals, ExTimerObjectType)},
       {XObject::Type::Device,
        kernel_guest_globals_ +
            offsetof32(KernelGuestGlobals, IoDeviceObjectType)}};
   xboxkrnl::xeKeSetEvent(&block->UsbdBootEnumerationDoneEvent, 1, 0);
+
+  // Unsignalled synchronization events
+  block->UsbdDriverLoadRequiredEvent.header.type =
+      X_OBJECT_TYPES::EventSynchronizationObject;
+  block->StfsDeviceErrorEvent.header.type =
+      X_OBJECT_TYPES::EventSynchronizationObject;
 }
 
 void KernelState::InitializeXbdmCpuCounters() {

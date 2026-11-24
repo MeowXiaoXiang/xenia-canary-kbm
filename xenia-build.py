@@ -14,6 +14,7 @@ from glob import glob
 from json import loads as jsonloads
 import os
 from re import findall as re_findall
+from re import fullmatch as re_fullmatch
 import platform
 from shutil import rmtree
 import subprocess
@@ -48,7 +49,6 @@ XENIA_TARGETS = [
     "xenia-app",
     "xenia-app-discord",
     "xenia-apu",
-    "xenia-apu-alsa",
     "xenia-apu-nop",
     "xenia-apu-sdl",
     "xenia-base",
@@ -153,6 +153,48 @@ def import_subprocess_environment(args):
                     break
 
 VSVERSION_MINIMUM = 2022
+VS_GENERATOR_MAP = {
+    2022: "Visual Studio 17 2022",
+    2026: "Visual Studio 18 2026",
+}
+vs_install_path = None
+
+
+def get_vs_generator(vs_path, product_line_version, platform_type):
+    """Returns the CMake Visual Studio generator and optional platform toolset.
+
+    For newer VS versions, use the latest generator in the table with the newest
+    toolset found in the installation.
+    """
+    vs_generator = VS_GENERATOR_MAP.get(product_line_version)
+    if vs_generator:
+        return vs_generator, None
+    latest_known = max(VS_GENERATOR_MAP.keys())
+    vs_generator = VS_GENERATOR_MAP[latest_known]
+    print(f"  Note: VS {product_line_version} detected.")
+    print(f"  Using \"{vs_generator}\" generator with that instance.")
+    toolset = None
+    vc_dir = os.path.join(vs_path or "", "MSBuild", "Microsoft", "VC")
+    if os.path.isdir(vc_dir):
+        # Newest VC targets folder (e.g. v180)
+        vc_versions = sorted(
+            (d for d in os.listdir(vc_dir) if re_fullmatch(r"v\d+", d)),
+            key=lambda d: int(d[1:]))
+        for vc_version in reversed(vc_versions):
+            toolsets_dir = os.path.join(
+                vc_dir, vc_version, "Platforms", platform_type, "PlatformToolsets")
+            if not os.path.isdir(toolsets_dir):
+                continue
+            toolsets = sorted(
+                (d for d in os.listdir(toolsets_dir) if re_fullmatch(r"v\d+", d)),
+                key=lambda d: int(d[1:]))
+            if toolsets:
+                toolset = toolsets[-1]
+                break
+    print(f"  Using \"{toolset}\" toolset.")
+    return vs_generator, toolset
+
+
 def import_vs_environment():
     """Finds the installed Visual Studio version and imports
     interesting environment variables into os.environ.
@@ -168,8 +210,10 @@ def import_vs_environment():
     install_path = None
     env_tool_args = None
 
+    # Backslashes, so Windows finds it in the working directory even with
+    # NoDefaultCurrentDirectoryInExePath set
     vswhere = subprocess.check_output(
-        "tools/vswhere/vswhere.exe -version \"[17,)\" -latest -prerelease -format json -utf8 -products"
+        "tools\\vswhere\\vswhere.exe -version \"[17,)\" -latest -prerelease -format json -utf8 -products"
         " Microsoft.VisualStudio.Product.Enterprise"
         " Microsoft.VisualStudio.Product.Professional"
         " Microsoft.VisualStudio.Product.Community"
@@ -192,6 +236,11 @@ def import_vs_environment():
     if not version:
         return None
 
+    global vs_install_path
+    vs_install_path = install_path
+
+    # VsDevCmd launches PowerShell to send telemetry unless told not to.
+    os.environ["VSCMD_SKIP_SENDTELEMETRY"] = "1"
     import_subprocess_environment(env_tool_args)
     os.environ["VSVERSION"] = f"{version}"
     return version
@@ -620,6 +669,44 @@ def get_pr_number():
     if github_ref and github_ref.startswith('refs/pull/'):
         return github_ref.split('/')[2]
 
+def git_submodules_up_to_date(submodules):
+    """Checks whether the submodules are checked out at their recorded commits.
+
+    Reads each submodule's HEAD file directly, because git spawns a process per
+    submodule for sync, update and status, which takes seconds on Windows.
+
+    Args:
+      submodules: Submodule paths to check, or an empty list for all of them.
+
+    Returns:
+      True if nothing needs updating. False if anything is missing, differs,
+      or could not be determined.
+    """
+    try:
+        index = subprocess.check_output(["git", "ls-files", "-s"], text=True)
+        for line in index.splitlines():
+            if not line.startswith("160000 "):
+                continue
+            info, path = line.split("\t", 1)
+            if submodules and path not in submodules:
+                continue
+            git_dir = os.path.join(path, ".git")
+            if os.path.isfile(git_dir):
+                with open(git_dir) as f:
+                    pointer = f.read().strip()
+                if not pointer.startswith("gitdir: "):
+                    return False
+                git_dir = os.path.join(path, pointer[len("gitdir: "):])
+            with open(os.path.join(git_dir, "HEAD")) as f:
+                head = f.read().strip()
+            # A HEAD on a branch reads as "ref: ...", which also returns False.
+            if head != info.split()[1]:
+                return False
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
 def git_submodule_update():
     """Runs a git submodule sync, init, and update.
     """
@@ -635,6 +722,9 @@ def git_submodule_update():
         submodules = re_findall(r"(?<=path = )(?!third_party\/(?:" + "|".join(submodules_ignore) + r")).+", gitmodules)
     else:
         submodules = []
+    if git_submodules_up_to_date(submodules):
+        print("  submodules already up to date")
+        return
     # Sync submodule URLs from .gitmodules to local config
     shell_call([
         "git",
@@ -1349,7 +1439,7 @@ class TestCommand(BaseBuildCommand):
         super(TestCommand, self).__init__(
             subparsers,
             name="test",
-            help_short="Runs automated tests that have been built with `xb build`.",
+            help_short="Builds and runs automated tests.",
             help_long="""
             To pass arguments to the test executables separate them with `--`.
             For example, you can run only the instr_foo.s tests with:
@@ -1373,6 +1463,8 @@ class TestCommand(BaseBuildCommand):
             "xenia-kernel-tests",
             ]
         args["target"] = test_targets
+        # Test targets only exist when XENIA_BUILD_TESTS is enabled.
+        args["build_tests"] = True
 
         # Build all targets (if desired).
         if not args["no_build"]:
@@ -2075,8 +2167,11 @@ class DevenvCommand(Command):
 
         target_arch = args.get("target_arch", None)
 
-        print("\n- running cmake configure...")
-        run_cmake_configure(target_arch=target_arch)
+        # Visual Studio opens its own solution below, so the Ninja build tree
+        # is left for the build command to configure.
+        if sys.platform != "win32":
+            print("\n- running cmake configure...")
+            run_cmake_configure(target_arch=target_arch)
 
         print("\n- launching devenv...")
         if sys.platform == "win32":
@@ -2108,13 +2203,9 @@ class DevenvCommand(Command):
                 # Use vswhere to find a VS installation with ARM64 C++ tools
                 # and force the correct generator/instance since CMake might
                 # otherwise pick a VS without ARM64 support.
-                vs_generator_map = {
-                    2022: "Visual Studio 17 2022",
-                    2026: "Visual Studio 18 2026",
-                }
                 try:
                     vswhere_out = subprocess.check_output(
-                        "tools/vswhere/vswhere.exe"
+                        "tools\\vswhere\\vswhere.exe"
                         ' -version "[17,)" -latest -prerelease'
                         " -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64"
                         " -format json -utf8"
@@ -2141,18 +2232,10 @@ class DevenvCommand(Command):
                 arm64_vs_plv = int(arm64_vs.get("catalog", {}).get(
                     "productLineVersion", VSVERSION_MINIMUM))
 
-                vs_generator = vs_generator_map.get(arm64_vs_plv)
+                vs_generator, toolset = get_vs_generator(arm64_vs_path, arm64_vs_plv, "ARM64")
                 toolset_parts = ["host=x64"]
-                if not vs_generator:
-                    latest_known = max(vs_generator_map.keys())
-                    vs_generator = vs_generator_map[latest_known]
-                    print(f"  Note: VS {arm64_vs_plv} detected with ARM64 tools.")
-                    print(f"  Using \"{vs_generator}\" generator with that instance.")
-                    vc_dir = os.path.join(arm64_vs_path, "MSBuild", "Microsoft", "VC")
-                    if os.path.isdir(vc_dir):
-                        toolsets = sorted(d for d in os.listdir(vc_dir) if d.startswith("v"))
-                        if toolsets:
-                            toolset_parts.insert(0, toolsets[-1])
+                if toolset:
+                    toolset_parts.insert(0, toolset)
 
                 cmake_args += [
                     "-G", vs_generator,
@@ -2160,6 +2243,18 @@ class DevenvCommand(Command):
                     "-DCMAKE_SYSTEM_PROCESSOR=ARM64",
                     f"-DCMAKE_GENERATOR_INSTANCE={arm64_vs_path}",
                 ]
+            else:
+                # Always pass the Visual Studio generator explicitly. Without
+                # -G, CMake falls back to the CMAKE_GENERATOR environment
+                # variable (commonly set to Ninja), which rejects -A and fails
+                # with "Generator Ninja does not support platform
+                # specification".
+                vs_generator, toolset = get_vs_generator(vs_install_path, vs_version, "x64")
+                cmake_args += ["-G", vs_generator]
+                if toolset:
+                    cmake_args += ["-T", toolset]
+                if vs_install_path:
+                    cmake_args.append(f"-DCMAKE_GENERATOR_INSTANCE={vs_install_path}")
 
             ret = subprocess.call(cmake_args)
             if ret == 0:

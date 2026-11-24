@@ -128,12 +128,15 @@ XE_LOCALIZATION_STRING(
     "KBM 控制器 HID 後端尚未啟用。設定仍會儲存，但下次啟動時必須使用 hid "
     "= \"kbm\" 才能輸入。")
 XE_LOCALIZATION_STRING(kKbmPressBinding, "請按下按鍵或滑鼠按鈕...")
+XE_LOCALIZATION_STRING(kKbmPressCaptureKey, "請按下鍵盤按鍵...")
+XE_LOCALIZATION_STRING(kKbmCaptureKeyTooltip,
+                       "點擊重新綁定鍵盤按鍵；按住 Ctrl、Alt、Shift 或 Win "
+                       "可建立組合鍵。")
 XE_LOCALIZATION_STRING(kKbmBindingTooltip,
                        "點擊後按下鍵盤或滑鼠按鈕；按住 Ctrl、Alt、Shift 或 Win "
                        "可建立組合鍵。")
 XE_LOCALIZATION_STRING(kKbmAddAlternativeBinding, "新增替代綁定")
 XE_LOCALIZATION_STRING(kKbmClearBinding, "清除綁定")
-XE_LOCALIZATION_STRING(kKbmKeyboard, "KBM 控制器")
 XE_LOCALIZATION_STRING(kKbmEnableController, "啟用 KBM 控制器")
 XE_LOCALIZATION_STRING(kKbmControllerSlot, "控制器插槽")
 XE_LOCALIZATION_STRING(kKbmPlayer1, "玩家 1")
@@ -142,46 +145,37 @@ XE_LOCALIZATION_STRING(kKbmPlayer3, "玩家 3")
 XE_LOCALIZATION_STRING(kKbmPlayer4, "玩家 4")
 XE_LOCALIZATION_STRING(
     kKbmBindingHelp,
-    "點擊綁定欄位後按下想要的鍵盤或滑鼠按鈕。按住 Ctrl、Alt、Shift 或 Win "
-    "可建立組合鍵；使用 + 新增替代按鍵。")
+    "點擊綁定即可替換；使用 ... 新增替代綁定、指定 Esc 或清除。按住 "
+    "Ctrl、Alt、Shift 或 Win 可建立組合鍵；Escape 取消擷取。")
 XE_LOCALIZATION_STRING(kKbmXboxInput, "Xbox 360 輸入")
 XE_LOCALIZATION_STRING(kKbmKeyboardMouse, "鍵盤／滑鼠")
 XE_LOCALIZATION_STRING(kKbmMouse, "滑鼠")
-XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "啟用 Raw Input 滑鼠控制")
+XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "用滑鼠控制右搖桿")
+XE_LOCALIZATION_STRING(kKbmEnableRawMouseTooltip,
+                       "使用 Raw Input，不受 Windows 的指標設定影響。\n"
+                       "取消勾選後，移動滑鼠就不會帶動右搖桿。")
 XE_LOCALIZATION_STRING(kKbmRawMouseRequiresController,
-                       "啟用 KBM 控制器後才能設定 Raw Input 滑鼠控制。")
-XE_LOCALIZATION_STRING(kKbmSensitivity, "滑鼠靈敏度倍率：")
-XE_LOCALIZATION_STRING(
-    kKbmSensitivityGuide,
-    "3600 DPI／10x 是起點。高 DPI 通常需要較低倍率，低 DPI 可使用較高倍率；"
-    "遊戲內設定與搖桿限制仍會影響結果。")
+                       "啟用 KBM 控制器後，才能設定滑鼠對右搖桿的控制。")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "反轉垂直視角")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart, "KBM 控制器啟動時啟用滑鼠鎖定")
-XE_LOCALIZATION_STRING(kKbmCaptureToggle, "滑鼠鎖定熱鍵：")
-XE_LOCALIZATION_STRING(kKbmFineTuning, "進階調校（選用）")
-XE_LOCALIZATION_STRING(kKbmAimCurve, "滑鼠反應曲線（預設 0.8；1.0 為線性）：")
-XE_LOCALIZATION_STRING(
-    kKbmAimCurveHelp,
-    "0.8 會提高低速移動輸出；>1.0 降低小幅移動輸出；1.0 線性。")
-XE_LOCALIZATION_STRING(kKbmMouseSmoothing, "滑鼠平滑（0 ms：不套用平滑）：")
-XE_LOCALIZATION_STRING(kKbmMouseSmoothingHelp,
-                       "0 ms 最直接，但容易暴露輸入跳動。4–12 ms "
-                       "通常可改善微調；數值越高延遲越明顯。")
-XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "補償類比搖桿 Deadzone")
-XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最小搖桿輸出（0.0–0.5）：")
+XE_LOCALIZATION_STRING(kKbmCaptureToggle, "滑鼠鎖定熱鍵")
+XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "反死區補償")
+XE_LOCALIZATION_STRING(kKbmMinimumResponse, "最低搖桿輸出（0–50%）")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneCircle, "圓形")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneAxial, "逐軸")
+XE_LOCALIZATION_STRING(kKbmAxialMagnitudeHelp,
+                       "每軸上限為 100%，斜向合成幅度可能超過 100%。")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseX, "水平最低輸出（0–50%）")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseY, "垂直最低輸出（0–50%）")
+XE_LOCALIZATION_STRING(kKbmAxialResponseHelp,
+                       "水平與垂直方向各自補償，從各自設定的最低輸出開始。跨越"
+                       "軸線時，搖桿方向可能突然改變。")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
-    "僅在遊戲忽略細微移動時啟用。提高最小輸出可越過遊戲 Deadzone，"
-    "但過高會讓中心附近難以微調；停止移動後輸出會自動回零。")
-XE_LOCALIZATION_STRING(kKbmFullStickThreshold,
-                       "1x 時達到搖桿滿輸出的速度（counts/s）：")
-XE_LOCALIZATION_STRING(
-    kKbmFullStickHelp,
-    "在 %.3fx 時，約 %.0f counts/s "
-    "會開始輸出滿搖桿。數值越低，越早達到遊戲的轉向速度上限。")
-XE_LOCALIZATION_STRING(kKbmDiagnostics, "診斷")
-XE_LOCALIZATION_STRING(kKbmLastStickOutput, "最新右搖桿輸出：{:.0f}%{}")
-XE_LOCALIZATION_STRING(kKbmMaximum, "（最大值）")
+    "提高非零的搖桿輸出，協助越過遊戲的死區。最低值設得過高，會讓小幅移動難以控"
+    "制。估算鼠速為零時不輸出；關閉補償後使用線性輸出。")
+XE_LOCALIZATION_STRING(kKbmDiagnostics, "進階與診斷")
+XE_LOCALIZATION_STRING(kKbmLastStickOutput, "滑鼠右搖桿合成幅度：{:.1f}%")
 XE_LOCALIZATION_STRING(
     kKbmRawSpeed, "Raw Input 速度 X %.0f / Y %.0f counts/s｜Stick X %d / Y %d")
 XE_LOCALIZATION_STRING(
@@ -194,36 +188,40 @@ XE_LOCALIZATION_STRING(kKbmActive, "已啟用")
 XE_LOCALIZATION_STRING(kKbmReleased, "已解除")
 XE_LOCALIZATION_STRING(kKbmInputPaused,
                        "此設定視窗開啟時，KBM 控制器輸入會暫時停止傳送至遊戲。")
-XE_LOCALIZATION_STRING(kKbmDiagnosticsUnavailable, "執行階段診斷目前無法使用。")
-XE_LOCALIZATION_STRING(kKbmSave, "儲存設定")
-XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "還原預設值")
-XE_LOCALIZATION_STRING(kKbmSaveClose, "儲存設定並關閉")
+XE_LOCALIZATION_STRING(kKbmDiagnosticsUnavailable, "目前無法取得輸入診斷。")
+XE_LOCALIZATION_STRING(kKbmSave, "儲存全部")
+XE_LOCALIZATION_STRING(kKbmCancel, "取消並關閉")
+XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "還原全部預設值...")
+XE_LOCALIZATION_STRING(kKbmSaveClose, "儲存全部並關閉")
 XE_LOCALIZATION_STRING(kKbmSettingsFile, "設定檔：kbm.toml")
-XE_LOCALIZATION_STRING(kKbmAppliedUnsaved, "變更已套用，但尚未儲存。")
+XE_LOCALIZATION_STRING(kKbmAppliedUnsaved,
+                       "變更只用於預覽，儲存全部後套用至遊戲。")
 XE_LOCALIZATION_STRING(kKbmAppliedSaved, "變更已套用且已儲存。")
 XE_LOCALIZATION_STRING(kKbmAppliedSaveFailed,
-                       "變更已套用，但儲存失敗；kbm.toml 並未變更。")
+                       "儲存失敗，目前設定與 kbm.toml 未變更。")
 XE_LOCALIZATION_STRING(
     kKbmConfigIncompatible,
-    "kbm.toml 版本不相容，已略過且未載入。請還原預設值後按「儲存設定」，"
-    "以目前的 KBM 設定檔取代它。")
+    "kbm.toml "
+    "不相容，包含按鍵綁定在內的設定均未載入。請先確認還原全部預設值才能儲存；儲"
+    "存會直接取代舊檔，不建立備份，取消則保留原檔。")
 XE_LOCALIZATION_STRING(kKbmUnbound, "未綁定")
 XE_LOCALIZATION_STRING(kKbmBindEscape, "綁定 Esc")
 XE_LOCALIZATION_STRING(kKbmCancelCapture, "取消擷取")
 XE_LOCALIZATION_STRING(kKbmSnapshot,
-                       "上次遊戲輸入樣本（此視窗開啟時非即時更新）")
+                       "上次遊戲中的滑鼠輸入（設定視窗開啟時不更新）")
 XE_LOCALIZATION_STRING(kKbmInputSampling, "輸入取樣")
-XE_LOCALIZATION_STRING(kKbmStartInputSampling, "開始 60 秒取樣")
-XE_LOCALIZATION_STRING(kKbmSaveAndStartInputSampling,
-                       "儲存設定並開始 60 秒取樣")
+XE_LOCALIZATION_STRING(kKbmStartInputSampling, "記錄 60 秒診斷")
+XE_LOCALIZATION_STRING(kKbmSaveAndStartInputSampling, "儲存全部並記錄 60 秒")
 XE_LOCALIZATION_STRING(kKbmStopAndSaveInputSampling, "停止並儲存報告")
 XE_LOCALIZATION_STRING(kKbmCancelInputSampling, "取消取樣")
-XE_LOCALIZATION_STRING(
-    kKbmInputSamplingHelp,
-    "開始取樣後會關閉此視窗，讓 KBM 輸入恢復；未儲存的設定會先儲存。")
+XE_LOCALIZATION_STRING(kKbmInputSamplingHelp,
+                       "開始記錄會關閉此視窗並恢復遊戲輸入。有變更時會先儲存，"
+                       "報告會記下當時的滑鼠設定。")
 XE_LOCALIZATION_STRING(kKbmInputSamplingProgress,
                        "正在取樣：剩餘 %.0f 秒｜%zu 筆樣本")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportSaved, "報告已儲存：%s")
+XE_LOCALIZATION_STRING(kKbmInputSamplingWriting,
+                       "正在儲存輸入報告，完成後即可開始下一次取樣。")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportFailed,
                        "無法儲存輸入報告，請檢查記錄檔。")
 XE_LOCALIZATION_STRING(kKbmInputSamplingNoReport, "尚未產生輸入報告。")
@@ -342,3 +340,98 @@ XE_LOCALIZATION_STRING(kGuestLanguageTurkish, "土耳其文")
 XE_LOCALIZATION_STRING(kGuestLanguageNorwegian, "挪威文")
 XE_LOCALIZATION_STRING(kGuestLanguageDutch, "荷蘭文")
 XE_LOCALIZATION_STRING(kGuestLanguageSimplifiedChinese, "簡體中文")
+
+XE_LOCALIZATION_STRING(kKbmDpi, "滑鼠 DPI")
+
+XE_LOCALIZATION_STRING(kKbmPhysicalSpeed, "滿桿速度（1–100 cm/s）")
+XE_LOCALIZATION_STRING(kKbmMouseMode, "滑鼠處理模式")
+XE_LOCALIZATION_STRING(kKbmModeDirect, "直接")
+XE_LOCALIZATION_STRING(kKbmModeFixedWindow, "固定視窗")
+XE_LOCALIZATION_STRING(kKbmModeEma, "EMA 平滑")
+XE_LOCALIZATION_STRING(kKbmWindowLength, "視窗長度（ms）")
+XE_LOCALIZATION_STRING(kKbmRecentPollIntervals,
+                       "遊戲查詢間隔（最近 5 秒，%u 筆）")
+XE_LOCALIZATION_STRING(kKbmCurrentPollInterval, "最新間隔")
+XE_LOCALIZATION_STRING(kKbmMedianPollInterval, "中位數")
+XE_LOCALIZATION_STRING(kKbmPollIntervalCoverage, "涵蓋率")
+XE_LOCALIZATION_STRING(kKbmEmaTimeConstantHelp,
+                       "時間常數越長，鼠速變化越平滑，反應也越慢。")
+XE_LOCALIZATION_STRING(kKbmShowPollHud, "顯示遊戲內診斷")
+XE_LOCALIZATION_STRING(kKbmPollHudWaitingForGame, "等待遊戲啟動。")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaDuration, "最近 5 秒")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaScaleMax, "刻度上限")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaTransparency, "診斷面板背景透明度")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaWeight, "新樣本權重")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaRawSpeed, "平滑前")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaSpeed, "平滑後")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaWaiting, "等待 EMA 取樣。")
+XE_LOCALIZATION_STRING(kKbmPollHudSaveForLiveData,
+                       "儲存設定後即可顯示即時資料。")
+XE_LOCALIZATION_STRING(kKbmPollHudTopLeft, "左上角")
+XE_LOCALIZATION_STRING(kKbmPollHudTopRight, "右上角")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomLeft, "左下角")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomRight, "右下角")
+XE_LOCALIZATION_STRING(kKbmNoRecentPollIntervals, "最近 5 秒沒有遊戲查詢。")
+XE_LOCALIZATION_STRING(kKbmEmaTau, "平滑時間常數（ms）")
+XE_LOCALIZATION_STRING(
+    kKbmFixedWindowHelp,
+    "使用指定時間內的滑鼠位移。視窗越長，停手或反向時可能越慢。")
+XE_LOCALIZATION_STRING(kKbmDirectHelp,
+                       "依遊戲兩次查詢間的位移與經過時間估算鼠速，不額外平滑。")
+XE_LOCALIZATION_STRING(
+    kKbmPreviewSamplingHelp,
+    "峰值是畫面取樣到的最高輸出。短促移動可能在兩次取樣之間就離開固定視窗。")
+
+XE_LOCALIZATION_STRING(kKbmPhysicalGuide,
+                       "滿桿速度由 10 改為 5 "
+                       "cm/"
+                       "s，同等輸出所需的鼠速減半。在預覽中比較慢移、快移與停手"
+                       "。滿桿速度是實際移動速度，不是轉一圈所需的公分數。")
+
+XE_LOCALIZATION_STRING(kKbmLivePreview, "獨立即時搖桿預覽")
+
+XE_LOCALIZATION_STRING(kKbmStartPreview, "開始測試")
+
+XE_LOCALIZATION_STRING(kKbmStopPreview, "停止測試")
+
+XE_LOCALIZATION_STRING(kKbmPreviewExitHelp,
+                       "移動滑鼠進行測試；按 Escape、Enter 或空白鍵釋放游標。")
+
+XE_LOCALIZATION_STRING(kKbmPreviewSpeed,
+                       "估算鼠速 %.1f cm/s｜滿桿速度 %.2f cm/s")
+XE_LOCALIZATION_STRING(kKbmPreviewPeak, "峰值：%.1f%%")
+
+XE_LOCALIZATION_STRING(kKbmResetPreviewPeak, "重設峰值")
+
+XE_LOCALIZATION_STRING(kKbmPreviewFailed,
+                       "無法擷取預覽滑鼠，已釋放游標，請檢查記錄檔。")
+
+XE_LOCALIZATION_STRING(kKbmBindingActions, "綁定操作")
+XE_LOCALIZATION_STRING(kKbmDpiHelp,
+                       "填入滑鼠目前使用的 DPI（100–32,000），不會自動偵測。")
+XE_LOCALIZATION_STRING(kKbmSpeedDirection,
+                       "相同鼠速下，數值越低，搖桿輸出越大。")
+XE_LOCALIZATION_STRING(kKbmTuningHelp, "參數說明")
+XE_LOCALIZATION_STRING(kKbmPreviewDraft, "測試此視窗中的設定。")
+XE_LOCALIZATION_STRING(kKbmCaptureOptions, "滑鼠擷取選項")
+XE_LOCALIZATION_STRING(kKbmKeyboardBindings, "按鍵綁定")
+XE_LOCALIZATION_STRING(kKbmTechnicalDetails, "技術資訊・上次遊戲樣本")
+XE_LOCALIZATION_STRING(kKbmInputSamplingStartFailed,
+                       "無法開始記錄，請檢查記錄檔後重試。")
+XE_LOCALIZATION_STRING(kKbmUnsavedTitle, "尚未儲存的變更")
+XE_LOCALIZATION_STRING(
+    kKbmUnsavedHelp,
+    "選擇儲存滑鼠、按鍵與控制器的全部變更、捨棄變更，或繼續編輯。")
+XE_LOCALIZATION_STRING(kKbmDiscardClose, "捨棄變更並關閉")
+XE_LOCALIZATION_STRING(kKbmContinueEditing, "繼續編輯")
+XE_LOCALIZATION_STRING(kKbmResetTitle, "還原全部預設值？")
+XE_LOCALIZATION_STRING(
+    kKbmResetHelp,
+    "還原所有按鍵、滑鼠與控制器選項。儲存全部後才會套用並寫入設定檔。")
+XE_LOCALIZATION_STRING(kKbmResetConfirm, "還原預設值")
+XE_LOCALIZATION_STRING(kKbmSharedDraft,
+                       "儲存全部會一併套用滑鼠、按鍵與控制器設定。")
+XE_LOCALIZATION_STRING(kMenuFpsOverlay, "顯示／隱藏 FPS 面板(&O)")
+XE_LOCALIZATION_STRING(kMenuResetWindowSize, "還原視窗大小(&R)")
+XE_LOCALIZATION_STRING(kXmpUnavailable, "音訊播放器無法使用。")
+XE_LOCALIZATION_STRING(kConsoleResetSaved, "設定已重設並儲存！")

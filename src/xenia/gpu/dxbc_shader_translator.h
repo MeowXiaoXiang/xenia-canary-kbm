@@ -53,6 +53,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
                        bool msaa_2x_supported = true,
                        uint32_t draw_resolution_scale_x = 1,
                        uint32_t draw_resolution_scale_y = 1,
+                       uint32_t edram_tile_count = xenos::kEdramTileCount,
                        bool force_emit_source_map = false);
   ~DxbcShaderTranslator() override;
 
@@ -417,14 +418,20 @@ class DxbcShaderTranslator : public ShaderTranslator {
     // The constant blend factor for the respective modes.
     float edram_blend_constant[4];
 
-    // Integer num_format on fixed textures. Each dword packs the scale needed
-    // to turn normalized host samples back into guest integer values.
-    // bits 0:3 = component_bits - 1
-    // bit 4 = signed
-    // bit 5 = unsigned-biased
-    // bit 24 = normalized
-    // Zero means no scale.
+    // Packed fixed texture conversion (see GetIntegerScaleBits).
+    // Every component occupies 6 bits in bits 0:23
+    //   bits 0:3 = component_bits - 1
+    //   bits 4:5 = xenos::TextureSign
+    // bit 24 = normalized num_format
+    // bit 26 = point sampled fetch constant
+    // Zero means no conversion.
     uint32_t texture_integer_scale_bits[32];
+
+    // PA_SC_WINDOW_OFFSET the PsParamGen position needs added when the offset
+    // is carried in the EDRAM bases rather than the viewport.
+    // 0 when it's in the viewport.
+    float param_gen_window_offset[2];
+    uint32_t param_gen_window_offset_padding[2];
 
    private:
     friend class DxbcShaderTranslator;
@@ -480,6 +487,8 @@ class DxbcShaderTranslator : public ShaderTranslator {
       kEdramBlendConstant,
 
       kTextureIntegerScaleBits,
+
+      kParamGenWindowOffset,
 
       kCount,
     };
@@ -561,7 +570,8 @@ class DxbcShaderTranslator : public ShaderTranslator {
   std::vector<uint8_t> CreateDepthOnlyPixelShader(
       bool zpd_total = false,
       Modification::DepthStencilMode depth_stencil_mode =
-          Modification::DepthStencilMode::kNoModifiers);
+          Modification::DepthStencilMode::kNoModifiers,
+      bool viz_survey = false);
 
   // Common functions useful not only for the translator, but also for render
   // target reinterpretation.
@@ -1090,6 +1100,9 @@ class DxbcShaderTranslator : public ShaderTranslator {
   // Is currently writing the empty depth-only pixel shader, for
   // CompleteTranslation.
   bool is_depth_only_pixel_shader_ = false;
+  bool is_viz_survey_pixel_shader_ = false;
+
+  uint32_t edram_tile_count_;
 
   // Data types used in constants buffers. Listed in dependency order.
   enum class ShaderRdefTypeIndex {

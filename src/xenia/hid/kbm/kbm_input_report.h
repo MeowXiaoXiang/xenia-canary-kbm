@@ -15,6 +15,9 @@
 #include <string>
 #include <vector>
 
+#include "xenia/hid/kbm/kbm_mouse_math.h"
+#include "xenia/hid/kbm/kbm_mouse_processing.h"
+
 namespace xe::hid::kbm {
 
 struct KbmInputSample {
@@ -23,8 +26,8 @@ struct KbmInputSample {
   double elapsed_seconds = 0.0;
   int64_t raw_delta_x = 0;
   int64_t raw_delta_y = 0;
-  double filtered_velocity_x = 0.0;
-  double filtered_velocity_y = 0.0;
+  double velocity_x = 0.0;
+  double velocity_y = 0.0;
   int16_t thumb_x = 0;
   int16_t thumb_y = 0;
   bool input_active = false;
@@ -49,13 +52,15 @@ struct KbmRawInputSample {
 };
 
 struct KbmInputReportSettings {
-  double sensitivity = 10.0;
-  double full_scale_velocity = 24000.0;
-  double response_curve = 0.8;
-  double smoothing_time_ms = 8.0;
-  bool deadzone_compensation = false;
+  double dpi = 800.0;
+  double full_stick_speed_cm_s = 10.0;
+  bool deadzone_compensation = true;
   double minimum_response = 0.30;
   bool invert_y = false;
+  KbmMouseProcessing processing;
+  KbmAntiDeadzoneShape anti_deadzone_shape = KbmAntiDeadzoneShape::kRadial;
+  double minimum_response_x = 0.30;
+  double minimum_response_y = 0.30;
 };
 
 struct KbmInputReportContents {

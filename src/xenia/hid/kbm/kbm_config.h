@@ -11,15 +11,18 @@
 #define XENIA_HID_KBM_KBM_CONFIG_H_
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 
 #include "xenia/base/cvar.h"
 #include "xenia/hid/kbm/kbm_binding.h"
+#include "xenia/hid/kbm/kbm_mouse_math.h"
+#include "xenia/hid/kbm/kbm_mouse_processing.h"
 
 namespace xe::hid::kbm {
 
-inline constexpr int64_t kKbmConfigSchemaVersion = 3;
+inline constexpr int64_t kKbmConfigSchemaVersion = 4;
 
 enum class KbmConfigState {
   kMissing,
@@ -31,6 +34,12 @@ inline bool IsKbmConfigSchemaVersionSupported(std::optional<int64_t> version) {
   return version && *version == kKbmConfigSchemaVersion;
 }
 
+struct KbmOverlaySettings {
+  bool enabled = false;
+  int32_t corner = 3;
+  int32_t ema_background_transparency = 54;
+};
+
 struct KbmSettings {
   bool enabled = true;
   int32_t user_index = 0;
@@ -41,15 +50,19 @@ struct KbmSettings {
 #undef XE_HID_KBM_BINDING
 
   bool raw_mouse = true;
-  double raw_mouse_sensitivity = 10.0;
-  double raw_mouse_full_scale_velocity = 24000.0;
-  double raw_mouse_response_curve = 0.8;
-  double raw_mouse_smoothing_time_ms = 8.0;
-  bool raw_mouse_deadzone_compensation = false;
+  double raw_mouse_dpi = 800.0;
+  double raw_mouse_full_stick_speed_cm_s = 10.0;
+  bool raw_mouse_deadzone_compensation = true;
   double raw_mouse_minimum_response = 0.30;
+  KbmAntiDeadzoneShape raw_mouse_anti_deadzone_shape =
+      KbmAntiDeadzoneShape::kRadial;
+  double raw_mouse_minimum_response_x = 0.30;
+  double raw_mouse_minimum_response_y = 0.30;
   bool raw_mouse_invert_y = false;
   std::string raw_mouse_capture_toggle_key = "Key.F8";
   bool raw_mouse_capture_on_start = false;
+  KbmMouseProcessing mouse_processing;
+  KbmOverlaySettings overlay;
 };
 
 void SetupConfig(const std::filesystem::path& storage_root,
@@ -58,6 +71,15 @@ bool ConfigExists();
 KbmConfigState GetConfigState();
 const std::filesystem::path& ConfigPath();
 bool SaveConfig();
+// Replacing an incompatible file requires explicit Restore defaults consent.
+bool SaveConfig(const KbmSettings& settings, bool reset_incompatible = false);
+inline bool CanSaveKbmConfig(KbmConfigState state, bool reset_incompatible) {
+  return state != KbmConfigState::kIncompatible || reset_incompatible;
+}
+// Publish first; only a successful save may activate the draft.
+bool CommitKbmSettings(KbmSettings& draft,
+                       const std::function<bool(const KbmSettings&)>& persist,
+                       const std::function<void(const KbmSettings&)>& activate);
 
 KbmSettings GetSettingsFromCvars();
 KbmSettings NormalizeSettings(KbmSettings settings);

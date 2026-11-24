@@ -9,9 +9,13 @@
 
 #include "xenia/hid/kbm/kbm_config.h"
 
+#include <chrono>
 #include <fstream>
+#include <limits>
+#include <sstream>
 
 #include "third_party/catch/single_include/catch2/catch.hpp"
+#include "xenia/base/platform_win.h"
 
 namespace xe::hid::kbm {
 namespace {
@@ -25,14 +29,19 @@ class ScopedConfigDirectory {
  public:
   ScopedConfigDirectory()
       : path_(std::filesystem::temp_directory_path() /
-              "xenia-hid-kbm-config-test") {
+              ("xenia-hid-kbm-config-test-" +
+               std::to_string(GetCurrentProcessId()) + "-" +
+               std::to_string(std::chrono::steady_clock::now()
+                                  .time_since_epoch()
+                                  .count()))) {
     std::error_code error;
-    std::filesystem::remove_all(path_, error);
-    std::filesystem::create_directory(path_, error);
+    REQUIRE(std::filesystem::create_directory(path_, error));
     REQUIRE_FALSE(error);
+    ApplySettingsToCvars(KbmSettings());
   }
 
   ~ScopedConfigDirectory() {
+    ApplySettingsToCvars(original_settings_);
     std::error_code error;
     std::filesystem::remove_all(path_, error);
   }
@@ -40,12 +49,13 @@ class ScopedConfigDirectory {
   const std::filesystem::path& path() const { return path_; }
 
  private:
+  KbmSettings original_settings_ = GetSettingsFromCvars();
   std::filesystem::path path_;
 };
 
 }  // namespace
 
-TEST_CASE("KBM settings persist in the grouped v3 configuration", "[kbm]") {
+TEST_CASE("KBM settings persist in the grouped v4 configuration", "[kbm]") {
   ScopedConfigDirectory directory;
   SetupConfig(directory.path(), false);
 
@@ -54,10 +64,19 @@ TEST_CASE("KBM settings persist in the grouped v3 configuration", "[kbm]") {
   saved_settings.user_index = 3;
   saved_settings.keybind_a = "Key.G";
   saved_settings.keybind_left_trigger = "Mouse.X1";
-  saved_settings.raw_mouse_sensitivity = 13.25;
-  saved_settings.raw_mouse_response_curve = 1.1;
+  saved_settings.raw_mouse_dpi = 1325.0;
   saved_settings.raw_mouse_deadzone_compensation = true;
+  saved_settings.raw_mouse_anti_deadzone_shape = KbmAntiDeadzoneShape::kAxial;
+  saved_settings.raw_mouse_minimum_response_x = 0.21;
+  saved_settings.raw_mouse_minimum_response_y = 0.42;
   saved_settings.raw_mouse_capture_toggle_key = "Ctrl+Key.F8";
+  saved_settings.overlay = {true, 1, 72};
+  const auto saved_mode = GENERATE(KbmMouseMode::kFixedWindow,
+                                   KbmMouseMode::kEma, KbmMouseMode::kDirect);
+  const bool saved_old_defaults = saved_mode == KbmMouseMode::kFixedWindow;
+  saved_settings.mouse_processing =
+      saved_old_defaults ? KbmMouseProcessing{saved_mode, 8, 8}
+                         : KbmMouseProcessing{saved_mode, 23.76, 31.76};
   ApplySettingsToCvars(saved_settings);
 
   REQUIRE(SaveConfig());
@@ -66,8 +85,9 @@ TEST_CASE("KBM settings persist in the grouped v3 configuration", "[kbm]") {
   REQUIRE(contents.find("[HID.KBM.Bindings]") != std::string::npos);
   REQUIRE(contents.find("[HID.KBM.RawMouse]") != std::string::npos);
   REQUIRE(contents.find("[HID.KBM.RawMouse.Tuning]") != std::string::npos);
+  REQUIRE(contents.find("[HID.KBM.Diagnostics]") != std::string::npos);
   REQUIRE(contents.find("a = \"Key.G\"") != std::string::npos);
-  REQUIRE(contents.find("sensitivity = 13.25") != std::string::npos);
+  REQUIRE(contents.find("dpi = 1325.0") != std::string::npos);
 
   ApplySettingsToCvars(KbmSettings());
   SetupConfig(directory.path(), false);
@@ -77,21 +97,505 @@ TEST_CASE("KBM settings persist in the grouped v3 configuration", "[kbm]") {
   REQUIRE(loaded_settings.user_index == 3);
   REQUIRE(loaded_settings.keybind_a == "Key.G");
   REQUIRE(loaded_settings.keybind_left_trigger == "Mouse.X1");
-  REQUIRE(loaded_settings.raw_mouse_sensitivity == Approx(13.25));
-  REQUIRE(loaded_settings.raw_mouse_response_curve == Approx(1.1));
+  REQUIRE(loaded_settings.raw_mouse_dpi == Approx(1325.0));
   REQUIRE(loaded_settings.raw_mouse_deadzone_compensation);
+  REQUIRE(loaded_settings.raw_mouse_anti_deadzone_shape ==
+          KbmAntiDeadzoneShape::kAxial);
+  REQUIRE(loaded_settings.raw_mouse_minimum_response_x == Approx(0.21));
+  REQUIRE(loaded_settings.raw_mouse_minimum_response_y == Approx(0.42));
   REQUIRE(loaded_settings.raw_mouse_capture_toggle_key == "Ctrl+Key.F8");
+  REQUIRE(loaded_settings.overlay.enabled);
+  REQUIRE(loaded_settings.overlay.corner == 1);
+  REQUIRE(loaded_settings.overlay.ema_background_transparency == 72);
+  REQUIRE(loaded_settings.mouse_processing.mode == saved_mode);
+  REQUIRE(loaded_settings.mouse_processing.fixed_window_ms ==
+          (saved_old_defaults ? 8.0 : 24.0));
+  REQUIRE(loaded_settings.mouse_processing.ema_tau_ms ==
+          (saved_old_defaults ? 8.0 : 32.0));
 }
 
-TEST_CASE("Flat v3 KBM configurations are rejected", "[kbm]") {
+TEST_CASE("Earlier grouped v4 configs default missing optional fields",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  KbmSettings settings;
+  settings.keybind_a = "Key.G";
+  settings.raw_mouse_dpi = 3200;
+  settings.mouse_processing = {KbmMouseMode::kEma, 13, 7.5};
+  settings.overlay = {true, 0, 25};
+  settings.raw_mouse_anti_deadzone_shape = KbmAntiDeadzoneShape::kAxial;
+  settings.raw_mouse_minimum_response_x = 0.18;
+  settings.raw_mouse_minimum_response_y = 0.46;
+  ApplySettingsToCvars(settings);
+  REQUIRE(SaveConfig(settings));
+  std::istringstream input(ReadFile(ConfigPath()));
+  std::string older;
+  for (std::string line; std::getline(input, line);) {
+    if (line == "[HID.KBM.Diagnostics]") {
+      break;
+    }
+    if (!line.starts_with("processing_mode") &&
+        !line.starts_with("anti_deadzone_shape") &&
+        !line.starts_with("minimum_response_x") &&
+        !line.starts_with("minimum_response_y") &&
+        !line.starts_with("fixed_window_ms") &&
+        !line.starts_with("ema_tau_ms")) {
+      older += line + "\n";
+    }
+  }
+  std::ofstream(ConfigPath(), std::ios::binary) << older;
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  const auto loaded = GetSettingsFromCvars();
+  REQUIRE(loaded.mouse_processing.mode == KbmMouseMode::kEma);
+  REQUIRE(loaded.mouse_processing.fixed_window_ms == 16.0);
+  REQUIRE(loaded.mouse_processing.ema_tau_ms == 8.0);
+  REQUIRE_FALSE(loaded.overlay.enabled);
+  REQUIRE(loaded.overlay.corner == 3);
+  REQUIRE(loaded.overlay.ema_background_transparency == 54);
+  REQUIRE(loaded.raw_mouse_anti_deadzone_shape ==
+          KbmAntiDeadzoneShape::kRadial);
+  REQUIRE(loaded.raw_mouse_minimum_response_x == Approx(0.30));
+  REQUIRE(loaded.raw_mouse_minimum_response_y == Approx(0.30));
+  REQUIRE(loaded.keybind_a == "Key.G");
+  REQUIRE(loaded.raw_mouse_dpi == 3200);
+  REQUIRE(ReadFile(ConfigPath()) == older);
+}
+
+TEST_CASE("Flat v4 KBM configurations are rejected", "[kbm]") {
   ScopedConfigDirectory directory;
   const auto path = directory.path() / "kbm.toml";
   std::ofstream file(path, std::ios::binary);
-  file << "schema_version = 3\n[HID.KBM]\nkbm_enabled = false\n";
+  file << "schema_version = 4\n[HID.KBM]\nkbm_enabled = false\n";
   file.close();
 
   SetupConfig(directory.path(), false);
   REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
+}
+
+TEST_CASE("Invalid KBM files never partially replace active settings",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  KbmSettings disk_settings;
+  disk_settings.enabled = false;
+  disk_settings.user_index = 3;
+  disk_settings.keybind_a = "Key.G";
+  disk_settings.raw_mouse_dpi = 1325.0;
+  disk_settings.mouse_processing.ema_tau_ms = 6.5;
+  ApplySettingsToCvars(disk_settings);
+  REQUIRE(SaveConfig());
+  std::string contents = ReadFile(ConfigPath());
+
+  std::string from, to;
+  SECTION("Invalid binding token") {
+    from = "a = \"Key.G\"";
+    to = "a = \"VK_G\"";
+  }
+  SECTION("Capture hotkey alternatives are not supported") {
+    from = "capture_toggle_key = \"Key.F8\"";
+    to = "capture_toggle_key = \"Key.F8 Key.F9\"";
+  }
+  SECTION("Capture hotkey case prefixes are not supported") {
+    from = "capture_toggle_key = \"Key.F8\"";
+    to = "capture_toggle_key = \"_Key.F8\"";
+  }
+  SECTION("Capture hotkey cannot be a mouse button") {
+    from = "capture_toggle_key = \"Key.F8\"";
+    to = "capture_toggle_key = \"Mouse.X1\"";
+  }
+  SECTION("Wrong controller value type") {
+    from = "user_index = 3";
+    to = "user_index = true";
+  }
+  SECTION("Wrong mouse value type") {
+    from = "dpi = 1325.0";
+    to = "dpi = \"fast\"";
+  }
+  SECTION("Unknown processing mode") {
+    from = "processing_mode = \"ema\"";
+    to = "processing_mode = \"unknown\"";
+  }
+  SECTION("Unknown compensation shape") {
+    from = "anti_deadzone_shape = \"radial\"";
+    to = "anti_deadzone_shape = \"triangle\"";
+  }
+  SECTION("Wrong axial minimum type") {
+    from = "minimum_response_x = 0.3";
+    to = "minimum_response_x = false";
+  }
+  SECTION("Wrong processing time type") {
+    from = "ema_tau_ms = 6.5";
+    to = "ema_tau_ms = \"slow\"";
+  }
+  SECTION("Wrong overlay setting type") {
+    from = "overlay_corner = 3";
+    to = "overlay_corner = true";
+  }
+  SECTION("Malformed TOML") {
+    from = "schema_version = 4";
+    to = "schema_version = [";
+  }
+  const auto offset = contents.find(from);
+  REQUIRE(offset != std::string::npos);
+  contents.replace(offset, from.size(), to);
+  {
+    std::ofstream file(ConfigPath(), std::ios::binary | std::ios::trunc);
+    file << contents;
+    REQUIRE(file.good());
+  }
+
+  KbmSettings active;
+  active.user_index = 1;
+  active.keybind_a = "Key.H";
+  active.raw_mouse_dpi = 750.0;
+  ApplySettingsToCvars(active);
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
+  const auto retained = GetSettingsFromCvars();
+  REQUIRE(retained.enabled == active.enabled);
+  REQUIRE(retained.user_index == active.user_index);
+  REQUIRE(retained.keybind_a == active.keybind_a);
+  REQUIRE(retained.raw_mouse_dpi == active.raw_mouse_dpi);
+  REQUIRE(ReadFile(ConfigPath()) == contents);
+}
+
+TEST_CASE("KBM integer settings clamp before conversion to the runtime integer",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  REQUIRE(SaveConfig(KbmSettings{}));
+  auto contents = ReadFile(ConfigPath());
+  std::string value;
+  int32_t expected;
+  SECTION("Largest TOML integer") {
+    value = "9223372036854775807";
+    expected = 3;
+  }
+  SECTION("Smallest TOML integer") {
+    value = "-9223372036854775808";
+    expected = 0;
+  }
+  for (const std::string setting : {"user_index = 0", "overlay_corner = 3",
+                                    "ema_background_transparency = 54"}) {
+    const auto offset = contents.find(setting);
+    REQUIRE(offset != std::string::npos);
+    contents.replace(offset, setting.size(),
+                     setting.substr(0, setting.find('=') + 2) + value);
+  }
+  {
+    std::ofstream file(ConfigPath(), std::ios::binary | std::ios::trunc);
+    file << contents;
+  }
+  auto active = KbmSettings();
+  active.user_index = 1;
+  ApplySettingsToCvars(active);
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  const auto loaded = GetSettingsFromCvars();
+  REQUIRE(loaded.user_index == expected);
+  REQUIRE(loaded.overlay.corner == expected);
+  REQUIRE(loaded.overlay.ema_background_transparency ==
+          (expected == 0 ? 0 : 100));
+  REQUIRE(ReadFile(ConfigPath()) == contents);
+}
+
+TEST_CASE(
+    "Saving invalid bindings does not publish an unreadable configuration",
+    "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  REQUIRE(SaveConfig());
+  const auto original = ReadFile(ConfigPath());
+  auto draft = KbmSettings();
+  SECTION("Invalid controller binding") { draft.keybind_a = "VK_A"; }
+  SECTION("Multiple capture hotkeys") {
+    draft.raw_mouse_capture_toggle_key = "Key.F8 Key.F9";
+  }
+  SECTION("Mouse capture hotkey") {
+    draft.raw_mouse_capture_toggle_key = "Ctrl+Mouse.Left";
+  }
+  bool activated = false;
+  REQUIRE_FALSE(CommitKbmSettings(
+      draft, [](const auto& settings) { return SaveConfig(settings); },
+      [&](const auto&) { activated = true; }));
+  REQUIRE_FALSE(activated);
+  REQUIRE(ReadFile(ConfigPath()) == original);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+}
+
+TEST_CASE("An empty capture hotkey can be saved and reloaded", "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  auto settings = KbmSettings();
+  settings.raw_mouse_capture_toggle_key.clear();
+  REQUIRE(SaveConfig(settings));
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  REQUIRE(GetSettingsFromCvars().raw_mouse_capture_toggle_key.empty());
+}
+
+TEST_CASE("Failed KBM replacement preserves the previous saved file", "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  REQUIRE(SaveConfig());
+  const std::string saved = ReadFile(ConfigPath());
+  // Permit reads but deny replacement, exercising failure after writing .tmp.
+  const HANDLE held =
+      CreateFileW(ConfigPath().c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  REQUIRE(held != INVALID_HANDLE_VALUE);
+  auto changed = GetSettingsFromCvars();
+  changed.keybind_a = "Key.G";
+  ApplySettingsToCvars(changed);
+  const bool written = SaveConfig();
+  CloseHandle(held);
+  REQUIRE_FALSE(written);
+  REQUIRE(ReadFile(ConfigPath()) == saved);
+  for (const auto& entry :
+       std::filesystem::directory_iterator(directory.path())) {
+    REQUIRE(entry.path() == ConfigPath());
+  }
+}
+
+TEST_CASE("A leftover KBM temporary file does not block the next save",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  SetupConfig(directory.path(), false);
+  const auto leftover = directory.path() / "kbm.toml.tmp";
+  std::ofstream(leftover) << "abandoned draft";
+
+  KbmSettings draft;
+  draft.overlay.enabled = true;
+  REQUIRE(SaveConfig(draft));
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  REQUIRE(GetSettingsFromCvars().overlay.enabled);
+  REQUIRE(ReadFile(leftover) == "abandoned draft");
+}
+
+TEST_CASE("Non-finite KBM tuning values normalize to safe defaults", "[kbm]") {
+  KbmSettings settings;
+  settings.raw_mouse_dpi = std::numeric_limits<double>::quiet_NaN();
+  settings.raw_mouse_minimum_response_x =
+      std::numeric_limits<double>::quiet_NaN();
+  settings.raw_mouse_minimum_response_y =
+      std::numeric_limits<double>::infinity();
+  settings.raw_mouse_anti_deadzone_shape =
+      static_cast<KbmAntiDeadzoneShape>(99);
+  settings.raw_mouse_full_stick_speed_cm_s =
+      std::numeric_limits<double>::infinity();
+  settings.mouse_processing.fixed_window_ms =
+      std::numeric_limits<double>::quiet_NaN();
+  settings.mouse_processing.ema_tau_ms =
+      std::numeric_limits<double>::infinity();
+  const auto normalized = NormalizeSettings(settings);
+  const KbmSettings defaults;
+  REQUIRE(normalized.raw_mouse_dpi == defaults.raw_mouse_dpi);
+  REQUIRE(normalized.raw_mouse_minimum_response_x == Approx(.30));
+  REQUIRE(normalized.raw_mouse_minimum_response_y == Approx(.30));
+  REQUIRE(normalized.raw_mouse_anti_deadzone_shape ==
+          KbmAntiDeadzoneShape::kRadial);
+  REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s ==
+          defaults.raw_mouse_full_stick_speed_cm_s);
+  REQUIRE(normalized.mouse_processing.fixed_window_ms == 16.0);
+  REQUIRE(normalized.mouse_processing.ema_tau_ms == 8.0);
+}
+
+namespace {
+constexpr auto kLegacyV3 = R"toml(schema_version = 3
+[HID.KBM.Controller]
+enabled = true
+user_index = 2
+[HID.KBM.Bindings]
+guide = ""
+dpad_left = "Key.Digit1"
+dpad_right = "Key.Digit2"
+dpad_down = "Key.Digit3"
+dpad_up = "Key.Digit4"
+left_thumb_left = "Key.A"
+left_thumb_right = "Key.D"
+left_thumb_down = "Key.S"
+left_thumb_up = "Key.W"
+left_thumb = "Key.C"
+right_thumb_up = "Key.ArrowUp"
+right_thumb_down = "Key.ArrowDown"
+right_thumb_right = "Key.ArrowRight"
+right_thumb_left = "Key.ArrowLeft"
+right_thumb = "Mouse.Middle"
+x = "Key.E"
+b = "Key.F"
+a = "Ctrl+Key.G"
+y = "Key.Q"
+left_trigger = "Mouse.Right"
+right_trigger = "Mouse.Left"
+back = "Key.Tab"
+start = "Key.Escape"
+left_shoulder = "Key.Shift"
+right_shoulder = "Key.R"
+[HID.KBM.RawMouse]
+enabled = true
+capture_on_start = false
+capture_toggle_key = "Alt+Key.F9"
+deadzone_compensation = true
+invert_y = true
+[HID.KBM.RawMouse.Tuning]
+sensitivity = 17.25
+full_scale_velocity = 37500.0
+response_curve = 1.7
+smoothing_time_ms = 12.0
+minimum_response = 0.23
+)toml";
+}
+
+TEST_CASE("Grouped v3 is rejected until explicit reset and save", "[kbm]") {
+  ScopedConfigDirectory directory;
+  const auto path = directory.path() / "kbm.toml";
+  {
+    std::ofstream file(path, std::ios::binary);
+    file << kLegacyV3;
+  }
+  SetupConfig(directory.path(), true);
+  REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
+  REQUIRE(ReadFile(path) == kLegacyV3);
+  const auto active = GetSettingsFromCvars();
+  const KbmSettings defaults;
+  REQUIRE(active.user_index == defaults.user_index);
+  REQUIRE(active.raw_mouse_invert_y == defaults.raw_mouse_invert_y);
+  REQUIRE(active.raw_mouse_capture_toggle_key ==
+          defaults.raw_mouse_capture_toggle_key);
+#define XE_HID_KBM_BINDING(button, description, cvar_name, cvar_default_value) \
+  REQUIRE(active.cvar_name == defaults.cvar_name);
+#include "xenia/hid/kbm/kbm_binding_table.inc"
+#undef XE_HID_KBM_BINDING
+  REQUIRE_FALSE(CanSaveKbmConfig(GetConfigState(), false));
+  REQUIRE_FALSE(SaveConfig());
+  REQUIRE_FALSE(SaveConfig(defaults));
+  REQUIRE(ReadFile(path) == kLegacyV3);
+  auto draft = defaults;
+  bool activated = false;
+  REQUIRE_FALSE(CommitKbmSettings(
+      draft, [](const auto& value) { return SaveConfig(value); },
+      [&](const auto&) { activated = true; }));
+  REQUIRE_FALSE(activated);
+  REQUIRE(CanSaveKbmConfig(GetConfigState(), true));
+  REQUIRE(CommitKbmSettings(
+      draft, [](const auto& value) { return SaveConfig(value, true); },
+      [&](const auto& value) {
+        activated = true;
+        ApplySettingsToCvars(value);
+      }));
+  REQUIRE(activated);
+  REQUIRE(GetConfigState() == KbmConfigState::kCompatible);
+  REQUIRE(ReadFile(path).find("schema_version = 4") != std::string::npos);
+  REQUIRE_FALSE(std::filesystem::exists(directory.path() / "kbm.toml.v3.bak"));
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetSettingsFromCvars().keybind_a == defaults.keybind_a);
+}
+
+TEST_CASE("Draft commit activates only after successful publication", "[kbm]") {
+  KbmSettings draft;
+  draft.raw_mouse_dpi = 1600;
+  bool published = false, activated = false;
+  auto activate = [&](const auto& settings) {
+    REQUIRE(published);
+    REQUIRE(settings.raw_mouse_dpi == 1600);
+    activated = true;
+  };
+  REQUIRE_FALSE(
+      CommitKbmSettings(draft, [](const auto&) { return false; }, activate));
+  REQUIRE_FALSE(activated);
+  REQUIRE(draft.raw_mouse_dpi == 1600);
+  REQUIRE(CommitKbmSettings(
+      draft,
+      [&](const auto&) {
+        published = true;
+        return true;
+      },
+      activate));
+  REQUIRE(activated);
+}
+
+TEST_CASE("Physical settings clamp finite values and default non-finite values",
+          "[kbm]") {
+  KbmSettings settings;
+  settings.raw_mouse_dpi = -1;
+  settings.raw_mouse_full_stick_speed_cm_s = 0;
+  auto normalized = NormalizeSettings(settings);
+  REQUIRE(normalized.raw_mouse_dpi == 100);
+  REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s == 1);
+  settings.raw_mouse_dpi = 100000;
+  settings.raw_mouse_full_stick_speed_cm_s = 1000;
+  normalized = NormalizeSettings(settings);
+  REQUIRE(normalized.raw_mouse_dpi == 32000);
+  REQUIRE(normalized.raw_mouse_full_stick_speed_cm_s == 100);
+}
+
+TEST_CASE("Failed reset publication preserves the incompatible original",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  const auto path = directory.path() / "kbm.toml";
+  {
+    std::ofstream file(path, std::ios::binary);
+    file << kLegacyV3;
+  }
+  SetupConfig(directory.path(), false);
+  const HANDLE held =
+      CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  REQUIRE(held != INVALID_HANDLE_VALUE);
+  KbmSettings draft;
+  bool activated = false;
+  const bool written = CommitKbmSettings(
+      draft, [](const auto& value) { return SaveConfig(value, true); },
+      [&](const auto&) { activated = true; });
+  CloseHandle(held);
+  REQUIRE_FALSE(written);
+  REQUIRE_FALSE(activated);
+  REQUIRE(ReadFile(path) == kLegacyV3);
+  for (const auto& entry :
+       std::filesystem::directory_iterator(directory.path())) {
+    REQUIRE(entry.path() == path);
+  }
+  REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
+  REQUIRE_FALSE(CanSaveKbmConfig(GetConfigState(), false));
+}
+
+TEST_CASE("Malformed v3 values and unknown versions never partially load",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  std::string contents = kLegacyV3;
+  SECTION("Invalid compatible binding") {
+    auto pos = contents.find("Ctrl+Key.G");
+    contents.replace(pos, 10, "VK_G");
+  }
+  SECTION("Unknown schema") {
+    auto pos = contents.find("schema_version = 3");
+    contents.replace(pos, 18, "schema_version = 999");
+  }
+  {
+    std::ofstream file(directory.path() / "kbm.toml", std::ios::binary);
+    file << contents;
+  }
+  SetupConfig(directory.path(), false);
+  REQUIRE(GetConfigState() == KbmConfigState::kIncompatible);
+  REQUIRE(GetSettingsFromCvars().user_index == 0);
+  REQUIRE(GetSettingsFromCvars().keybind_a == KbmSettings().keybind_a);
+}
+
+TEST_CASE("Anti-deadzone defaults on without overriding explicit saved choices",
+          "[kbm]") {
+  ScopedConfigDirectory directory;
+  REQUIRE(KbmSettings().raw_mouse_deadzone_compensation);
+  REQUIRE(KbmSettings().raw_mouse_minimum_response == Approx(0.30));
+  SECTION("Explicit v4 off remains off") {
+    SetupConfig(directory.path(), false);
+    auto settings = KbmSettings();
+    settings.raw_mouse_deadzone_compensation = false;
+    REQUIRE(SaveConfig(settings));
+  }
+  SetupConfig(directory.path(), false);
+  REQUIRE_FALSE(GetSettingsFromCvars().raw_mouse_deadzone_compensation);
 }
 
 }  // namespace xe::hid::kbm

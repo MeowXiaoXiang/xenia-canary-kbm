@@ -137,13 +137,16 @@ XE_LOCALIZATION_STRING(
     "The KBM Controller HID backend is not active. These settings will "
     "be saved, but input requires hid = \"kbm\" on the next launch.")
 XE_LOCALIZATION_STRING(kKbmPressBinding, "Press a key or mouse button...")
+XE_LOCALIZATION_STRING(kKbmPressCaptureKey, "Press a keyboard key...")
+XE_LOCALIZATION_STRING(kKbmCaptureKeyTooltip,
+                       "Click to bind a keyboard key. Hold Ctrl, Alt, Shift, "
+                       "or Win to create a chord.")
 XE_LOCALIZATION_STRING(
     kKbmBindingTooltip,
     "Click, then press a key or mouse button. Hold Ctrl, Alt, Shift, or "
     "Win to create a chord.")
 XE_LOCALIZATION_STRING(kKbmAddAlternativeBinding, "Add alternative binding")
 XE_LOCALIZATION_STRING(kKbmClearBinding, "Clear binding")
-XE_LOCALIZATION_STRING(kKbmKeyboard, "KBM Controller")
 XE_LOCALIZATION_STRING(kKbmEnableController, "Enable KBM Controller")
 XE_LOCALIZATION_STRING(kKbmControllerSlot, "Controller slot")
 XE_LOCALIZATION_STRING(kKbmPlayer1, "Player 1")
@@ -152,55 +155,46 @@ XE_LOCALIZATION_STRING(kKbmPlayer3, "Player 3")
 XE_LOCALIZATION_STRING(kKbmPlayer4, "Player 4")
 XE_LOCALIZATION_STRING(
     kKbmBindingHelp,
-    "Click a binding and press the key or mouse button you want. Hold "
-    "Ctrl, Alt, Shift, or Win for a chord. Use + to add an alternative.")
+    "Click a binding to replace it. Use ... for alternatives, Bind Escape or "
+    "Clear. Hold Ctrl, Alt, Shift or Win for a chord; Escape cancels capture.")
 XE_LOCALIZATION_STRING(kKbmXboxInput, "Xbox 360 input")
 XE_LOCALIZATION_STRING(kKbmKeyboardMouse, "Keyboard / mouse")
 XE_LOCALIZATION_STRING(kKbmMouse, "Mouse")
-XE_LOCALIZATION_STRING(kKbmEnableRawMouse, "Enable Raw Input mouse control")
+XE_LOCALIZATION_STRING(kKbmEnableRawMouse,
+                       "Use mouse to control the right stick")
+XE_LOCALIZATION_STRING(
+    kKbmEnableRawMouseTooltip,
+    "Uses Raw Input, independent of Windows pointer settings.\n"
+    "Uncheck to disable mouse movement on the right stick.")
 XE_LOCALIZATION_STRING(
     kKbmRawMouseRequiresController,
-    "Enable KBM Controller to configure Raw Input mouse control.")
-XE_LOCALIZATION_STRING(kKbmSensitivity, "Mouse sensitivity multiplier:")
-XE_LOCALIZATION_STRING(
-    kKbmSensitivityGuide,
-    "3600 DPI at 10x is a starting point. Higher DPI usually needs a lower "
-    "multiplier, while lower DPI can use a higher one; in-game settings and "
-    "controller limits still affect the result.")
+    "Enable KBM Controller to configure mouse control of the right stick.")
 XE_LOCALIZATION_STRING(kKbmInvertVertical, "Invert vertical look")
 XE_LOCALIZATION_STRING(kKbmCaptureOnStart,
                        "Capture mouse when KBM Controller starts")
-XE_LOCALIZATION_STRING(kKbmCaptureToggle, "Mouse capture hotkey:")
-XE_LOCALIZATION_STRING(kKbmFineTuning, "Advanced tuning (optional)")
-XE_LOCALIZATION_STRING(kKbmAimCurve,
-                       "Mouse response curve (default 0.8; 1.0 is linear):")
+XE_LOCALIZATION_STRING(kKbmCaptureToggle, "Mouse capture hotkey")
+XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone, "Stick anti-deadzone")
+XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0–50%)")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneCircle, "Circle")
+XE_LOCALIZATION_STRING(kKbmAntiDeadzoneAxial, "Axial")
 XE_LOCALIZATION_STRING(
-    kKbmAimCurveHelp,
-    "0.8 boosts low-speed output; >1.0 slows small movements; 1.0 is linear.")
-XE_LOCALIZATION_STRING(kKbmMouseSmoothing,
-                       "Mouse smoothing (0 ms: no smoothing):")
+    kKbmAxialMagnitudeHelp,
+    "Each axis is limited to 100%. Combined diagonal output can exceed 100%.")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseX,
+                       "Horizontal minimum output (0–50%)")
+XE_LOCALIZATION_STRING(kKbmMinimumResponseY, "Vertical minimum output (0–50%)")
 XE_LOCALIZATION_STRING(
-    kKbmMouseSmoothingHelp,
-    "0 ms is most direct but can expose input jitter. 4–12 ms usually "
-    "improves fine adjustment; higher values add more lag.")
-XE_LOCALIZATION_STRING(kKbmCompensateGameDeadzone,
-                       "Compensate analog-stick deadzone")
-XE_LOCALIZATION_STRING(kKbmMinimumResponse, "Minimum stick output (0.0–0.5):")
+    kKbmAxialResponseHelp,
+    "Compensates each axis independently using its minimum output. Crossing an "
+    "axis can change the output direction abruptly.")
 XE_LOCALIZATION_STRING(
     kKbmMinimumResponseHelp,
-    "Enable only if the game ignores subtle movement. Raising minimum output "
-    "can clear the game's deadzone, but too much makes near-center adjustment "
-    "difficult. Output returns to zero after movement stops.")
-XE_LOCALIZATION_STRING(kKbmFullStickThreshold,
-                       "Full-stick speed at 1x (counts/s):")
-XE_LOCALIZATION_STRING(
-    kKbmFullStickHelp,
-    "At %.3fx, full-stick output begins near %.0f counts/s. Lower values "
-    "reach the game's turn-speed cap sooner.")
-XE_LOCALIZATION_STRING(kKbmDiagnostics, "Diagnostics")
+    "Raises non-zero output to cross the game's stick deadzone. Setting the "
+    "minimum too high makes small movements harder to control. A speed "
+    "estimate of zero produces zero output. Disable for linear output.")
+XE_LOCALIZATION_STRING(kKbmDiagnostics, "Advanced and diagnostics")
 XE_LOCALIZATION_STRING(kKbmLastStickOutput,
-                       "Latest right-stick output: {:.0f}%{}")
-XE_LOCALIZATION_STRING(kKbmMaximum, " (maximum)")
+                       "Mouse right-stick magnitude: {:.1f}%")
 XE_LOCALIZATION_STRING(
     kKbmRawSpeed,
     "Raw Input speed X %.0f / Y %.0f counts/s | Stick X %d / Y %d")
@@ -218,38 +212,44 @@ XE_LOCALIZATION_STRING(
     "KBM Controller input is temporarily paused while this window is "
     "open.")
 XE_LOCALIZATION_STRING(kKbmDiagnosticsUnavailable,
-                       "Runtime diagnostics are unavailable.")
-XE_LOCALIZATION_STRING(kKbmSave, "Save settings")
-XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "Restore defaults")
-XE_LOCALIZATION_STRING(kKbmSaveClose, "Save settings and close")
+                       "Input diagnostics are unavailable.")
+XE_LOCALIZATION_STRING(kKbmSave, "Save all")
+XE_LOCALIZATION_STRING(kKbmCancel, "Cancel and close")
+XE_LOCALIZATION_STRING(kKbmRestoreDefaults, "Restore all defaults...")
+XE_LOCALIZATION_STRING(kKbmSaveClose, "Save all and close")
 XE_LOCALIZATION_STRING(kKbmSettingsFile, "Settings file: kbm.toml")
-XE_LOCALIZATION_STRING(kKbmAppliedUnsaved, "Changes are applied but not saved.")
+XE_LOCALIZATION_STRING(kKbmAppliedUnsaved,
+                       "Changes affect preview only. Save all to apply them.")
 XE_LOCALIZATION_STRING(kKbmAppliedSaved, "Changes are applied and saved.")
 XE_LOCALIZATION_STRING(
     kKbmAppliedSaveFailed,
-    "Changes are applied, but saving failed. kbm.toml was not changed.")
+    "Saving failed. Your current settings and kbm.toml are unchanged.")
 XE_LOCALIZATION_STRING(
     kKbmConfigIncompatible,
-    "kbm.toml is incompatible and was not loaded. Restore defaults, then "
-    "Save settings to replace it with the current KBM configuration.")
+    "kbm.toml is incompatible and was not loaded, including its bindings. "
+    "Confirm Restore all defaults to enable saving. Save replaces the old file "
+    "without a backup; Cancel leaves it untouched.")
 XE_LOCALIZATION_STRING(kKbmUnbound, "Unbound")
 XE_LOCALIZATION_STRING(kKbmBindEscape, "Bind Escape")
 XE_LOCALIZATION_STRING(kKbmCancelCapture, "Cancel capture")
 XE_LOCALIZATION_STRING(
-    kKbmSnapshot, "Last gameplay sample (not live while this window is open)")
+    kKbmSnapshot, "Last gameplay mouse sample (paused while settings are open)")
 XE_LOCALIZATION_STRING(kKbmInputSampling, "Input sampling")
-XE_LOCALIZATION_STRING(kKbmStartInputSampling, "Start 60-second capture")
+XE_LOCALIZATION_STRING(kKbmStartInputSampling, "Record 60-second diagnostics")
 XE_LOCALIZATION_STRING(kKbmSaveAndStartInputSampling,
-                       "Save settings and start 60-second capture")
+                       "Save all and record for 60 seconds")
 XE_LOCALIZATION_STRING(kKbmStopAndSaveInputSampling, "Stop and save report")
 XE_LOCALIZATION_STRING(kKbmCancelInputSampling, "Cancel sampling")
 XE_LOCALIZATION_STRING(
     kKbmInputSamplingHelp,
-    "Starting a capture closes this window so KBM input can resume. "
-    "Unsaved settings are saved first.")
+    "Recording closes this window and resumes game input. Changes are saved "
+    "first; the report includes the mouse settings used for recording.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingProgress,
                        "Recording: %.0f s remaining | %zu samples")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportSaved, "Report saved: %s")
+XE_LOCALIZATION_STRING(
+    kKbmInputSamplingWriting,
+    "Saving input report. A new sample can start when saving finishes.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingReportFailed,
                        "Failed to save the input report. Check the log.")
 XE_LOCALIZATION_STRING(kKbmInputSamplingNoReport,
@@ -375,3 +375,113 @@ XE_LOCALIZATION_STRING(kGuestLanguageTurkish, "Turkish")
 XE_LOCALIZATION_STRING(kGuestLanguageNorwegian, "Norwegian")
 XE_LOCALIZATION_STRING(kGuestLanguageDutch, "Dutch")
 XE_LOCALIZATION_STRING(kGuestLanguageSimplifiedChinese, "Simplified Chinese")
+
+XE_LOCALIZATION_STRING(kKbmDpi, "Mouse DPI")
+
+XE_LOCALIZATION_STRING(kKbmPhysicalSpeed, "Full-stick speed (1–100 cm/s)")
+XE_LOCALIZATION_STRING(kKbmMouseMode, "Mouse processing")
+XE_LOCALIZATION_STRING(kKbmModeDirect, "Direct")
+XE_LOCALIZATION_STRING(kKbmModeFixedWindow, "Fixed window")
+XE_LOCALIZATION_STRING(kKbmModeEma, "EMA smoothing")
+XE_LOCALIZATION_STRING(kKbmWindowLength, "Window length (ms)")
+XE_LOCALIZATION_STRING(kKbmRecentPollIntervals,
+                       "Game query intervals (last 5 s, %u samples)")
+XE_LOCALIZATION_STRING(kKbmCurrentPollInterval, "Latest interval")
+XE_LOCALIZATION_STRING(kKbmMedianPollInterval, "Median")
+XE_LOCALIZATION_STRING(kKbmPollIntervalCoverage, "Coverage")
+XE_LOCALIZATION_STRING(kKbmEmaTimeConstantHelp,
+                       "A longer time constant smooths changes in mouse speed "
+                       "more strongly and takes longer to respond.")
+XE_LOCALIZATION_STRING(kKbmShowPollHud, "Show in-game diagnostics")
+XE_LOCALIZATION_STRING(kKbmPollHudWaitingForGame,
+                       "Waiting for a game to start.")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaDuration, "Last 5 s")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaScaleMax, "Scale max")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaTransparency,
+                       "Diagnostics overlay transparency")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaWeight, "New sample weight")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaRawSpeed, "Raw")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaSpeed, "Smoothed")
+XE_LOCALIZATION_STRING(kKbmPollHudEmaWaiting, "Waiting for EMA samples.")
+XE_LOCALIZATION_STRING(kKbmPollHudSaveForLiveData,
+                       "Save to show live data for these settings.")
+XE_LOCALIZATION_STRING(kKbmPollHudTopLeft, "Top left")
+XE_LOCALIZATION_STRING(kKbmPollHudTopRight, "Top right")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomLeft, "Bottom left")
+XE_LOCALIZATION_STRING(kKbmPollHudBottomRight, "Bottom right")
+XE_LOCALIZATION_STRING(kKbmNoRecentPollIntervals,
+                       "No game queries in the last 5 seconds.")
+XE_LOCALIZATION_STRING(kKbmEmaTau, "Smoothing time constant (ms)")
+XE_LOCALIZATION_STRING(
+    kKbmFixedWindowHelp,
+    "Uses motion within the selected time window. A longer window can make "
+    "stopping or reversing feel slower.")
+XE_LOCALIZATION_STRING(kKbmDirectHelp,
+                       "Estimates speed from motion and elapsed time between "
+                       "game queries, without additional smoothing.")
+XE_LOCALIZATION_STRING(
+    kKbmPreviewSamplingHelp,
+    "Peak is the highest sampled output. A brief motion can expire from the "
+    "fixed window between preview samples.")
+
+XE_LOCALIZATION_STRING(
+    kKbmPhysicalGuide,
+    "Changing full-stick speed from 10 to 5 cm/s halves the mouse speed needed "
+    "for the same output. Compare slow movement, fast movement and stopping in "
+    "the preview. Full-stick speed is a physical speed, not cm/360 degrees.")
+
+XE_LOCALIZATION_STRING(kKbmLivePreview, "Independent live stick preview")
+
+XE_LOCALIZATION_STRING(kKbmStartPreview, "Start test")
+
+XE_LOCALIZATION_STRING(kKbmStopPreview, "Stop test")
+
+XE_LOCALIZATION_STRING(kKbmPreviewExitHelp,
+                       "Move the mouse to test. Press Escape, Enter or Space "
+                       "to release the cursor.")
+
+XE_LOCALIZATION_STRING(kKbmPreviewSpeed,
+                       "Est. mouse speed %.1f cm/s | Full stick at %.2f cm/s")
+XE_LOCALIZATION_STRING(kKbmPreviewPeak, "Peak: %.1f%%")
+
+XE_LOCALIZATION_STRING(kKbmResetPreviewPeak, "Reset peak")
+
+XE_LOCALIZATION_STRING(
+    kKbmPreviewFailed,
+    "Preview capture failed. The cursor has been released; check the log.")
+
+XE_LOCALIZATION_STRING(kKbmBindingActions, "Binding actions")
+XE_LOCALIZATION_STRING(
+    kKbmDpiHelp,
+    "Enter your mouse's active DPI (100–32,000); not detected automatically.")
+XE_LOCALIZATION_STRING(
+    kKbmSpeedDirection,
+    "Lower values produce more stick output at the same mouse speed.")
+XE_LOCALIZATION_STRING(kKbmTuningHelp, "How these settings work")
+XE_LOCALIZATION_STRING(kKbmPreviewDraft,
+                       "Test the settings shown in this window.")
+XE_LOCALIZATION_STRING(kKbmCaptureOptions, "Mouse capture options")
+XE_LOCALIZATION_STRING(kKbmKeyboardBindings, "Button bindings")
+XE_LOCALIZATION_STRING(kKbmTechnicalDetails,
+                       "Technical details · last game sample")
+XE_LOCALIZATION_STRING(
+    kKbmInputSamplingStartFailed,
+    "Could not start recording. Check the log and try again.")
+XE_LOCALIZATION_STRING(kKbmUnsavedTitle, "Unsaved changes")
+XE_LOCALIZATION_STRING(kKbmUnsavedHelp,
+                       "Save changes to mouse, bindings and controller "
+                       "options, discard them, or continue editing.")
+XE_LOCALIZATION_STRING(kKbmDiscardClose, "Discard changes and close")
+XE_LOCALIZATION_STRING(kKbmContinueEditing, "Continue editing")
+XE_LOCALIZATION_STRING(kKbmResetTitle, "Restore all defaults?")
+XE_LOCALIZATION_STRING(kKbmResetHelp,
+                       "Reset all bindings, mouse and controller options. Save "
+                       "all to apply and write the defaults.")
+XE_LOCALIZATION_STRING(kKbmResetConfirm, "Restore defaults")
+XE_LOCALIZATION_STRING(
+    kKbmSharedDraft,
+    "Save all applies mouse, bindings and controller changes together.")
+XE_LOCALIZATION_STRING(kMenuFpsOverlay, "Toggle FPS &Overlay")
+XE_LOCALIZATION_STRING(kMenuResetWindowSize, "&Reset window size")
+XE_LOCALIZATION_STRING(kXmpUnavailable, "Audio player isn't available.")
+XE_LOCALIZATION_STRING(kConsoleResetSaved, "Settings Reset and Saved!")

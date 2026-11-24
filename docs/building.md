@@ -1,8 +1,6 @@
 # Building
 
-You must have a 64-bit machine for building and running the project. Always
-run your system updater before building and make sure you have the latest
-drivers.
+You must have a 64-bit machine for building and running the project.
 
 This repository is a Windows-only KBM Controller fork. The Linux material is
 retained below as upstream reference for synchronization only; it is not a
@@ -18,15 +16,19 @@ The instructions below are for building from source.
 ### Windows
 
 * Windows 10 or later
-* [Visual Studio 2022 or later](https://www.visualstudio.com/downloads/)
-* CMake 3.10+ (or C++ CMake tools for Windows)
+* [Visual Studio 2022 or later](https://www.visualstudio.com/downloads/), or
+  its Build Tools, with the MSVC C++ tools installed
+* CMake 3.20+ and Ninja (the Visual Studio C++ CMake tools include both)
 * Windows 11 SDK version 10.0.22000.0 (for Visual Studio 2022, this or any newer version)
 * [Python 3.10+ 64-bit](https://www.python.org/downloads/)
   * Ensure Python is in PATH.
 * [Vulkan SDK](https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe)
   * The build script will automatically detect it if installed at `C:\VulkanSDK`
+  * Include `glslangValidator`, `spirv-opt`, and `spirv-dis` for shader generation.
+* clang-format 20 for formatting and lint, matching this fork's CI
+  * This is separate from the MSVC compiler used for the Windows build.
 
-```
+```powershell
 git clone https://github.com/MeowXiaoXiang/xenia-canary-kbm.git
 cd xenia-canary-kbm
 .\xb.bat setup
@@ -34,50 +36,24 @@ cd xenia-canary-kbm
 # Build a Release executable:
 .\xb.bat build --config=release
 
-# Run premake and open Visual Studio (run the 'xenia-app' project):
+# Generate CMake projects and open Visual Studio (requires the IDE):
 .\xb.bat devenv
 
-# Run premake to update the sln/vcproj's:
+# Configure CMake without building ('premake' is the compatibility command name):
 .\xb.bat premake
 
 # Format code to the style guide:
 .\xb.bat format
+
+# Check formatting without changing files:
+python xenia-build.py lint --all
 ```
-<!--
-# Remove intermediate files and build outputs (doesn't work on Linux):
-xb clean
 
-# Check for lint errors with clang-format:
-xb lint
-
-# Run the style checker on all code:
-xb style
-
-# Remove all build/ output and do a hard git reset:
-xb nuke
-
-# Runs the clang-tidy checker on all code:
-xb tidy
-
-
-## Testing:
-
-# Generate tests:
-xb gentests
-
-# Run tests:
-xb test
-
-# Run GPU tests:
-xb gputest
-
-
-## Other:
-
-# Generate SPIR-V binaries and header files:
-xb genspirv
--->
-
+Normal command-line builds use CMake and Ninja. Build Tools alone are sufficient
+for those builds; `devenv` additionally needs the Visual Studio IDE. See the
+[KBM verification commands](kbm_input.md#build) for the five KBM/localization
+test suites and Python report-tool tests. The general `xb.bat test` command runs
+upstream base/CPU/kernel suites rather than those KBM suites.
 #### Debugging
 
 VS behaves oddly with the debug paths. Open the 'xenia-app' project properties
@@ -96,8 +72,13 @@ get helpful spacers/movs in the disassembly.
 
 Linux support is extremely experimental and presently incomplete.
 
-The build script uses Clang 19. GCC while it should work in theory, is not easily
-interchangeable right now.
+The build script uses Clang 19 or newer, and CI builds with Clang 20. GCC while
+it should work in theory, is not easily interchangeable right now.
+
+Clang builds against the system's GCC C++ standard library (libstdc++), which
+must support C++20 `<format>`. That needs libstdc++ from GCC 13 or newer, so
+distributions with an older default GCC, such as Debian 12 or Ubuntu 22.04,
+can't build Xenia with their default toolchain. CI builds on Ubuntu 24.04.
 
 * Normal building via `xb build` uses CMake+Ninja.
 * Environment variables:
@@ -113,8 +94,13 @@ Clang-19 or newer should be available from system repositories on all up to date
 You will also need some development libraries. To get them on an Ubuntu system:
 
 ```sh
-sudo apt-get install build-essential mesa-vulkan-drivers valgrind libc++-dev libc++abi-dev libgtk-3-dev liblz4-dev libsdl2-dev libvulkan-dev libx11-xcb-dev spirv-tools glslang-tools clang-19 llvm-19 ninja-build
+sudo apt-get install build-essential mesa-vulkan-drivers valgrind libc++-dev libc++abi-dev libgtk-3-dev liblz4-dev libudev-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libvulkan-dev libx11-xcb-dev spirv-tools glslang-tools clang-19 llvm-19 ninja-build
 ```
+
+SDL3 is taken from the system when it is installed (`libsdl3-dev`, Ubuntu 25.04
+or newer), and built from `third_party/SDL3` otherwise. That build needs the
+ALSA, PulseAudio and PipeWire development packages above for sound, and
+`libudev-dev` for controller hotplug.
 
 In addition, you will need up to date Vulkan libraries and drivers for your hardware, which most distributions have in their standard repositories nowadays.
 

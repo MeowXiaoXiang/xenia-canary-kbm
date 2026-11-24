@@ -12,6 +12,7 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -117,6 +118,10 @@ class UserProfile {
     return account_info_.GetReservedFlags();
   };
   uint32_t GetCachedFlags() const { return account_info_.GetCachedFlags(); };
+  uint32_t GetUserFlags() const {
+    return account_info_.GetCachedFlags() | account_info_.GetReservedFlags();
+  };
+
   uint32_t GetCountry() const {
     return static_cast<uint32_t>(account_info_.GetCountry());
   };
@@ -167,6 +172,7 @@ class UserProfile {
   GpdInfoProfile dashboard_gpd_;
   std::map<uint32_t, GpdInfoTitle> games_gpd_;
   std::vector<Property> properties_;  // Includes contexts!
+  std::mutex prop_mutex;              // 5841089C
 
   std::map<XTileType, std::vector<uint8_t>> profile_images_;
 

@@ -18,7 +18,8 @@ jobs:
         run: |-
           sudo apt-get update
           sudo apt-get -y install cmake ninja-build pkg-config libgtk-3-dev \
-            libsdl2-dev libvulkan-dev libx11-xcb-dev spirv-tools glslang-tools
+            libudev-dev libasound2-dev libpulse-dev libpipewire-0.3-dev \
+            libvulkan-dev libx11-xcb-dev spirv-tools glslang-tools
 
       - name: Download submodules
         run: |- # Exclude unneeded platform-only submodules
@@ -29,7 +30,10 @@ jobs:
         run: |-
           cmake -S . -B build-linux-kbm -G Ninja -DXENIA_BUILD_TESTS=ON \
             -DCMAKE_CXX_FLAGS=-mmovdir64b
-          cmake --build build-linux-kbm --target xenia-hid-kbm-core-tests xenia-app-localization-tests
+          cmake --build build-linux-kbm --target xenia-hid-kbm-core-tests xenia-hid-kbm-sampling-tests xenia-app-localization-tests
+
+      - name: Test KBM replay tools
+        run: python -m unittest discover -s tools -p "kbm_*test.py"
 
       - name: Run portable KBM core tests
-        run: ctest --test-dir build-linux-kbm --output-on-failure -R "xenia-(hid-kbm-core-tests|app-localization-tests)"
+        run: ctest --test-dir build-linux-kbm --output-on-failure --no-tests=error -R "^xenia-(hid-kbm-(core|sampling)-tests|app-localization-tests)$"

@@ -10,6 +10,8 @@ jobs:
 
     env:
       POWERSHELL_TELEMETRY_OPTOUT: 1
+      VULKAN_SDK_VERSION: '1.4.363.0'
+      VULKAN_SDK_SHA256: '94a82d378f7a5e3e54c9db7d2fb7016af136e14ac0a18dbf0f2f67a36352d141'
 
     steps:
       - name: Checkout repository
@@ -23,36 +25,41 @@ jobs:
           git fetch --no-tags upstream canary_experimental:refs/remotes/upstream/canary_experimental
 
       - name: Cache Vulkan SDK
-        id: cache-vulkan-sdk
         uses: actions/cache@v6
         with:
-          path: C:\VulkanSDK
-          key: ${{ runner.os }}-vulkan-sdk-${{ hashFiles('**/vulkan-sdk.exe') }}
-          restore-keys: ${{ runner.os }}-vulkan-sdk-
+          path: C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}
 
       - name: Install Vulkan SDK with spirv-tools
         run: |-
-          if (Test-Path "C:\VulkanSDK") {
-            echo "Vulkan SDK found in cache."
-          } else {
-            Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe" -OutFile "vulkan-sdk.exe"
-            Start-Process -FilePath "vulkan-sdk.exe" -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install" -NoNewWindow -Wait
+          $version = $env:VULKAN_SDK_VERSION
+          $sdk = "C:\VulkanSDK\$version"
+          $bin = Join-Path $sdk 'Bin'
+          if (!(Test-Path -LiteralPath $sdk -PathType Container)) {
+            $installer = Join-Path $env:RUNNER_TEMP "vulkansdk-windows-X64-$version.exe"
+            Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe" -OutFile $installer
+            if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $env:VULKAN_SDK_SHA256) {
+              throw "Vulkan SDK $version installer checksum mismatch"
+            }
+            $process = Start-Process -FilePath $installer -ArgumentList "--root", $sdk, "--accept-licenses", "--default-answer", "--confirm-command", "install" -WindowStyle Hidden -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "Vulkan SDK $version installer exited with code $($process.ExitCode)"
+            }
           }
-          $env:VULKAN_SDK = "C:\VulkanSDK\$(Get-ChildItem -Path 'C:\VulkanSDK' -Directory | Select-Object -First 1 -ExpandProperty Name)"
-          $env:PATH += "${env:VULKAN_SDK}\Bin"
-          echo "VULKAN_SDK=$env:VULKAN_SDK" >> $env:GITHUB_ENV
-          echo "${env:VULKAN_SDK}\Bin" >> $env:GITHUB_PATH
 
           # Verify shader tools are available
           foreach ($tool in @("glslangValidator", "spirv-opt", "spirv-dis")) {
-            $toolPath = "${env:VULKAN_SDK}\Bin\${tool}.exe"
-            if (Test-Path "$toolPath") {
-              echo "$tool found at: $toolPath"
-              & $toolPath --version 2>$null
-            } else {
-              echo "Warning: ${tool}.exe not found at expected location"
+            $toolPath = Join-Path $bin "$tool.exe"
+            if (!(Test-Path -LiteralPath $toolPath -PathType Leaf)) {
+              throw "Vulkan SDK $version is missing $tool.exe"
+            }
+            & $toolPath --version
+            if ($LASTEXITCODE -ne 0) {
+              throw "Vulkan SDK $version could not run $tool.exe"
             }
           }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          $bin >> $env:GITHUB_PATH
 
           # Verify FXC is available (from Windows SDK)
           $fxcPaths = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\fxc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName
@@ -69,7 +76,22 @@ jobs:
           git submodule update --init --depth=1 -j $env:NUMBER_OF_PROCESSORS $SUBMODULES
 
       - name: Build Xenia
-        run: python xenia-build.py build --config=Release --target=xenia-app
+        run: >-
+          python xenia-build.py build --config=Release --build-tests
+          --target=xenia-app
+          --target=xenia-hid-kbm-core-tests
+          --target=xenia-hid-kbm-config-tests
+          --target=xenia-hid-kbm-lifecycle-tests
+          --target=xenia-hid-kbm-sampling-tests
+          --target=xenia-app-localization-tests
+
+      - name: Test KBM and localization
+        run: >-
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error
+          -R "^xenia-(hid-kbm-(core|config|lifecycle|sampling)-tests|app-localization-tests)$"
+
+      - name: Test KBM replay tools
+        run: python -m unittest discover -s tools -p "kbm_*test.py"
 
       - name: Prepare artifacts
         id: prepare_artifacts

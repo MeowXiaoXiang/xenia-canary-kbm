@@ -15,11 +15,6 @@
 
 #include "xenia/base/platform.h"
 
-#if XE_PLATFORM_WIN32
-#include "xenia/hid/kbm/kbm_config.h"
-#include "xenia/hid/kbm/kbm_input_driver.h"
-#endif  // XE_PLATFORM_WIN32
-
 #include "xenia/app/localization.h"
 #include "xenia/app/profile_dialogs.h"
 #include "xenia/emulator.h"
@@ -39,6 +34,9 @@ namespace app {
 
 class ConsoleSettingsDialog;
 class ContentListDialog;
+#if XE_PLATFORM_WIN32
+class KbmConfigDialog;
+#endif  // XE_PLATFORM_WIN32
 
 struct RecentTitleEntry {
   std::string title_name;
@@ -91,6 +89,9 @@ class EmulatorWindow {
   void ShutdownGraphicsSystemPresenterPainting();
 
   void OnEmulatorInitialized();
+#if XE_PLATFORM_WIN32
+  void ShutdownKbmInputSampling();
+#endif  // XE_PLATFORM_WIN32
 
   xe::X_STATUS RunTitle(const std::filesystem::path& path_to_file);
   void UpdateTitle();
@@ -229,53 +230,20 @@ class EmulatorWindow {
   };
 
 #if XE_PLATFORM_WIN32
-  class KbmConfigDialog final : public ui::ImGuiDialog {
-   public:
-    KbmConfigDialog(ui::ImGuiDrawer* imgui_drawer,
-                    EmulatorWindow& emulator_window);
-    ~KbmConfigDialog() override;
-
-   protected:
-    void OnDraw(ImGuiIO& io) override;
-
-   private:
-    hid::kbm::KbmInputDriver* GetDriver() const;
-    void ApplyDraft();
-    void RestoreOriginal();
-    void StartBindingCapture(std::string* target, bool append);
-    void CancelBindingCapture();
-    bool HandleBindingCaptureResult();
-
-    EmulatorWindow& emulator_window_;
-    hid::kbm::KbmSettings original_settings_;
-    hid::kbm::KbmSettings settings_;
-    bool committed_or_restored_ = false;
-    bool save_failed_ = false;
-    bool dirty_ = false;
-    bool saved_ = false;
-    std::string* binding_capture_target_ = nullptr;
-    bool binding_capture_append_ = false;
-  };
+  friend class KbmConfigDialog;
 #endif  // XE_PLATFORM_WIN32
 
   class XMPConfigDialog final : public ui::ImGuiDialog {
    public:
     XMPConfigDialog(ui::ImGuiDrawer* imgui_drawer,
                     EmulatorWindow& emulator_window)
-        : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {
-      if (emulator_window_.emulator_->audio_media_player()) {
-        volume_ = emulator_window_.emulator_->audio_media_player()
-                      ->GetVolume()
-                      ->load();
-      }
-    }
+        : ui::ImGuiDialog(imgui_drawer), emulator_window_(emulator_window) {}
 
    protected:
     void OnDraw(ImGuiIO& io) override;
 
    private:
     EmulatorWindow& emulator_window_;
-    float volume_ = 0.0f;
   };
 
   explicit EmulatorWindow(Emulator* emulator,
@@ -348,6 +316,11 @@ class EmulatorWindow {
 
   void ClearDialogs();
 
+  void OnFrameRateUpdated();
+  void DrawFrameRateOverlay();
+  void ApplyFrameRateOverlay();
+  void ToggleFrameRateOverlay();
+
   Emulator* emulator_;
   ui::WindowedAppContext& app_context_;
   EmulatorWindowListener window_listener_;
@@ -363,6 +336,8 @@ class EmulatorWindow {
 
   std::string base_title_;
   bool initializing_shader_storage_ = false;
+
+  std::atomic<bool> frame_rate_update_pending_ = false;
 
   std::unique_ptr<DisplayConfigDialog> display_config_dialog_;
 #if XE_PLATFORM_WIN32

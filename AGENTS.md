@@ -33,7 +33,8 @@ not publish games, title content, or other proprietary Xbox files.
 - Keep user-facing strings in the English and Traditional Chinese catalogs under
   `src/xenia/app/localization/` synchronized. The Traditional Chinese font glyph
   ranges are derived from its catalog in `src/xenia/ui/imgui_drawer.cc`.
-- Keep public documentation focused on `README.md` and `docs/kbm_input.md`.
+- Keep `README.md` and `docs/kbm_input.md` as the public entry points. Keep
+  detailed KBM tuning, design, and testing notes under `docs/KBM/`.
   Do not expose private installation paths, personal test data, or unreleased
   local experiments.
 

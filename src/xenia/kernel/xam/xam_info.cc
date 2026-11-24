@@ -16,6 +16,7 @@
 #include "xenia/kernel/title_id_utils.h"
 #include "xenia/kernel/user_module.h"
 #include "xenia/kernel/util/shim_utils.h"
+#include "xenia/kernel/xam/xam.h"
 #include "xenia/kernel/xam/xam_module.h"
 #include "xenia/kernel/xam/xam_private.h"
 #include "xenia/kernel/xboxkrnl/xboxkrnl_error.h"
@@ -393,6 +394,23 @@ dword_result_t XamIsCurrentTitleDash_entry(const ppc_context_t& ctx) {
 }
 DECLARE_XAM_EXPORT1(XamIsCurrentTitleDash, kNone, kImplemented);
 
+dword_result_t XamSetDashContext_entry(dword_t value,
+                                       const ppc_context_t& ctx) {
+  // checks XexCheckExecutablePrivilege(8) but we don't care
+  if (value != ctx->kernel_state->dash_context_) {
+    ctx->kernel_state->dash_context_ = value;
+    kernel_state()->BroadcastNotification(
+        kXNotificationSystemDashContextChanged, 0);
+  }
+  return 0;
+}
+DECLARE_XAM_EXPORT1(XamSetDashContext, kNone, kImplemented);
+
+dword_result_t XamGetDashContext_entry(const ppc_context_t& ctx) {
+  return ctx->kernel_state->dash_context_;
+}
+DECLARE_XAM_EXPORT1(XamGetDashContext, kNone, kImplemented);
+
 dword_result_t XamGetExecutionId_entry(lpdword_t info_ptr) {
   auto module = kernel_state()->GetExecutableModule();
   assert_not_null(module);
@@ -422,8 +440,9 @@ DECLARE_XAM_EXPORT1(XamLoaderRegisterLaunchRequestCallback, kNone,
 dword_result_t XamLoaderSetLaunchData_entry(lpvoid_t data, dword_t size) {
   auto xam = kernel_state()->GetKernelModule<XamModule>("xam.xex");
   auto& loader_data = xam->loader_data();
-  loader_data.launch_data.resize(size);
-  std::memcpy(loader_data.launch_data.data(), data, size);
+  const uint32_t copy_size = std::min(size.value(), MAX_LAUNCH_DATA_SIZE);
+  loader_data.launch_data.resize(copy_size);
+  std::memcpy(loader_data.launch_data.data(), data, copy_size);
   return 0;
 }
 DECLARE_XAM_EXPORT1(XamLoaderSetLaunchData, kNone, kSketchy);
@@ -668,7 +687,7 @@ DECLARE_XAM_EXPORT1(GetLastError, kNone, kImplemented);
 dword_result_t GetModuleHandleA_entry(lpstring_t module_name) {
   xe::be<uint32_t> module_ptr = 0;
   const X_STATUS error_code = xe::kernel::xboxkrnl::XexGetModuleHandle(
-      module_name.value(), &module_ptr);
+      module_name ? module_name.value() : "", &module_ptr);
 
   if (XFAILED(error_code)) {
     RtlSetLastNTError_entry(error_code);
@@ -753,24 +772,24 @@ dword_result_t GetCurrentThreadId_entry() {
 }
 DECLARE_XAM_EXPORT1(GetCurrentThreadId, kNone, kImplemented);
 
-qword_result_t XapiFormatTimeOut_entry(lpqword_t result,
+dword_result_t XapiFormatTimeOut_entry(lpqword_t result,
                                        dword_t dwMilliseconds) {
-  if (dwMilliseconds == -1) {
+  auto timeout = XObject::MsToTimeoutTicks(dwMilliseconds);
+  if (!timeout) {
     return 0;
   }
 
-  *result = static_cast<int64_t>(-10000) * dwMilliseconds;
-  return result.host_address();
+  *result = static_cast<uint64_t>(*timeout);
+  return result.guest_address();
 }
 DECLARE_XAM_EXPORT1(XapiFormatTimeOut, kNone, kImplemented);
 
 dword_result_t WaitForSingleObjectEx_entry(dword_t hHandle,
                                            dword_t dwMilliseconds,
                                            dword_t bAlertable) {
-  // TODO(Gliniak): Figure it out to be less janky.
-  uint64_t timeout;
-  uint64_t* timeout_ptr = reinterpret_cast<uint64_t*>(
-      static_cast<uint64_t>(XapiFormatTimeOut_entry(&timeout, dwMilliseconds)));
+  auto timeout = XObject::MsToTimeoutTicks(dwMilliseconds);
+  uint64_t timeout_ticks = timeout ? static_cast<uint64_t>(*timeout) : 0;
+  uint64_t* timeout_ptr = timeout ? &timeout_ticks : nullptr;
 
   X_STATUS result =
       xboxkrnl::NtWaitForSingleObjectEx(hHandle, 1, bAlertable, timeout_ptr);
@@ -780,8 +799,10 @@ dword_result_t WaitForSingleObjectEx_entry(dword_t hHandle,
         xboxkrnl::NtWaitForSingleObjectEx(hHandle, 1, bAlertable, timeout_ptr);
   }
 
-  RtlSetLastNTError_entry(result);
-  result = -1;
+  if (XFAILED(result)) {
+    RtlSetLastNTError_entry(result);
+    return -1;
+  }
 
   return result;
 }
@@ -1024,6 +1045,16 @@ dword_result_t XamLogLocalizationEtx_entry(dword_t error_code, dword_t unk) {
   return X_E_NOT_IMPLEMENTED;
 }
 DECLARE_XAM_EXPORT1(XamLogLocalizationEtx, kNone, kStub);
+
+dword_result_t XamUpdateGetBaseSystemVersion_entry() {
+  return kBaseKernelBuildVersion;
+}
+DECLARE_XAM_EXPORT1(XamUpdateGetBaseSystemVersion, kNone, kStub);
+
+dword_result_t XamUpdateGetCurrentSystemVersion_entry() {
+  return kBaseKernelBuildVersion;
+}
+DECLARE_XAM_EXPORT1(XamUpdateGetCurrentSystemVersion, kNone, kStub);
 
 }  // namespace xam
 }  // namespace kernel

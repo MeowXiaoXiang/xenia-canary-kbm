@@ -11,9 +11,11 @@
 
 #include <utility>
 
+#include "xenia/base/assert.h"
 #include "xenia/base/filesystem.h"
 #include "xenia/base/string.h"
 #include "xenia/vfs/device.h"
+#include "xenia/vfs/file.h"
 
 namespace xe {
 namespace vfs {
@@ -106,6 +108,37 @@ Entry* Entry::CreateEntry(const std::string_view name, uint32_t attributes) {
   return children_.back().get();
 }
 
+File::File(uint32_t file_access, Entry* entry)
+    : file_access_(file_access), entry_(entry) {
+  if (entry_) {
+    auto global_lock = entry_->global_critical_region_.Acquire();
+    ++entry_->open_file_count_;
+  }
+}
+
+File::~File() {
+  if (entry_) {
+    auto global_lock = entry_->global_critical_region_.Acquire();
+    assert_not_zero(entry_->open_file_count_);
+    --entry_->open_file_count_;
+  }
+}
+
+bool Entry::HasOpenFiles() const {
+  auto global_lock = global_critical_region_.Acquire();
+  if (open_file_count_) {
+    return true;
+  }
+
+  for (const auto& child : children_) {
+    if (child->HasOpenFiles()) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 bool Entry::Delete(Entry* entry) {
   auto global_lock = global_critical_region_.Acquire();
   if (is_read_only()) {
@@ -114,6 +147,12 @@ bool Entry::Delete(Entry* entry) {
   if (entry->parent() != this) {
     return false;
   }
+
+  // Open files would be left pointing at a freed entry.
+  if (entry->HasOpenFiles()) {
+    return false;
+  }
+
   if (!DeleteEntryInternal(entry)) {
     return false;
   }
@@ -128,7 +167,9 @@ bool Entry::Delete(Entry* entry) {
 }
 
 bool Entry::Delete() {
-  assert_not_null(parent_);
+  if (!parent_) {
+    return false;
+  }
   return parent_->Delete(this);
 }
 
@@ -150,7 +191,8 @@ void Entry::Rename(const std::filesystem::path file_path) {
   absolute_path_ =
       xe::utf8::join_guest_paths(device_->mount_path(), guest_path);
   path_ = guest_path;
-  name_ = xe::path_to_utf8(file_path.filename());
+  // Use the guest path since POSIX doesn't treat \ as a separator.
+  name_ = path_parts.empty() ? std::string() : std::string(path_parts.back());
 }
 
 }  // namespace vfs
