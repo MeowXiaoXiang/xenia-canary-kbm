@@ -157,20 +157,6 @@ void ImGuiDrawer::RemoveNotification(ImGuiNotification* dialog) {
   DetachIfLastWindowRemoved();
 }
 
-void ImGuiDrawer::SetOverlay(std::function<void()> draw_overlay) {
-  overlay_ = std::move(draw_overlay);
-
-  if (!overlay_) {
-    DetachIfLastWindowRemoved();
-    return;
-  }
-
-  if (presenter_) {
-    presenter_->AddUIDrawerFromUIThread(this, z_order_);
-    presenter_->RequestUIPaintFromUIThread();
-  }
-}
-
 void ImGuiDrawer::SetPassiveOverlay(std::function<void()> draw) {
   const bool had_overlay = HasPassiveOverlay();
   passive_overlay_ = std::move(draw);
@@ -832,11 +818,6 @@ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
 
   ImGui::NewFrame();
 
-  // Repainted with the guest output, not continuously.
-  if (overlay_) {
-    overlay_();
-  }
-
   assert_true(!IsDrawingDialogs());
   dialog_loop_next_index_ = 0;
   while (dialog_loop_next_index_ < dialogs_.size()) {
@@ -1141,7 +1122,7 @@ void ImGuiDrawer::DetachIfLastWindowRemoved() {
     return;
   }
 
-  // Only dialogs take input, even if notifications or the overlay remain.
+  // Only dialogs take input, even if notifications remain.
   if (is_input_listener_added_) {
     window_->RemoveInputListener(this);
     is_input_listener_added_ = false;

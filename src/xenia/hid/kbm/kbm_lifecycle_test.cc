@@ -109,7 +109,7 @@ class TestDialog final : public ui::ImGuiDialog {
 
 }  // namespace
 
-TEST_CASE("Overlays remain passive after the last host dialog closes",
+TEST_CASE("KBM overlay remains passive after the last host dialog closes",
           "[kbm][lifecycle][overlay]") {
   DriverFixture fixture;
   InputSystem input_system(&fixture.window);
@@ -119,7 +119,6 @@ TEST_CASE("Overlays remain passive after the last host dialog closes",
   input_system.AddDriver(std::move(driver));
   ui::ImGuiDrawer drawer(&fixture.window, 100);
   drawer.LoadInputSystem(&input_system);
-  drawer.SetOverlay([] {});
   drawer.SetPassiveOverlay([] {});
 
   fixture.window.Key(ui::VirtualKey::kSpace, true);
@@ -148,12 +147,11 @@ TEST_CASE("Overlays remain passive after the last host dialog closes",
     REQUIRE(state.gamepad.buttons & X_INPUT_GAMEPAD_A);
   }
 
-  drawer.SetOverlay(nullptr);
-  REQUIRE(drawer.HasPassiveOverlay());
-  REQUIRE_FALSE(fixture.window.Character());
-  drawer.SetOverlay([] {});
   drawer.SetPassiveOverlay(nullptr);
   REQUIRE_FALSE(drawer.HasPassiveOverlay());
+  REQUIRE_FALSE(fixture.window.Character());
+  drawer.SetPassiveOverlay([] {});
+  REQUIRE(drawer.HasPassiveOverlay());
   REQUIRE_FALSE(fixture.window.Character());
 }
 

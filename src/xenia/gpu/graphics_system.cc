@@ -102,6 +102,10 @@ X_STATUS GraphicsSystem::Setup(cpu::Processor* processor,
             OnHostGpuLossFromAnyThread(is_responsible);
           });
     }
+
+    if (presenter_) {
+      presenter_->SetFrameRateSource([this]() { return GetFramesPerSecond(); });
+    }
   }
 
   // Create command processor. This will spin up a thread to process all
@@ -311,7 +315,8 @@ void GraphicsSystem::Shutdown() {
 
   if (frame_limiter_worker_thread_) {
     frame_limiter_worker_running_ = false;
-    frame_limiter_worker_thread_->Wait(0, 0, 0, nullptr);
+    frame_limiter_worker_thread_->Wait(0, kernel::X_KPROCESSOR_MODE::KernelMode,
+                                       0, nullptr);
     frame_limiter_worker_thread_.reset();
   }
 
