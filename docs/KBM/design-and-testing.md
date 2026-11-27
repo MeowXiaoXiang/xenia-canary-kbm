@@ -303,6 +303,11 @@ also resets capture history and rejects poll intervals greater than 100 ms.
 This timeout describes time between controller polls, not the age of each Raw
 Input event, and does not replace focus and capture reset checks.
 
+The upstream FPS overlay is drawn directly by the Presenter. KBM diagnostics
+still use ImGui and can require presentation on the UI thread while enabled.
+The two overlays have independent controls; the FPS rendering change does not
+move KBM diagnostics to the Presenter or establish a latency improvement.
+
 Host-dialog suspension clears logical keyboard state on both entry and resume.
 Keys received for UI navigation or binding capture must not become held guest
 controls when the last dialog closes. A new press can activate the binding

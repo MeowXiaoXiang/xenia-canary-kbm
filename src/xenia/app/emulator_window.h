@@ -317,8 +317,6 @@ class EmulatorWindow {
   void ClearDialogs();
 
   void OnFrameRateUpdated();
-  void DrawFrameRateOverlay();
-  void ApplyFrameRateOverlay();
   void ToggleFrameRateOverlay();
 
   Emulator* emulator_;
